@@ -13,16 +13,14 @@ _Dernière mise à jour : 2026-07-25_
 - **Ch.5 — Profil Professeur** : matières/niveaux, score de complétude, écran `/teacher/profile`. Débloque la validation admin des comptes Professeur.
 - **Ch.6 — Profil Parent & gestion des enfants** : `GET/PATCH /parent-profile/me`, CRUD `Student` (créer/lister/modifier/archiver/réactiver) sous `/parent-profile/me/students`, création automatique de la première situation scolaire à la création d'un enfant, écran `/parent/children`. Débloque la validation admin des comptes Parent en pratique (avant, rien ne permettait de déclarer un enfant).
 - **Ch.7 — Situation scolaire** : `StudentSchoolSituation.status` (ACTIVE/PENDING_VALIDATION/CLOSED/REJECTED). Évolution de routine (même établissement, progression standard vers une nouvelle année académique) → automatique et immédiate. Tout le reste (changement d'établissement, redoublement, réorientation, saut de niveau) → créé en attente, validé/refusé par un Admin (`/admin/school-situations`). Historique complet consultable par le Parent (`/parent/children/:id/situation`).
+- **Ch.10 — Groupes (MVP)** : création par le Professeur (planning hebdomadaire, capacité, tarif, mode d'enseignement, facturation des absences, visibilité si complet), vérification `SubjectLevel` (ERR-GRP-001) et validation du profil (ERR-GRP-002), cycle de vie BROUILLON→OUVERT→CLÔTURÉ→ARCHIVÉ, suppression uniquement si BROUILLON sans inscription (ERR-GRP-020), lieux d'enseignement (`TeachingLocation`) CRUD minimal. Recherche publique par les Parents (`/groups/search`, `/parent/groups`) avec champs publics uniquement. Écran `/teacher/groups`.
 - **Branding** : logo GROUPI extrait du référentiel, utilisé en favicon + sur les pages d'auth.
 - **CI, tests** : 26 tests unitaires + 12 e2e sur le module auth, GitHub Actions (lint/build/test/e2e sur Postgres réel).
 
 ### En cours (cette session)
-Trois chantiers lancés à la suite. Ch.6 et Ch.7 sont faits (voir ci-dessus). Restant :
-3. **Ch.10 — Groupes** (MVP : création/planning/ouverture/fermeture par le Professeur, recherche publique par les Parents)
+Les trois chantiers prévus (Ch.6, Ch.7, Ch.10) sont terminés et commités (voir ci-dessus).
 
-Voir la todo list de la session en cours pour le détail à l'instant T — ce fichier est mis à jour à la fin de chaque chantier, pas en continu.
-
-## Prochaines étapes une fois les 3 chantiers ci-dessus terminés
+## Prochaines étapes
 
 - **Ch.12 — Inscriptions** : demande d'inscription d'un Parent à un Groupe, validation par le Professeur (dépend de Ch.6/Ch.7/Ch.10, prochain chantier naturel).
 - **Ch.11 — Préinscriptions** : manifestations d'intérêt pour l'année académique suivante.
@@ -39,7 +37,7 @@ Voir la todo list de la session en cours pour le détail à l'instant T — ce f
 - Auto-service : demande de désactivation de compte par son propre titulaire (Ch.6.12/8.8), anonymisation (Ch.8.8), archivage (Ch.8.9, Version 2).
 - Vérification cohérence âge/niveau scolaire (RM-SCH-019) — aucune table de correspondance âge↔niveau n'est définie dans le référentiel disponible, donc non implémentée plutôt qu'inventée.
 - Aucun endpoint pour créer une nouvelle `AcademicYear` (une seule est seedée : 2026-2027). Il en faudra un (admin) avant que le passage réel à l'année académique suivante soit testable en conditions normales — pour l'instant vérifié en insérant une ligne de test directement en base puis en la supprimant.
-- Ch.10 : génération automatique des séances (Ch.13), contrôle de capacité d'abonnement (ERR-GRP-013, dépend du domaine Commercial non construit), duplication de groupe, liste d'attente (Version 2), tarif de référence calculé automatiquement (Ch.10.7).
+- Ch.10 : génération automatique des séances (Ch.13), contrôle de capacité d'abonnement (ERR-GRP-013, dépend du domaine Commercial non construit), duplication de groupe, liste d'attente (Version 2), tarif de référence calculé automatiquement (Ch.10.7), détection de conflit de planning (ERR-GRP-014), passage automatique en COMPLET (dépend des inscriptions, non construites). Simplification volontaire : matière/niveau/année académique sont verrouillés dès la création du groupe (pas seulement après la 1ère inscription comme le prévoit littéralement le §10.11) — écarte l'ambiguïté tant que les inscriptions n'existent pas.
 
 ## Repères pratiques
 

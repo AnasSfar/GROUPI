@@ -11,6 +11,8 @@ import { TeacherProfilePage } from './pages/TeacherProfilePage';
 import { ParentChildrenPage } from './pages/ParentChildrenPage';
 import { StudentSituationPage } from './pages/StudentSituationPage';
 import { AdminSchoolSituationsPage } from './pages/AdminSchoolSituationsPage';
+import { TeacherGroupsPage } from './pages/TeacherGroupsPage';
+import { ParentGroupSearchPage } from './pages/ParentGroupSearchPage';
 
 function App() {
   return (
@@ -66,6 +68,22 @@ function App() {
             element={
               <ProtectedRoute roles={['SUPER_ADMIN', 'ADMIN']}>
                 <AdminSchoolSituationsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/teacher/groups"
+            element={
+              <ProtectedRoute roles={['TEACHER']}>
+                <TeacherGroupsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/parent/groups"
+            element={
+              <ProtectedRoute roles={['PARENT']}>
+                <ParentGroupSearchPage />
               </ProtectedRoute>
             }
           />

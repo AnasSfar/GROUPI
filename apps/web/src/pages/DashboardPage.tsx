@@ -43,9 +43,19 @@ export function DashboardPage() {
           <Link to="/teacher/profile">Compléter mon profil professeur</Link>
         </p>
       )}
+      {currentUser?.roles.includes('TEACHER') && (
+        <p>
+          <Link to="/teacher/groups">Gérer mes groupes</Link>
+        </p>
+      )}
       {currentUser?.roles.includes('PARENT') && (
         <p>
           <Link to="/parent/children">Gérer mes enfants</Link>
+        </p>
+      )}
+      {currentUser?.roles.includes('PARENT') && (
+        <p>
+          <Link to="/parent/groups">Rechercher un groupe</Link>
         </p>
       )}
       <pre className="debug-panel">{JSON.stringify(currentUser, null, 2)}</pre>

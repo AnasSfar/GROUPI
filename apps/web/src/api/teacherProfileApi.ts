@@ -72,3 +72,32 @@ export function removeSchoolLevel(
     accessToken,
   });
 }
+
+export interface TeachingLocation {
+  id: string;
+  label: string;
+  address: string | null;
+  isActive: boolean;
+}
+
+export function listLocations(accessToken: string): Promise<TeachingLocation[]> {
+  return apiRequest<TeachingLocation[]>('/teacher-profile/me/locations', { accessToken });
+}
+
+export function createLocation(
+  accessToken: string,
+  payload: { label: string; address?: string },
+): Promise<TeachingLocation> {
+  return apiRequest<TeachingLocation>('/teacher-profile/me/locations', {
+    method: 'POST',
+    accessToken,
+    body: payload,
+  });
+}
+
+export function deactivateLocation(accessToken: string, locationId: string): Promise<TeachingLocation> {
+  return apiRequest<TeachingLocation>(`/teacher-profile/me/locations/${locationId}`, {
+    method: 'DELETE',
+    accessToken,
+  });
+}

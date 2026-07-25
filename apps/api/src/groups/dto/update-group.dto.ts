@@ -1,0 +1,57 @@
+import { Type } from 'class-transformer';
+import {
+  ArrayMinSize,
+  IsDateString,
+  IsEnum,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+  MinLength,
+  ValidateNested,
+} from 'class-validator';
+import { AbsenceBillingPolicy, VisibilityWhenFull } from '@prisma/client';
+import { GroupScheduleDto } from './group-schedule.dto';
+
+/** Ch.10.11 : après la 1ère inscription, seuls planning/lieu/tarif/capacité/visibilité restent
+ *  modifiables. Cette version MVP verrouille matière/niveau/année dès la création (voir progress.md). */
+export class UpdateGroupDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  name?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  capacity?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  publicPrice?: number;
+
+  @IsOptional()
+  @IsEnum(AbsenceBillingPolicy)
+  absenceBillingPolicy?: AbsenceBillingPolicy;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  abandonmentThreshold?: number;
+
+  @IsOptional()
+  @IsEnum(VisibilityWhenFull)
+  visibilityWhenFull?: VisibilityWhenFull;
+
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => GroupScheduleDto)
+  @ArrayMinSize(1, { message: 'Le planning ne peut pas être vide (ERR-GRP-007)' })
+  schedules?: GroupScheduleDto[];
+}

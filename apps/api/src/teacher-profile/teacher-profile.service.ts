@@ -1,6 +1,7 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { CreateTeachingLocationDto } from './dto/create-teaching-location.dto';
 
 /** RM-TPR-009 : recalculé après chaque modification. Reflète l'exemple du référentiel (§5.5). */
 function computeCompletenessScore(profile: {
@@ -105,6 +106,35 @@ export class TeacherProfileService {
     });
     const profile = await this.prisma.teacherProfile.findUniqueOrThrow({ where: { id: userId } });
     return this.recomputeScore(userId, profile);
+  }
+
+  // --- Lieux d'enseignement (Ch.10.3, référencés par les créneaux de planning des groupes) ---
+
+  async listLocations(userId: string) {
+    return this.prisma.teachingLocation.findMany({
+      where: { teacherId: userId, isActive: true },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  async createLocation(userId: string, dto: CreateTeachingLocationDto) {
+    return this.prisma.teachingLocation.create({
+      data: { teacherId: userId, label: dto.label, address: dto.address },
+    });
+  }
+
+  async deactivateLocation(userId: string, locationId: string) {
+    const location = await this.prisma.teachingLocation.findUnique({ where: { id: locationId } });
+    if (!location) {
+      throw new NotFoundException('Lieu d’enseignement introuvable');
+    }
+    if (location.teacherId !== userId) {
+      throw new ForbiddenException("Ce lieu n'appartient pas à votre compte");
+    }
+    return this.prisma.teachingLocation.update({
+      where: { id: locationId },
+      data: { isActive: false },
+    });
   }
 
   private async recomputeScore(

@@ -4,6 +4,7 @@ import { TeacherProfileService } from './teacher-profile.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { AddSubjectDto } from './dto/add-subject.dto';
 import { AddSchoolLevelDto } from './dto/add-school-level.dto';
+import { CreateTeachingLocationDto } from './dto/create-teaching-location.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -47,5 +48,23 @@ export class TeacherProfileController {
     @Param('schoolLevelId') schoolLevelId: string,
   ) {
     return this.service.removeSchoolLevel(user.id, schoolLevelId);
+  }
+
+  @Get('me/locations')
+  listLocations(@CurrentUser() user: AuthenticatedUser) {
+    return this.service.listLocations(user.id);
+  }
+
+  @Post('me/locations')
+  createLocation(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateTeachingLocationDto) {
+    return this.service.createLocation(user.id, dto);
+  }
+
+  @Delete('me/locations/:locationId')
+  deactivateLocation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('locationId') locationId: string,
+  ) {
+    return this.service.deactivateLocation(user.id, locationId);
   }
 }
