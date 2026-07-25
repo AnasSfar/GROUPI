@@ -140,6 +140,13 @@ code {
   text-align: center;
 }
 
+.auth-logo {
+  width: 56px;
+  height: 56px;
+  align-self: center;
+  margin-bottom: -4px;
+}
+
 .auth-card label {
   display: flex;
   flex-direction: column;

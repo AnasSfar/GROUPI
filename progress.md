@@ -1,0 +1,46 @@
+# GROUPI — Suivi d'avancement
+
+> Ce fichier est mis à jour à chaque chantier terminé. Il sert de point d'entrée rapide pour savoir où on en est, sans avoir à relire tout l'historique de conversation. Le détail fonctionnel reste dans `docs/referentiel/` et `contexte.md`.
+
+_Dernière mise à jour : 2026-07-25_
+
+## Où on en est
+
+### Fait et vérifié bout-en-bout
+- **Modèle de données** (Prisma/PostgreSQL) — domaines Utilisateurs + Pédagogique + Référentiels, ~24 modèles.
+- **Ch.9 — Authentification/Sessions/Sécurité** : register/login/refresh/logout, JWT courte durée + refresh token opaque en rotation, verrouillage après échecs, mot de passe oublié.
+- **Ch.8 — Cycle de vie des comptes** : machine à états `PENDING_VALIDATION → ACTIVE ⇄ SUSPENDED → DISABLED`, révocation de session atomique, `AuditLog`, écran admin `/admin/users`, script `bootstrap:admin`.
+- **Ch.5 — Profil Professeur** : matières/niveaux, score de complétude, écran `/teacher/profile`. Débloque la validation admin des comptes Professeur.
+- **CI, tests** : 26 tests unitaires + 12 e2e sur le module auth, GitHub Actions (lint/build/test/e2e sur Postgres réel).
+
+### En cours (cette session)
+Trois chantiers lancés à la suite, dans cet ordre :
+1. **Ch.6 — Profil Parent & gestion des enfants** (Student CRUD, archivage)
+2. **Ch.7 — Situation scolaire** (StudentSchoolSituation, création initiale automatique, évolutions routine vs soumises à validation admin)
+3. **Ch.10 — Groupes** (MVP : création/planning/ouverture/fermeture par le Professeur, recherche publique par les Parents)
+
+Voir la todo list de la session en cours pour le détail à l'instant T — ce fichier est mis à jour à la fin de chaque chantier, pas en continu.
+
+## Prochaines étapes une fois les 3 chantiers ci-dessus terminés
+
+- **Ch.12 — Inscriptions** : demande d'inscription d'un Parent à un Groupe, validation par le Professeur (dépend de Ch.6/Ch.7/Ch.10, prochain chantier naturel).
+- **Ch.11 — Préinscriptions** : manifestations d'intérêt pour l'année académique suivante.
+- **Ch.13 — Séances** : génération automatique des séances à partir du planning hebdomadaire du groupe.
+- **Ch.14 — Présences**.
+- Domaine **Comptable/Commercial** (Ch.15-23) : abonnements Professeur, suivi des paiements — non commencé.
+- Domaine **Communication** : notifications réelles (email/push) — actuellement `EmailService` est un stub qui ne fait que logguer.
+
+## Hors scope, explicitement différé (pas oublié, juste pas fait)
+
+- RM-TPR-003/004 : ré-validation admin obligatoire après modification des matières/niveaux d'un Professeur déjà validé (les ajouts prennent effet immédiatement aujourd'hui).
+- 2FA (Ch.9 §9.9), scoring de risque/détection d'anomalies (Ch.9 §9.7-9.8) — Version 2 ou nécessitent des données de comportement qu'on n'a pas encore.
+- Demande d'ajout d'établissement scolaire par un Parent (Ch.6.7) — le référentiel School existant (15 établissements seedés) suffit pour l'instant.
+- Auto-service : demande de désactivation de compte par son propre titulaire (Ch.6.12/8.8), anonymisation (Ch.8.8), archivage (Ch.8.9, Version 2).
+- Vérification cohérence âge/niveau scolaire (RM-SCH-019) — aucune table de correspondance âge↔niveau n'est définie dans le référentiel disponible, donc non implémentée plutôt qu'inventée.
+- Ch.10 : génération automatique des séances (Ch.13), contrôle de capacité d'abonnement (ERR-GRP-013, dépend du domaine Commercial non construit), duplication de groupe, liste d'attente (Version 2), tarif de référence calculé automatiquement (Ch.10.7).
+
+## Repères pratiques
+
+- `dev.bat` à la racine lance Postgres (Docker) + API (port 3000) + Web (Vite, port 5173/5174).
+- `npm run bootstrap:admin --workspace apps/api` crée le Super Admin de dev (idempotent, voir `.env` pour les identifiants).
+- Migrations Prisma : `npx prisma migrate dev --name <nom>` depuis `apps/api`.

@@ -25,4 +25,31 @@ export class ReferentialsController {
       orderBy: { order: 'asc' },
     });
   }
+
+  @Get('cities')
+  cities() {
+    return this.prisma.city.findMany({
+      where: { isActive: true },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  @Get('schools')
+  schools() {
+    return this.prisma.school.findMany({
+      where: { isActive: true },
+      select: { id: true, name: true, type: true, cityId: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  /** Ch.7 : une situation scolaire est toujours rattachée à l'année académique ouverte. */
+  @Get('academic-years')
+  academicYears() {
+    return this.prisma.academicYear.findMany({
+      select: { id: true, label: true, status: true, startDate: true, endDate: true },
+      orderBy: { startDate: 'desc' },
+    });
+  }
 }

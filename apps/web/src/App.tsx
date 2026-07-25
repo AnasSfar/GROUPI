@@ -8,6 +8,7 @@ import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { AdminUsersPage } from './pages/AdminUsersPage';
 import { TeacherProfilePage } from './pages/TeacherProfilePage';
+import { ParentChildrenPage } from './pages/ParentChildrenPage';
 
 function App() {
   return (
@@ -39,6 +40,14 @@ function App() {
             element={
               <ProtectedRoute roles={['TEACHER']}>
                 <TeacherProfilePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/parent/children"
+            element={
+              <ProtectedRoute roles={['PARENT']}>
+                <ParentChildrenPage />
               </ProtectedRoute>
             }
           />

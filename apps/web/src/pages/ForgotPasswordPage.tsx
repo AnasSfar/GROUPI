@@ -22,6 +22,7 @@ export function ForgotPasswordPage() {
   return (
     <div className="auth-page">
       <form className="auth-card" onSubmit={handleSubmit}>
+        <img src="/favicon.png" alt="GROUPI" className="auth-logo" />
         <h1>Mot de passe oublié</h1>
         {sent ? (
           <p className="form-notice" role="status">

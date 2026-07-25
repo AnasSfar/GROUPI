@@ -51,6 +51,7 @@ export function ResetPasswordPage() {
   return (
     <div className="auth-page">
       <form className="auth-card" onSubmit={handleSubmit}>
+        <img src="/favicon.png" alt="GROUPI" className="auth-logo" />
         <h1>Nouveau mot de passe</h1>
         {error && (
           <p className="form-error" role="alert">

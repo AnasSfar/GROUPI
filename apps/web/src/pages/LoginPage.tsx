@@ -32,6 +32,7 @@ export function LoginPage() {
   return (
     <div className="auth-page">
       <form className="auth-card" onSubmit={handleSubmit}>
+        <img src="/favicon.png" alt="GROUPI" className="auth-logo" />
         <h1>Connexion</h1>
         {notice && (
           <p className="form-notice" role="status">

@@ -112,6 +112,14 @@ export class AccountLifecycleService {
         }
       }
 
+      // RM-PAR-013 : le compte Parent est validé après vérification par un Administrateur.
+      if (target.roles.includes('PARENT') && toStatus === 'ACTIVE') {
+        await tx.parentProfile.update({
+          where: { id: targetUserId },
+          data: { validatedAt: new Date() },
+        });
+      }
+
       if (revokesSessions) {
         // RM-CYC-027 : rendre le compte indisponible invalide immédiatement sessions et jetons.
         await tx.userSession.updateMany({
