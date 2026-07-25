@@ -33,6 +33,11 @@ export function DashboardPage() {
           <Link to="/admin/users">Gérer les comptes utilisateurs</Link>
         </p>
       )}
+      {currentUser?.roles.includes('TEACHER') && (
+        <p>
+          <Link to="/teacher/profile">Compléter mon profil professeur</Link>
+        </p>
+      )}
       <pre className="debug-panel">{JSON.stringify(currentUser, null, 2)}</pre>
     </div>
   );

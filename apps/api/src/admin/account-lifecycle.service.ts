@@ -95,6 +95,23 @@ export class AccountLifecycleService {
         select: { id: true, email: true, status: true, roles: true, updatedAt: true },
       });
 
+      // Ch.5.7 : le statut du profil professionnel suit le statut du compte (ACTIVE -> VALIDATED,
+      // SUSPENDED -> SUSPENDED). DISABLED/ARCHIVED n'ont pas d'équivalent dans TeacherProfileStatus
+      // et n'ont pas d'incidence pratique puisque le compte ne peut plus se connecter.
+      if (target.roles.includes('TEACHER')) {
+        if (toStatus === 'ACTIVE') {
+          await tx.teacherProfile.update({
+            where: { id: targetUserId },
+            data: { status: 'VALIDATED' },
+          });
+        } else if (toStatus === 'SUSPENDED') {
+          await tx.teacherProfile.update({
+            where: { id: targetUserId },
+            data: { status: 'SUSPENDED' },
+          });
+        }
+      }
+
       if (revokesSessions) {
         // RM-CYC-027 : rendre le compte indisponible invalide immédiatement sessions et jetons.
         await tx.userSession.updateMany({

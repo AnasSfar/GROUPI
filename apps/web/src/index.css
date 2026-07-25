@@ -327,3 +327,87 @@ code {
   color: var(--text-h);
   min-width: 160px;
 }
+
+.dashboard-page section {
+  margin-top: 24px;
+}
+
+.dashboard-page section h2 {
+  font-size: 18px;
+  margin-bottom: 8px;
+}
+
+.dashboard-page section label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+
+.dashboard-page section input,
+.dashboard-page section textarea {
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-h);
+  resize: vertical;
+}
+
+.tag-list {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0;
+  margin: 0 0 10px;
+}
+
+.tag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 10px;
+  background: var(--accent-bg);
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--text-h);
+}
+
+.tag button {
+  border: none;
+  background: none;
+  color: var(--text-h);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 2px 4px;
+}
+
+.add-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.add-row select {
+  font: inherit;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-h);
+}
+
+.add-row button,
+.dashboard-page section > button {
+  font: inherit;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-h);
+  cursor: pointer;
+}

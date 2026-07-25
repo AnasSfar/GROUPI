@@ -7,6 +7,7 @@ import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { AdminUsersPage } from './pages/AdminUsersPage';
+import { TeacherProfilePage } from './pages/TeacherProfilePage';
 
 function App() {
   return (
@@ -30,6 +31,14 @@ function App() {
             element={
               <ProtectedRoute roles={['SUPER_ADMIN', 'ADMIN']}>
                 <AdminUsersPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/teacher/profile"
+            element={
+              <ProtectedRoute roles={['TEACHER']}>
+                <TeacherProfilePage />
               </ProtectedRoute>
             }
           />
