@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ApiError } from '../api/client';
 import * as referentialsApi from '../api/referentialsApi';
@@ -69,11 +68,13 @@ export function ParentGroupSearchPage() {
   }, [search]);
 
   return (
-    <div className="dashboard-page">
-      <header className="dashboard-header">
-        <h1>Rechercher un groupe</h1>
-        <Link to="/dashboard">Retour au tableau de bord</Link>
-      </header>
+    <>
+      <div className="page-header">
+        <div>
+          <h1>Rechercher un groupe</h1>
+          <p>Filtrez par matière, niveau scolaire ou ville du professeur.</p>
+        </div>
+      </div>
 
       {error && (
         <p className="form-error" role="alert">
@@ -81,73 +82,81 @@ export function ParentGroupSearchPage() {
         </p>
       )}
 
-      <div className="field-row">
-        <label>
-          Matière
-          <select value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
-            <option value="">Toutes</option>
-            {subjects.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Niveau scolaire
-          <select value={schoolLevelId} onChange={(e) => setSchoolLevelId(e.target.value)}>
-            <option value="">Tous</option>
-            {schoolLevels.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Ville du professeur
-          <input type="text" value={city} onChange={(e) => setCity(e.target.value)} />
-        </label>
-      </div>
+      <section className="card-section">
+        <div className="field-row">
+          <label>
+            Matière
+            <select value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
+              <option value="">Toutes</option>
+              {subjects.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Niveau scolaire
+            <select value={schoolLevelId} onChange={(e) => setSchoolLevelId(e.target.value)}>
+              <option value="">Tous</option>
+              {schoolLevels.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Ville du professeur
+            <input type="text" value={city} onChange={(e) => setCity(e.target.value)} />
+          </label>
+        </div>
+      </section>
 
       {loading ? (
         <p>Chargement...</p>
       ) : results.length === 0 ? (
         <p>Aucun groupe ne correspond à ces critères.</p>
       ) : (
-        <table className="admin-table">
-          <thead>
-            <tr>
-              <th>Groupe</th>
-              <th>Professeur</th>
-              <th>Matière / Niveau</th>
-              <th>Planning</th>
-              <th>Tarif</th>
-              <th>Places</th>
-            </tr>
-          </thead>
-          <tbody>
-            {results.map((group) => (
-              <tr key={group.id}>
-                <td>{group.name}</td>
-                <td>
-                  {group.teacher.firstName} {group.teacher.lastName} ({group.teacher.city})
-                </td>
-                <td>
-                  {group.subject.name} — {group.schoolLevel.name}
-                </td>
-                <td>{formatSchedule(group)}</td>
-                <td>{group.publicPrice} TND</td>
-                <td>
-                  {group.status === 'FULL'
-                    ? 'Complet'
-                    : `${group.spotsAvailable} / ${group.capacity}`}
-                </td>
+        <div className="table-wrap">
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>Groupe</th>
+                <th>Professeur</th>
+                <th>Matière / Niveau</th>
+                <th>Planning</th>
+                <th>Tarif</th>
+                <th>Places</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {results.map((group) => (
+                <tr key={group.id}>
+                  <td>{group.name}</td>
+                  <td>
+                    {group.teacher.firstName} {group.teacher.lastName} ({group.teacher.city})
+                  </td>
+                  <td>
+                    {group.subject.name} — {group.schoolLevel.name}
+                  </td>
+                  <td>{formatSchedule(group)}</td>
+                  <td>{group.publicPrice} TND</td>
+                  <td>
+                    {group.status === 'FULL' ? (
+                      <span className="badge badge-warning">Complet</span>
+                    ) : (
+                      <span className="badge badge-success">
+                        {group.spotsAvailable} / {group.capacity}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
-    </div>
+    </>
   );
 }

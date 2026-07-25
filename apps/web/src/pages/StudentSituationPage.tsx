@@ -15,6 +15,13 @@ const STATUS_LABELS: Record<StudentSituation['status'], string> = {
   REJECTED: 'Refusée',
 };
 
+const STATUS_BADGE: Record<StudentSituation['status'], string> = {
+  ACTIVE: 'badge-success',
+  PENDING_VALIDATION: 'badge-warning',
+  CLOSED: 'badge-neutral',
+  REJECTED: 'badge-danger',
+};
+
 export function StudentSituationPage() {
   const { studentId } = useParams<{ studentId: string }>();
   const { getAccessToken } = useAuth();
@@ -87,31 +94,28 @@ export function StudentSituationPage() {
   }
 
   if (loading) {
-    return (
-      <div className="dashboard-page">
-        <p>Chargement...</p>
-      </div>
-    );
+    return <p>Chargement...</p>;
   }
 
   if (!student) {
-    return (
-      <div className="dashboard-page">
-        <p className="form-error">{error ?? 'Élève introuvable.'}</p>
-      </div>
-    );
+    return <p className="form-error">{error ?? 'Élève introuvable.'}</p>;
   }
 
   const hasPending = history.some((s) => s.status === 'PENDING_VALIDATION');
 
   return (
-    <div className="dashboard-page">
-      <header className="dashboard-header">
-        <h1>
-          Situation scolaire — {student.firstName} {student.lastName}
-        </h1>
-        <Link to="/parent/children">Retour à mes enfants</Link>
-      </header>
+    <>
+      <div className="page-header">
+        <div>
+          <h1>
+            Situation scolaire — {student.firstName} {student.lastName}
+          </h1>
+          <p>Historique et évolutions de la scolarité de l'élève.</p>
+        </div>
+        <div className="page-actions">
+          <Link to="/parent/children">← Retour à mes enfants</Link>
+        </div>
+      </div>
 
       {error && (
         <p className="form-error" role="alert">
@@ -124,42 +128,46 @@ export function StudentSituationPage() {
         </p>
       )}
 
-      <section>
+      <section className="card-section">
         <h2>Historique</h2>
-        <table className="admin-table">
-          <thead>
-            <tr>
-              <th>Année académique</th>
-              <th>Niveau</th>
-              <th>Établissement</th>
-              <th>Classe</th>
-              <th>Statut</th>
-              <th>Début</th>
-              <th>Fin</th>
-            </tr>
-          </thead>
-          <tbody>
-            {history.map((situation) => (
-              <tr key={situation.id}>
-                <td>{situation.academicYear.label}</td>
-                <td>{situation.schoolLevel.name}</td>
-                <td>{situation.school.name}</td>
-                <td>{situation.class ?? '—'}</td>
-                <td>
-                  {STATUS_LABELS[situation.status]}
-                  {situation.status === 'REJECTED' && situation.rejectionReason && (
-                    <> — {situation.rejectionReason}</>
-                  )}
-                </td>
-                <td>{new Date(situation.startDate).toLocaleDateString('fr-FR')}</td>
-                <td>{situation.endDate ? new Date(situation.endDate).toLocaleDateString('fr-FR') : '—'}</td>
+        <div className="table-wrap">
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>Année académique</th>
+                <th>Niveau</th>
+                <th>Établissement</th>
+                <th>Classe</th>
+                <th>Statut</th>
+                <th>Début</th>
+                <th>Fin</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {history.map((situation) => (
+                <tr key={situation.id}>
+                  <td>{situation.academicYear.label}</td>
+                  <td>{situation.schoolLevel.name}</td>
+                  <td>{situation.school.name}</td>
+                  <td>{situation.class ?? '—'}</td>
+                  <td>
+                    <span className={`badge ${STATUS_BADGE[situation.status]}`}>
+                      {STATUS_LABELS[situation.status]}
+                    </span>
+                    {situation.status === 'REJECTED' && situation.rejectionReason && (
+                      <span className="table-hint"> — {situation.rejectionReason}</span>
+                    )}
+                  </td>
+                  <td>{new Date(situation.startDate).toLocaleDateString('fr-FR')}</td>
+                  <td>{situation.endDate ? new Date(situation.endDate).toLocaleDateString('fr-FR') : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
 
-      <section>
+      <section className="card-section">
         <h2>Déclarer une évolution</h2>
         {hasPending && (
           <p className="form-notice" role="status">
@@ -209,6 +217,6 @@ export function StudentSituationPage() {
           </button>
         </form>
       </section>
-    </div>
+    </>
   );
 }

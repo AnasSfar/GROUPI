@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ApiError } from '../api/client';
 import * as adminApi from '../api/adminApi';
@@ -11,6 +10,14 @@ const STATUS_LABELS: Record<UserStatus, string> = {
   SUSPENDED: 'Suspendu',
   DISABLED: 'Désactivé',
   ARCHIVED: 'Archivé',
+};
+
+const STATUS_BADGE: Record<UserStatus, string> = {
+  PENDING_VALIDATION: 'badge-warning',
+  ACTIVE: 'badge-success',
+  SUSPENDED: 'badge-danger',
+  DISABLED: 'badge-neutral',
+  ARCHIVED: 'badge-neutral',
 };
 
 const ROLE_LABELS: Record<string, string> = {
@@ -120,11 +127,13 @@ export function AdminUsersPage() {
   }
 
   return (
-    <div className="dashboard-page">
-      <header className="dashboard-header">
-        <h1>Comptes utilisateurs</h1>
-        <Link to="/dashboard">Retour au tableau de bord</Link>
-      </header>
+    <>
+      <div className="page-header">
+        <div>
+          <h1>Comptes utilisateurs</h1>
+          <p>Validation, suspension et désactivation des comptes Professeur et Parent.</p>
+        </div>
+      </div>
 
       <label className="status-filter">
         Statut :
@@ -148,69 +157,75 @@ export function AdminUsersPage() {
       ) : users.length === 0 ? (
         <p>Aucun compte dans cet état.</p>
       ) : (
-        <table className="admin-table">
-          <thead>
-            <tr>
-              <th>Nom</th>
-              <th>Email</th>
-              <th>Rôle</th>
-              <th>Statut</th>
-              <th>Créé le</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((user) => (
-              <tr key={user.id}>
-                <td>{displayName(user)}</td>
-                <td>{user.email}</td>
-                <td>{user.roles.map((r) => ROLE_LABELS[r] ?? r).join(', ')}</td>
-                <td>{STATUS_LABELS[user.status]}</td>
-                <td>{new Date(user.createdAt).toLocaleDateString('fr-FR')}</td>
-                <td className="admin-actions">
-                  {pendingReasonFor?.userId === user.id ? (
-                    <ReasonPrompt
-                      label={pendingReasonFor.action === 'suspend' ? 'Suspendre' : 'Désactiver'}
-                      onConfirm={handleReasonConfirm}
-                      onCancel={() => setPendingReasonFor(null)}
-                    />
-                  ) : (
-                    <>
-                      {user.status === 'PENDING_VALIDATION' && (
-                        <button type="button" onClick={() => handleValidate(user.id)}>
-                          Valider
-                        </button>
-                      )}
-                      {user.status === 'ACTIVE' && (
-                        <button
-                          type="button"
-                          onClick={() => setPendingReasonFor({ userId: user.id, action: 'suspend' })}
-                        >
-                          Suspendre
-                        </button>
-                      )}
-                      {user.status === 'SUSPENDED' && (
-                        <button type="button" onClick={() => handleReactivate(user.id)}>
-                          Réactiver
-                        </button>
-                      )}
-                      {(user.status === 'ACTIVE' || user.status === 'SUSPENDED') && (
-                        <button
-                          type="button"
-                          className="danger"
-                          onClick={() => setPendingReasonFor({ userId: user.id, action: 'disable' })}
-                        >
-                          Désactiver
-                        </button>
-                      )}
-                    </>
-                  )}
-                </td>
+        <div className="table-wrap">
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>Nom</th>
+                <th>Email</th>
+                <th>Rôle</th>
+                <th>Statut</th>
+                <th>Créé le</th>
+                <th>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {users.map((user) => (
+                <tr key={user.id}>
+                  <td>{displayName(user)}</td>
+                  <td>{user.email}</td>
+                  <td>{user.roles.map((r) => ROLE_LABELS[r] ?? r).join(', ')}</td>
+                  <td>
+                    <span className={`badge ${STATUS_BADGE[user.status]}`}>
+                      {STATUS_LABELS[user.status]}
+                    </span>
+                  </td>
+                  <td>{new Date(user.createdAt).toLocaleDateString('fr-FR')}</td>
+                  <td className="admin-actions">
+                    {pendingReasonFor?.userId === user.id ? (
+                      <ReasonPrompt
+                        label={pendingReasonFor.action === 'suspend' ? 'Suspendre' : 'Désactiver'}
+                        onConfirm={handleReasonConfirm}
+                        onCancel={() => setPendingReasonFor(null)}
+                      />
+                    ) : (
+                      <>
+                        {user.status === 'PENDING_VALIDATION' && (
+                          <button type="button" onClick={() => handleValidate(user.id)}>
+                            Valider
+                          </button>
+                        )}
+                        {user.status === 'ACTIVE' && (
+                          <button
+                            type="button"
+                            onClick={() => setPendingReasonFor({ userId: user.id, action: 'suspend' })}
+                          >
+                            Suspendre
+                          </button>
+                        )}
+                        {user.status === 'SUSPENDED' && (
+                          <button type="button" onClick={() => handleReactivate(user.id)}>
+                            Réactiver
+                          </button>
+                        )}
+                        {(user.status === 'ACTIVE' || user.status === 'SUSPENDED') && (
+                          <button
+                            type="button"
+                            className="danger"
+                            onClick={() => setPendingReasonFor({ userId: user.id, action: 'disable' })}
+                          >
+                            Désactiver
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
-    </div>
+    </>
   );
 }

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ApiError } from '../api/client';
 import * as schoolSituationApi from '../api/schoolSituationApi';
@@ -81,11 +80,13 @@ export function AdminSchoolSituationsPage() {
   }
 
   return (
-    <div className="dashboard-page">
-      <header className="dashboard-header">
-        <h1>Situations scolaires en attente</h1>
-        <Link to="/dashboard">Retour au tableau de bord</Link>
-      </header>
+    <>
+      <div className="page-header">
+        <div>
+          <h1>Situations scolaires en attente</h1>
+          <p>Changements d'établissement, redoublements et réorientations à valider.</p>
+        </div>
+      </div>
 
       {error && (
         <p className="form-error" role="alert">
@@ -98,6 +99,7 @@ export function AdminSchoolSituationsPage() {
       ) : situations.length === 0 ? (
         <p>Aucune demande en attente.</p>
       ) : (
+        <div className="table-wrap">
         <table className="admin-table">
           <thead>
             <tr>
@@ -143,7 +145,8 @@ export function AdminSchoolSituationsPage() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
-    </div>
+    </>
   );
 }

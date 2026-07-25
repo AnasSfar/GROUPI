@@ -118,27 +118,21 @@ export function ParentChildrenPage() {
   }
 
   if (loading) {
-    return (
-      <div className="dashboard-page">
-        <p>Chargement...</p>
-      </div>
-    );
+    return <p>Chargement...</p>;
   }
 
   if (!profile) {
-    return (
-      <div className="dashboard-page">
-        <p className="form-error">{error ?? 'Profil introuvable.'}</p>
-      </div>
-    );
+    return <p className="form-error">{error ?? 'Profil introuvable.'}</p>;
   }
 
   return (
-    <div className="dashboard-page">
-      <header className="dashboard-header">
-        <h1>Mes enfants</h1>
-        <Link to="/dashboard">Retour au tableau de bord</Link>
-      </header>
+    <>
+      <div className="page-header">
+        <div>
+          <h1>Mes enfants</h1>
+          <p>Déclarez vos enfants et suivez leur situation scolaire.</p>
+        </div>
+      </div>
 
       {error && (
         <p className="form-error" role="alert">
@@ -153,7 +147,7 @@ export function ParentChildrenPage() {
         </p>
       )}
 
-      <section>
+      <section className="card-section">
         <h2>Mes coordonnées</h2>
         <label>
           Téléphone
@@ -168,49 +162,57 @@ export function ParentChildrenPage() {
         </button>
       </section>
 
-      <section>
+      <section className="card-section">
         <h2>Mes enfants ({students.length})</h2>
         {students.length === 0 && <p>Aucun enfant déclaré pour le moment.</p>}
-        <table className="admin-table">
-          <thead>
-            <tr>
-              <th>Nom</th>
-              <th>Niveau</th>
-              <th>Établissement</th>
-              <th>Classe</th>
-              <th>Statut</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {students.map((student) => (
-              <tr key={student.id}>
-                <td>
-                  {student.firstName} {student.lastName}
-                </td>
-                <td>{student.currentSchoolSituation?.schoolLevel.name ?? '—'}</td>
-                <td>{student.currentSchoolSituation?.school.name ?? '—'}</td>
-                <td>{student.currentSchoolSituation?.class ?? '—'}</td>
-                <td>{student.status}</td>
-                <td className="admin-actions">
-                  <Link to={`/parent/children/${student.id}/situation`}>Situation scolaire</Link>
-                  {student.status === 'ACTIVE' ? (
-                    <button type="button" className="ghost" onClick={() => handleArchive(student.id)}>
-                      Archiver
-                    </button>
-                  ) : (
-                    <button type="button" onClick={() => handleReactivate(student.id)}>
-                      Réactiver
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {students.length > 0 && (
+          <div className="table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Nom</th>
+                  <th>Niveau</th>
+                  <th>Établissement</th>
+                  <th>Classe</th>
+                  <th>Statut</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {students.map((student) => (
+                  <tr key={student.id}>
+                    <td>
+                      {student.firstName} {student.lastName}
+                    </td>
+                    <td>{student.currentSchoolSituation?.schoolLevel.name ?? '—'}</td>
+                    <td>{student.currentSchoolSituation?.school.name ?? '—'}</td>
+                    <td>{student.currentSchoolSituation?.class ?? '—'}</td>
+                    <td>
+                      <span className={`badge ${student.status === 'ACTIVE' ? 'badge-success' : 'badge-neutral'}`}>
+                        {student.status === 'ACTIVE' ? 'Actif' : 'Archivé'}
+                      </span>
+                    </td>
+                    <td className="admin-actions">
+                      <Link to={`/parent/children/${student.id}/situation`}>Situation scolaire</Link>
+                      {student.status === 'ACTIVE' ? (
+                        <button type="button" className="ghost" onClick={() => handleArchive(student.id)}>
+                          Archiver
+                        </button>
+                      ) : (
+                        <button type="button" onClick={() => handleReactivate(student.id)}>
+                          Réactiver
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
-      <section>
+      <section className="card-section">
         <h2>Ajouter un enfant</h2>
         <form onSubmit={handleCreateStudent}>
           <div className="field-row">
@@ -276,6 +278,6 @@ export function ParentChildrenPage() {
           </button>
         </form>
       </section>
-    </div>
+    </>
   );
 }

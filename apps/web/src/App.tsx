@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { AppLayout } from './components/AppLayout';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
@@ -23,70 +24,73 @@ function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
+
           <Route
-            path="/dashboard"
             element={
               <ProtectedRoute>
-                <DashboardPage />
+                <AppLayout />
               </ProtectedRoute>
             }
-          />
-          <Route
-            path="/admin/users"
-            element={
-              <ProtectedRoute roles={['SUPER_ADMIN', 'ADMIN']}>
-                <AdminUsersPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/teacher/profile"
-            element={
-              <ProtectedRoute roles={['TEACHER']}>
-                <TeacherProfilePage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/parent/children"
-            element={
-              <ProtectedRoute roles={['PARENT']}>
-                <ParentChildrenPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/parent/children/:studentId/situation"
-            element={
-              <ProtectedRoute roles={['PARENT']}>
-                <StudentSituationPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/school-situations"
-            element={
-              <ProtectedRoute roles={['SUPER_ADMIN', 'ADMIN']}>
-                <AdminSchoolSituationsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/teacher/groups"
-            element={
-              <ProtectedRoute roles={['TEACHER']}>
-                <TeacherGroupsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/parent/groups"
-            element={
-              <ProtectedRoute roles={['PARENT']}>
-                <ParentGroupSearchPage />
-              </ProtectedRoute>
-            }
-          />
+          >
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route
+              path="/admin/users"
+              element={
+                <ProtectedRoute roles={['SUPER_ADMIN', 'ADMIN']}>
+                  <AdminUsersPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/school-situations"
+              element={
+                <ProtectedRoute roles={['SUPER_ADMIN', 'ADMIN']}>
+                  <AdminSchoolSituationsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/teacher/profile"
+              element={
+                <ProtectedRoute roles={['TEACHER']}>
+                  <TeacherProfilePage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/teacher/groups"
+              element={
+                <ProtectedRoute roles={['TEACHER']}>
+                  <TeacherGroupsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/parent/children"
+              element={
+                <ProtectedRoute roles={['PARENT']}>
+                  <ParentChildrenPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/parent/children/:studentId/situation"
+              element={
+                <ProtectedRoute roles={['PARENT']}>
+                  <StudentSituationPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/parent/groups"
+              element={
+                <ProtectedRoute roles={['PARENT']}>
+                  <ParentGroupSearchPage />
+                </ProtectedRoute>
+              }
+            />
+          </Route>
+
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </AuthProvider>

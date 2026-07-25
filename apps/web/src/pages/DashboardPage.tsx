@@ -1,64 +1,118 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import {
+  IconUsers,
+  IconBookOpen,
+  IconChildren,
+  IconCalendarCheck,
+  IconLayers,
+  IconSearch,
+} from '../components/icons';
 
-/**
- * Placeholder — proves the auth flow works end-to-end (register/login/JWT guard/logout).
- * A real Professeur/Parent dashboard is future work once the domaine Pédagogique API exists.
- */
+interface DashCard {
+  to: string;
+  icon: ReactNode;
+  title: string;
+  description: string;
+}
+
 export function DashboardPage() {
-  const { currentUser, logout } = useAuth();
-  const navigate = useNavigate();
+  const { currentUser } = useAuth();
+  const [showDebug, setShowDebug] = useState(false);
 
-  async function handleLogout() {
-    await logout();
-    navigate('/login', { replace: true });
-  }
+  const isAdmin = currentUser?.roles.includes('SUPER_ADMIN') || currentUser?.roles.includes('ADMIN');
+  const isTeacher = currentUser?.roles.includes('TEACHER');
+  const isParent = currentUser?.roles.includes('PARENT');
+
+  const cards: DashCard[] = [
+    ...(isAdmin
+      ? [
+          {
+            to: '/admin/users',
+            icon: <IconUsers />,
+            title: 'Comptes utilisateurs',
+            description: 'Valider, suspendre ou désactiver des comptes Professeur et Parent.',
+          },
+          {
+            to: '/admin/school-situations',
+            icon: <IconCalendarCheck />,
+            title: 'Situations scolaires',
+            description: "Valider les changements d'établissement, redoublements et réorientations.",
+          },
+        ]
+      : []),
+    ...(isTeacher
+      ? [
+          {
+            to: '/teacher/profile',
+            icon: <IconBookOpen />,
+            title: 'Mon profil professeur',
+            description: 'Matières, niveaux enseignés et score de complétude.',
+          },
+          {
+            to: '/teacher/groups',
+            icon: <IconLayers />,
+            title: 'Mes groupes',
+            description: 'Créer et gérer vos groupes, plannings et lieux d’enseignement.',
+          },
+        ]
+      : []),
+    ...(isParent
+      ? [
+          {
+            to: '/parent/children',
+            icon: <IconChildren />,
+            title: 'Mes enfants',
+            description: 'Déclarer vos enfants et suivre leur situation scolaire.',
+          },
+          {
+            to: '/parent/groups',
+            icon: <IconSearch />,
+            title: 'Rechercher un groupe',
+            description: 'Trouver un groupe par matière, niveau ou ville.',
+          },
+        ]
+      : []),
+  ];
 
   return (
-    <div className="dashboard-page">
-      <header className="dashboard-header">
-        <h1>Tableau de bord</h1>
-        <button type="button" onClick={handleLogout}>
-          Se déconnecter
-        </button>
-      </header>
-      <p>Connecté en tant que <strong>{currentUser?.email}</strong>.</p>
+    <>
+      <div className="page-header">
+        <div>
+          <h1>Tableau de bord</h1>
+          <p>
+            Connecté en tant que <strong>{currentUser?.email}</strong>
+          </p>
+        </div>
+      </div>
+
       {currentUser?.status === 'PENDING_VALIDATION' && (
         <p className="form-notice" role="status">
           Ce compte est en attente de validation par un administrateur.
         </p>
       )}
-      {(currentUser?.roles.includes('SUPER_ADMIN') || currentUser?.roles.includes('ADMIN')) && (
-        <p>
-          <Link to="/admin/users">Gérer les comptes utilisateurs</Link>
-        </p>
+
+      {cards.length > 0 ? (
+        <div className="card-grid">
+          {cards.map((card) => (
+            <Link key={card.to} to={card.to} className="dash-card">
+              <span className="dash-card-icon">{card.icon}</span>
+              <h2>{card.title}</h2>
+              <p>{card.description}</p>
+            </Link>
+          ))}
+        </div>
+      ) : (
+        <p>Aucune action disponible pour le moment.</p>
       )}
-      {(currentUser?.roles.includes('SUPER_ADMIN') || currentUser?.roles.includes('ADMIN')) && (
-        <p>
-          <Link to="/admin/school-situations">Situations scolaires en attente</Link>
-        </p>
-      )}
-      {currentUser?.roles.includes('TEACHER') && (
-        <p>
-          <Link to="/teacher/profile">Compléter mon profil professeur</Link>
-        </p>
-      )}
-      {currentUser?.roles.includes('TEACHER') && (
-        <p>
-          <Link to="/teacher/groups">Gérer mes groupes</Link>
-        </p>
-      )}
-      {currentUser?.roles.includes('PARENT') && (
-        <p>
-          <Link to="/parent/children">Gérer mes enfants</Link>
-        </p>
-      )}
-      {currentUser?.roles.includes('PARENT') && (
-        <p>
-          <Link to="/parent/groups">Rechercher un groupe</Link>
-        </p>
-      )}
-      <pre className="debug-panel">{JSON.stringify(currentUser, null, 2)}</pre>
-    </div>
+
+      <p className="debug-toggle">
+        <button type="button" className="ghost-link" onClick={() => setShowDebug((v) => !v)}>
+          {showDebug ? 'Masquer' : 'Afficher'} les informations du compte
+        </button>
+      </p>
+      {showDebug && <pre className="debug-panel">{JSON.stringify(currentUser, null, 2)}</pre>}
+    </>
   );
 }

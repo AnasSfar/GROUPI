@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ApiError } from '../api/client';
 import * as referentialsApi from '../api/referentialsApi';
@@ -23,6 +22,15 @@ const STATUS_LABELS: Record<Group['status'], string> = {
   SUSPENDED: 'Suspendu',
   CLOSED: 'Clôturé',
   ARCHIVED: 'Archivé',
+};
+
+const STATUS_BADGE: Record<Group['status'], string> = {
+  DRAFT: 'badge-neutral',
+  ACTIVE: 'badge-success',
+  FULL: 'badge-warning',
+  SUSPENDED: 'badge-danger',
+  CLOSED: 'badge-neutral',
+  ARCHIVED: 'badge-neutral',
 };
 
 const DAY_LABELS: Record<DayOfWeek, string> = {
@@ -183,19 +191,17 @@ export function TeacherGroupsPage() {
   }
 
   if (loading) {
-    return (
-      <div className="dashboard-page">
-        <p>Chargement...</p>
-      </div>
-    );
+    return <p>Chargement...</p>;
   }
 
   return (
-    <div className="dashboard-page">
-      <header className="dashboard-header">
-        <h1>Mes groupes</h1>
-        <Link to="/dashboard">Retour au tableau de bord</Link>
-      </header>
+    <>
+      <div className="page-header">
+        <div>
+          <h1>Mes groupes</h1>
+          <p>Créez et gérez vos groupes, plannings et lieux d'enseignement.</p>
+        </div>
+      </div>
 
       {error && (
         <p className="form-error" role="alert">
@@ -203,10 +209,11 @@ export function TeacherGroupsPage() {
         </p>
       )}
 
-      <section>
+      <section className="card-section">
         <h2>Mes groupes ({groups.length})</h2>
         {groups.length === 0 && <p>Aucun groupe créé pour le moment.</p>}
         {groups.length > 0 && (
+          <div className="table-wrap">
           <table className="admin-table">
             <thead>
               <tr>
@@ -226,7 +233,11 @@ export function TeacherGroupsPage() {
                     {group.subject.name} — {group.schoolLevel.name}
                   </td>
                   <td>{group.academicYear.label}</td>
-                  <td>{STATUS_LABELS[group.status]}</td>
+                  <td>
+                    <span className={`badge ${STATUS_BADGE[group.status]}`}>
+                      {STATUS_LABELS[group.status]}
+                    </span>
+                  </td>
                   <td>
                     {group._count.enrollments} / {group.capacity}
                   </td>
@@ -265,10 +276,11 @@ export function TeacherGroupsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </section>
 
-      <section>
+      <section className="card-section">
         <h2>Mes lieux d'enseignement</h2>
         <ul className="tag-list">
           {locations.map((loc) => (
@@ -296,7 +308,7 @@ export function TeacherGroupsPage() {
         </form>
       </section>
 
-      <section>
+      <section className="card-section">
         <h2>Créer un groupe</h2>
         <form onSubmit={handleCreateGroup}>
           <label>
@@ -458,16 +470,14 @@ export function TeacherGroupsPage() {
             Ajouter ce créneau
           </button>
 
-          <div>
-            <button
-              type="submit"
-              disabled={!subjectId || !schoolLevelId || !academicYearId || schedules.length === 0}
-            >
-              Créer le groupe
-            </button>
-          </div>
+          <button
+            type="submit"
+            disabled={!subjectId || !schoolLevelId || !academicYearId || schedules.length === 0}
+          >
+            Créer le groupe
+          </button>
         </form>
       </section>
-    </div>
+    </>
   );
 }

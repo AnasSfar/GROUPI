@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ApiError } from '../api/client';
 import * as referentialsApi from '../api/referentialsApi';
@@ -95,19 +94,11 @@ export function TeacherProfilePage() {
   }
 
   if (loading) {
-    return (
-      <div className="dashboard-page">
-        <p>Chargement...</p>
-      </div>
-    );
+    return <p>Chargement...</p>;
   }
 
   if (!profile) {
-    return (
-      <div className="dashboard-page">
-        <p className="form-error">{error ?? 'Profil introuvable.'}</p>
-      </div>
-    );
+    return <p className="form-error">{error ?? 'Profil introuvable.'}</p>;
   }
 
   const availableSubjects = subjects.filter(
@@ -119,11 +110,13 @@ export function TeacherProfilePage() {
   const canValidate = profile.subjects.length > 0 && profile.schoolLevels.length > 0;
 
   return (
-    <div className="dashboard-page">
-      <header className="dashboard-header">
-        <h1>Mon profil professeur</h1>
-        <Link to="/dashboard">Retour au tableau de bord</Link>
-      </header>
+    <>
+      <div className="page-header">
+        <div>
+          <h1>Mon profil professeur</h1>
+          <p>Matières, niveaux et informations visibles par les Parents.</p>
+        </div>
+      </div>
 
       {error && (
         <p className="form-error" role="alert">
@@ -131,17 +124,19 @@ export function TeacherProfilePage() {
         </p>
       )}
 
-      <p>
-        Score de complétude : <strong>{profile.completenessScore}%</strong> — Statut :{' '}
-        <strong>{profile.status}</strong>
-      </p>
+      <div className="summary-row">
+        <span>
+          Score de complétude : <strong>{profile.completenessScore}%</strong>
+        </span>
+        <span className="badge badge-info">{profile.status}</span>
+      </div>
       {!canValidate && (
         <p className="form-notice" role="status">
           Il faut au moins une matière et un niveau scolaire pour que ton compte puisse être validé.
         </p>
       )}
 
-      <section>
+      <section className="card-section">
         <h2>Matières enseignées</h2>
         <ul className="tag-list">
           {profile.subjects.map(({ subject }) => (
@@ -172,7 +167,7 @@ export function TeacherProfilePage() {
         </div>
       </section>
 
-      <section>
+      <section className="card-section">
         <h2>Niveaux scolaires</h2>
         <ul className="tag-list">
           {profile.schoolLevels.map(({ schoolLevel }) => (
@@ -203,7 +198,7 @@ export function TeacherProfilePage() {
         </div>
       </section>
 
-      <section>
+      <section className="card-section">
         <h2>Informations complémentaires</h2>
         <label>
           Biographie
@@ -221,6 +216,6 @@ export function TeacherProfilePage() {
           Enregistrer
         </button>
       </section>
-    </div>
+    </>
   );
 }
