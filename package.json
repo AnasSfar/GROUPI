@@ -1,0 +1,14 @@
+{
+  "name": "groupi",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "dev:api": "npm run start:dev --workspace apps/api",
+    "db:migrate": "npm run prisma:migrate --workspace apps/api",
+    "db:studio": "npm run prisma:studio --workspace apps/api"
+  }
+}
