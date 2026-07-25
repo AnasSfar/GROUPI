@@ -4,6 +4,16 @@ cd /d "%~dp0"
 
 echo === GROUPI dev environment ===
 echo.
+
+rem Docker Desktop is often installed per-user and not on PATH by default.
+rem If `docker` isn't resolvable, add its known install location for this script's session.
+where docker >nul 2>nul
+if errorlevel 1 (
+    if exist "%LOCALAPPDATA%\Programs\DockerDesktop\resources\bin\docker.exe" (
+        set "PATH=%LOCALAPPDATA%\Programs\DockerDesktop\resources\bin;%PATH%"
+    )
+)
+
 echo Starting Postgres (Docker)...
 call npm run db:up
 if errorlevel 1 (
