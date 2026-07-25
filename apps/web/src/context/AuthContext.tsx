@@ -48,6 +48,8 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   register: (payload: RegisterPayload) => Promise<RegisterResponse>;
   logout: () => Promise<void>;
+  /** Reads straight from storage (not React state) — always the latest token, even right after a refresh. */
+  getAccessToken: () => string | null;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -121,9 +123,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const getAccessToken = useCallback(() => readTokens().accessToken, []);
+
   const value = useMemo(
-    () => ({ currentUser, status, login, register, logout }),
-    [currentUser, status, login, register, logout],
+    () => ({ currentUser, status, login, register, logout, getAccessToken }),
+    [currentUser, status, login, register, logout, getAccessToken],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

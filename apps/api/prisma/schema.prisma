@@ -160,8 +160,27 @@ model User {
   sessions               UserSession[]
   passwordResetTokens    PasswordResetToken[]
   loginHistory           LoginHistory[]
+  auditLogs              AuditLog[]
 
   @@map("user")
+}
+
+/// Journal d'audit — toutes les opérations importantes de GROUPI (Ch.8.10, Annexe P)
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  /// L'Admin/SuperAdmin auteur de l'action (pas la cible).
+  userId     String?  @map("user_id") @db.Uuid
+  user       User?    @relation(fields: [userId], references: [id])
+  action     String
+  targetType String   @map("target_type")
+  targetId   String   @map("target_id") @db.Uuid
+  oldValues  Json?    @map("old_values")
+  newValues  Json?    @map("new_values")
+  metadata   Json?
+  ipAddress  String?  @map("ip_address")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("audit_log")
 }
 
 /// Session persistée créée à chaque connexion (§9.6, RM-SEC-006/020/025) — porte le refresh token.

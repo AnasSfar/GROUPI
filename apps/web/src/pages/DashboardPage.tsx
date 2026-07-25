@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 /**
@@ -26,6 +26,11 @@ export function DashboardPage() {
       {currentUser?.status === 'PENDING_VALIDATION' && (
         <p className="form-notice" role="status">
           Ce compte est en attente de validation par un administrateur.
+        </p>
+      )}
+      {(currentUser?.roles.includes('SUPER_ADMIN') || currentUser?.roles.includes('ADMIN')) && (
+        <p>
+          <Link to="/admin/users">Gérer les comptes utilisateurs</Link>
         </p>
       )}
       <pre className="debug-panel">{JSON.stringify(currentUser, null, 2)}</pre>
