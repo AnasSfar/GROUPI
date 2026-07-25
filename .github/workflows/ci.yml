@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  DATABASE_URL: postgresql://groupi:groupi@localhost:5432/groupi?schema=public
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: groupi
+          POSTGRES_PASSWORD: groupi
+          POSTGRES_DB: groupi
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U groupi -d groupi"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate --schema apps/api/prisma/schema.prisma
+
+      - name: Apply migrations to the dev database (groupi)
+        run: npx prisma migrate deploy --schema apps/api/prisma/schema.prisma
+
+      - name: Create the e2e test database (groupi_test)
+        run: |
+          PGPASSWORD=groupi psql -h localhost -U groupi -d groupi -c "CREATE DATABASE groupi_test;"
+
+      - name: Apply migrations to the e2e test database (groupi_test)
+        env:
+          DATABASE_URL: postgresql://groupi:groupi@localhost:5432/groupi_test?schema=public
+        run: npx prisma migrate deploy --schema apps/api/prisma/schema.prisma
+
+      - name: Lint API
+        run: npm run lint --workspace apps/api
+
+      - name: Lint web
+        run: npm run lint --workspace apps/web
+
+      - name: Build API
+        run: npm run build --workspace apps/api
+
+      - name: Unit tests (API)
+        run: npm test --workspace apps/api
+
+      - name: E2E tests (API)
+        # apps/api/test/jest-e2e.setup.ts loads apps/api/.env.test itself, which points at
+        # postgresql://groupi:groupi@localhost:5432/groupi_test — matching the service
+        # container above. No extra env vars needed here.
+        run: npm run test:e2e --workspace apps/api
