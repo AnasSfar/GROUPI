@@ -11,12 +11,13 @@ _Dernière mise à jour : 2026-07-25_
 - **Ch.9 — Authentification/Sessions/Sécurité** : register/login/refresh/logout, JWT courte durée + refresh token opaque en rotation, verrouillage après échecs, mot de passe oublié.
 - **Ch.8 — Cycle de vie des comptes** : machine à états `PENDING_VALIDATION → ACTIVE ⇄ SUSPENDED → DISABLED`, révocation de session atomique, `AuditLog`, écran admin `/admin/users`, script `bootstrap:admin`.
 - **Ch.5 — Profil Professeur** : matières/niveaux, score de complétude, écran `/teacher/profile`. Débloque la validation admin des comptes Professeur.
+- **Ch.6 — Profil Parent & gestion des enfants** : `GET/PATCH /parent-profile/me`, CRUD `Student` (créer/lister/modifier/archiver/réactiver) sous `/parent-profile/me/students`, création automatique de la première situation scolaire à la création d'un enfant, écran `/parent/children`. Débloque la validation admin des comptes Parent en pratique (avant, rien ne permettait de déclarer un enfant).
+- **Ch.7 — Situation scolaire** : `StudentSchoolSituation.status` (ACTIVE/PENDING_VALIDATION/CLOSED/REJECTED). Évolution de routine (même établissement, progression standard vers une nouvelle année académique) → automatique et immédiate. Tout le reste (changement d'établissement, redoublement, réorientation, saut de niveau) → créé en attente, validé/refusé par un Admin (`/admin/school-situations`). Historique complet consultable par le Parent (`/parent/children/:id/situation`).
+- **Branding** : logo GROUPI extrait du référentiel, utilisé en favicon + sur les pages d'auth.
 - **CI, tests** : 26 tests unitaires + 12 e2e sur le module auth, GitHub Actions (lint/build/test/e2e sur Postgres réel).
 
 ### En cours (cette session)
-Trois chantiers lancés à la suite, dans cet ordre :
-1. **Ch.6 — Profil Parent & gestion des enfants** (Student CRUD, archivage)
-2. **Ch.7 — Situation scolaire** (StudentSchoolSituation, création initiale automatique, évolutions routine vs soumises à validation admin)
+Trois chantiers lancés à la suite. Ch.6 et Ch.7 sont faits (voir ci-dessus). Restant :
 3. **Ch.10 — Groupes** (MVP : création/planning/ouverture/fermeture par le Professeur, recherche publique par les Parents)
 
 Voir la todo list de la session en cours pour le détail à l'instant T — ce fichier est mis à jour à la fin de chaque chantier, pas en continu.
@@ -37,6 +38,7 @@ Voir la todo list de la session en cours pour le détail à l'instant T — ce f
 - Demande d'ajout d'établissement scolaire par un Parent (Ch.6.7) — le référentiel School existant (15 établissements seedés) suffit pour l'instant.
 - Auto-service : demande de désactivation de compte par son propre titulaire (Ch.6.12/8.8), anonymisation (Ch.8.8), archivage (Ch.8.9, Version 2).
 - Vérification cohérence âge/niveau scolaire (RM-SCH-019) — aucune table de correspondance âge↔niveau n'est définie dans le référentiel disponible, donc non implémentée plutôt qu'inventée.
+- Aucun endpoint pour créer une nouvelle `AcademicYear` (une seule est seedée : 2026-2027). Il en faudra un (admin) avant que le passage réel à l'année académique suivante soit testable en conditions normales — pour l'instant vérifié en insérant une ligne de test directement en base puis en la supprimant.
 - Ch.10 : génération automatique des séances (Ch.13), contrôle de capacité d'abonnement (ERR-GRP-013, dépend du domaine Commercial non construit), duplication de groupe, liste d'attente (Version 2), tarif de référence calculé automatiquement (Ch.10.7).
 
 ## Repères pratiques

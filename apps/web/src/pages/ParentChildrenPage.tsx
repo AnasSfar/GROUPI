@@ -193,6 +193,7 @@ export function ParentChildrenPage() {
                 <td>{student.currentSchoolSituation?.class ?? '—'}</td>
                 <td>{student.status}</td>
                 <td className="admin-actions">
+                  <Link to={`/parent/children/${student.id}/situation`}>Situation scolaire</Link>
                   {student.status === 'ACTIVE' ? (
                     <button type="button" className="ghost" onClick={() => handleArchive(student.id)}>
                       Archiver

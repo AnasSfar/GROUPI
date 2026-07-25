@@ -41,6 +41,15 @@ enum StudentStatus {
   ARCHIVED
 }
 
+/// Ch.7 §7.3/§7.4 : une situation devient ACTIVE (validée ou automatique), ou reste en
+/// attente si elle nécessite une validation admin (RM-SCH-012), ou CLOSED/REJECTED à l'issue.
+enum SituationStatus {
+  ACTIVE
+  PENDING_VALIDATION
+  CLOSED
+  REJECTED
+}
+
 // ---------------------------------------------------------------------------
 // Enums — Domaine Référentiels
 // ---------------------------------------------------------------------------
@@ -444,6 +453,8 @@ model StudentSchoolSituation {
   class          String?
   startDate      DateTime     @map("start_date") @db.Date
   endDate        DateTime?    @map("end_date") @db.Date
+  status         SituationStatus @default(ACTIVE)
+  rejectionReason String?     @map("rejection_reason")
 
   currentForStudent Student? @relation("CurrentSituation")
 

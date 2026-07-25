@@ -15,6 +15,8 @@ export interface StudentSituation {
   class: string | null;
   startDate: string;
   endDate: string | null;
+  status: 'ACTIVE' | 'PENDING_VALIDATION' | 'CLOSED' | 'REJECTED';
+  rejectionReason: string | null;
   academicYear: { id: string; label: string };
   schoolLevel: SchoolLevel;
   school: School;

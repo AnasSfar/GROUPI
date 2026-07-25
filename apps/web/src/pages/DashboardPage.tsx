@@ -33,6 +33,11 @@ export function DashboardPage() {
           <Link to="/admin/users">Gérer les comptes utilisateurs</Link>
         </p>
       )}
+      {(currentUser?.roles.includes('SUPER_ADMIN') || currentUser?.roles.includes('ADMIN')) && (
+        <p>
+          <Link to="/admin/school-situations">Situations scolaires en attente</Link>
+        </p>
+      )}
       {currentUser?.roles.includes('TEACHER') && (
         <p>
           <Link to="/teacher/profile">Compléter mon profil professeur</Link>

@@ -6,6 +6,7 @@ import { AdminModule } from './admin/admin.module';
 import { ReferentialsModule } from './referentials/referentials.module';
 import { TeacherProfileModule } from './teacher-profile/teacher-profile.module';
 import { ParentProfileModule } from './parent-profile/parent-profile.module';
+import { SchoolSituationModule } from './school-situation/school-situation.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { ParentProfileModule } from './parent-profile/parent-profile.module';
     ReferentialsModule,
     TeacherProfileModule,
     ParentProfileModule,
+    SchoolSituationModule,
   ],
 })
 export class AppModule {}
