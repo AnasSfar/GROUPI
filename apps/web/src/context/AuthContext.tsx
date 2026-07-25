@@ -7,9 +7,15 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { ApiError } from '../api/client';
+import {
+  ApiError,
+  SESSION_EXPIRED_EVENT,
+  clearStoredTokens as clearTokens,
+  getStoredTokens as readTokens,
+  storeTokens as writeTokens,
+} from '../api/client';
 import * as authApi from '../api/authApi';
-import type { CurrentUser, RegisterPayload, RegisterResponse, TokenPair } from '../api/authApi';
+import type { CurrentUser, RegisterPayload, RegisterResponse } from '../api/authApi';
 
 /**
  * SECURITY NOTE: tokens are kept in localStorage for simplicity, at this dev stage of the SPA.
@@ -18,27 +24,6 @@ import type { CurrentUser, RegisterPayload, RegisterResponse, TokenPair } from '
  * issued by the backend — that requires backend changes and is out of scope here, since
  * apps/api's /auth/refresh currently expects the refresh token in the request body.
  */
-const ACCESS_TOKEN_KEY = 'groupi.accessToken';
-const REFRESH_TOKEN_KEY = 'groupi.refreshToken';
-
-function readTokens() {
-  return {
-    accessToken: localStorage.getItem(ACCESS_TOKEN_KEY),
-    refreshToken: localStorage.getItem(REFRESH_TOKEN_KEY),
-  };
-}
-
-function writeTokens(tokens: TokenPair) {
-  // Refresh tokens rotate server-side on every /auth/refresh call — always persist the new pair,
-  // the old refresh token stops working immediately.
-  localStorage.setItem(ACCESS_TOKEN_KEY, tokens.accessToken);
-  localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refreshToken);
-}
-
-function clearTokens() {
-  localStorage.removeItem(ACCESS_TOKEN_KEY);
-  localStorage.removeItem(REFRESH_TOKEN_KEY);
-}
 
 type SessionStatus = 'loading' | 'authenticated' | 'unauthenticated';
 
@@ -95,6 +80,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     loadCurrentUser();
   }, [loadCurrentUser]);
+
+  useEffect(() => {
+    function handleSessionExpired() {
+      setCurrentUser(null);
+      setStatus('unauthenticated');
+    }
+    window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+  }, []);
 
   const login = useCallback(async (email: string, password: string) => {
     const tokens = await authApi.login(email, password);
