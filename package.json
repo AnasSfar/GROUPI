@@ -8,7 +8,13 @@
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "dev:api": "npm run start:dev --workspace apps/api",
+    "dev:web": "npm run dev --workspace apps/web",
     "db:migrate": "npm run prisma:migrate --workspace apps/api",
-    "db:studio": "npm run prisma:studio --workspace apps/api"
+    "db:studio": "npm run prisma:studio --workspace apps/api",
+    "db:seed": "npm run prisma:seed --workspace apps/api",
+    "test:api": "npm run test --workspace apps/api",
+    "test:api:e2e": "npm run test:e2e --workspace apps/api",
+    "lint:api": "npm run lint --workspace apps/api",
+    "lint:web": "npm run lint --workspace apps/web"
   }
 }
