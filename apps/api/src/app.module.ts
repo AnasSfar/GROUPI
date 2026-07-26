@@ -10,6 +10,7 @@ import { SchoolSituationModule } from './school-situation/school-situation.modul
 import { GroupsModule } from './groups/groups.module';
 import { EnrollmentsModule } from './enrollments/enrollments.module';
 import { SessionsModule } from './sessions/sessions.module';
+import { PreEnrollmentsModule } from './pre-enrollments/pre-enrollments.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { SessionsModule } from './sessions/sessions.module';
     GroupsModule,
     EnrollmentsModule,
     SessionsModule,
+    PreEnrollmentsModule,
   ],
 })
 export class AppModule {}

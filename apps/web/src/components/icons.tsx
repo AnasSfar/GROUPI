@@ -75,6 +75,26 @@ export function IconSearch(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function IconClipboardCheck(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <rect x="6" y="3" width="12" height="4" rx="1" />
+      <path d="M9 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3" />
+      <path d="m9 14 2 2 4-4" />
+    </Icon>
+  );
+}
+
+export function IconUserPlus(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <circle cx="9" cy="8" r="4" />
+      <path d="M2 21v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2" />
+      <path d="M19 8v6M22 11h-6" />
+    </Icon>
+  );
+}
+
 export function IconLogOut(props: SVGProps<SVGSVGElement>) {
   return (
     <Icon {...props}>

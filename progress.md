@@ -2,7 +2,7 @@
 
 > Ce fichier est mis à jour à chaque chantier terminé. Il sert de point d'entrée rapide pour savoir où on en est, sans avoir à relire tout l'historique de conversation. Le détail fonctionnel reste dans `docs/referentiel/` et `contexte.md`.
 
-_Dernière mise à jour : 2026-07-25_
+_Dernière mise à jour : 2026-07-26_
 
 ## Où on en est
 
@@ -16,19 +16,19 @@ _Dernière mise à jour : 2026-07-25_
 - **Ch.10 — Groupes (MVP)** : création par le Professeur (planning hebdomadaire, capacité, tarif, mode d'enseignement, facturation des absences, visibilité si complet), vérification `SubjectLevel` (ERR-GRP-001) et validation du profil (ERR-GRP-002), cycle de vie BROUILLON→OUVERT→CLÔTURÉ→ARCHIVÉ, suppression uniquement si BROUILLON sans inscription (ERR-GRP-020), lieux d'enseignement (`TeachingLocation`) CRUD minimal. Recherche publique par les Parents (`/groups/search`, `/parent/groups`) avec champs publics uniquement. Écran `/teacher/groups`.
 - **Correctif frontend** : `apiRequest` (client.ts) rafraîchit désormais automatiquement le token d'accès (15 min de durée de vie) et rejoue la requête une fois en cas de 401, au lieu de ne le faire qu'au chargement initial de la page (`/auth/me`). Sans ça, toute action après 15 min d'inactivité sur un onglet ouvert échouait silencieusement en 401 (repéré via un vrai bug rapporté par l'utilisateur en essayant de créer un groupe). Si le refresh échoue aussi (session vraiment expirée), un événement `groupi:session-expired` fait passer `AuthContext` en `unauthenticated` et `ProtectedRoute` redirige vers `/login`.
 - **Design system frontend** : refonte complète de `index.css` avec une palette extraite du logo (bleu marine `#0e3a5c` + gris ardoise `#6b7880`, variantes clair/sombre), nav persistante (`AppLayout.tsx`, logo + email + déconnexion sur toutes les pages authentifiées), tableau de bord en grille de cartes cliquables avec icônes SVG maison (`components/icons.tsx`), badges de statut colorés (succès/attente/danger/neutre) sur tous les tableaux, boutons/formulaires/tableaux uniformisés (`.card-section`, `.table-wrap`, `.badge`, boutons primaire/danger/ghost cohérents). Toutes les pages internes utilisent désormais le même vocabulaire visuel au lieu de styles ad hoc par page.
-- **CI, tests** : 26 tests unitaires + 12 e2e sur le module auth, GitHub Actions (lint/build/test/e2e sur Postgres réel).
-
-### En cours (cette session)
-Les trois chantiers prévus (Ch.6, Ch.7, Ch.10) sont terminés et commités (voir ci-dessus).
+- **Ch.12 — Inscriptions** : demande d'inscription d'un Parent à un Groupe (`POST /enrollments`), vérifications automatiques complètes (ERR-INS-001 à 028 : groupe ouvert/capacité, professeur/parent actifs, année académique, doublon, cohérence avec la situation scolaire active), décision du Professeur (accepter/refuser/tarif personnalisé), cycle de vie complet `PENDING_VALIDATION ⇄ ACTIVE/SUSPENDED → ARCHIVED` + `CANCELLED`/`EXPIRED` (expiration à J+7 vérifiée paresseusement à la lecture, pas de cron), synchronisation automatique du statut `Group.FULL ⇄ ACTIVE` selon la capacité. Écrans `/parent/enrollments`, `/teacher/enrollments`, bouton "Demander une inscription" sur `/parent/groups`.
+- **Ch.13 — Séances** : génération automatique des séances à partir du planning hebdomadaire du groupe (`POST /groups/:id/sessions/generate`, idempotente), séance exceptionnelle, report (l'ancienne passe `POSTPONED`, une nouvelle `PLANNED` est créée), annulation, suppression si `PLANNED` uniquement. Écran `/teacher/groups/:id/sessions` (lien "Séances" depuis chaque ligne de `/teacher/groups`).
+- **Ch.11 — Préinscriptions** : manifestation d'intérêt d'un Parent pour une année académique future (`POST /pre-enrollments`), proposition du Professeur liée à un groupe compatible (même année/niveau/matière) avec date limite de réponse, confirmation du Parent → transformation automatique en `Enrollment` (`PENDING_VALIDATION`) avec revérification de la capacité à cet instant (couvre la priorité "premier arrivé, premier servi" sans file d'attente formelle), expiration paresseuse. Écrans `/parent/pre-enrollments`, `/teacher/pre-enrollments`.
+- **Design system frontend** *(suite)* : deux icônes ajoutées (`IconClipboardCheck`, `IconUserPlus`), cartes tableau de bord pour les 4 nouveaux écrans.
+- **CI, tests** : 26 tests unitaires + **53 tests e2e** (12 auth + 17 enrollments + 11 sessions + 13 pre-enrollments) sur Postgres réel (`groupi_test`), GitHub Actions (lint/build/test/e2e).
 
 ## Prochaines étapes
 
-- **Ch.12 — Inscriptions** : demande d'inscription d'un Parent à un Groupe, validation par le Professeur (dépend de Ch.6/Ch.7/Ch.10, prochain chantier naturel).
-- **Ch.11 — Préinscriptions** : manifestations d'intérêt pour l'année académique suivante.
-- **Ch.13 — Séances** : génération automatique des séances à partir du planning hebdomadaire du groupe.
-- **Ch.14 — Présences**.
-- Domaine **Comptable/Commercial** (Ch.15-23) : abonnements Professeur, suivi des paiements — non commencé.
+- **Ch.14 — Présences** : saisie des présences par séance, écritures comptables générées selon les règles de facturation du groupe (dépend de Ch.12 Enrollments + Ch.13 Sessions, tous deux prêts — prochain chantier naturel). C'est aussi ce chapitre qui devra porter la transition `Session.PLANNED → COMPLETED → LOCKED` (le calcul de la fenêtre de verrouillage à 48h existe déjà, `computeLockDeadline`/`isLockable` dans `sessions.service.ts`, mais rien ne déclenche `COMPLETED` pour l'instant).
+- Domaine **Comptable/Commercial** (Ch.15-23) : abonnements Professeur, suivi des paiements — non commencé. Plusieurs vérifications déjà codées en dépendent et sont explicitement contournées (voir "Hors scope" ci-dessous) : capacité d'abonnement (ERR-GRP-013/ERR-INS-008/ERR-PRE-010), compte de suivi comptable, comportement de paiement du Parent (Ch.12.7).
 - Domaine **Communication** : notifications réelles (email/push) — actuellement `EmailService` est un stub qui ne fait que logguer.
+- **Changement de groupe** (Ch.12.12) — dépendait de Ch.13 (Séances), maintenant construit ; reste à faire.
+- Aucun endpoint pour créer une nouvelle `AcademicYear` — toujours vrai, et maintenant plus pressant : Ch.11 (préinscriptions pour l'année suivante) ne peut pas être testé de bout en bout en conditions réelles tant qu'une deuxième année académique n'existe pas.
 
 ## Hors scope, explicitement différé (pas oublié, juste pas fait)
 
@@ -38,7 +38,8 @@ Les trois chantiers prévus (Ch.6, Ch.7, Ch.10) sont terminés et commités (voi
 - Auto-service : demande de désactivation de compte par son propre titulaire (Ch.6.12/8.8), anonymisation (Ch.8.8), archivage (Ch.8.9, Version 2).
 - Vérification cohérence âge/niveau scolaire (RM-SCH-019) — aucune table de correspondance âge↔niveau n'est définie dans le référentiel disponible, donc non implémentée plutôt qu'inventée.
 - Aucun endpoint pour créer une nouvelle `AcademicYear` (une seule est seedée : 2026-2027). Il en faudra un (admin) avant que le passage réel à l'année académique suivante soit testable en conditions normales — pour l'instant vérifié en insérant une ligne de test directement en base puis en la supprimant.
-- Ch.10 : génération automatique des séances (Ch.13), contrôle de capacité d'abonnement (ERR-GRP-013, dépend du domaine Commercial non construit), duplication de groupe, liste d'attente (Version 2), tarif de référence calculé automatiquement (Ch.10.7), détection de conflit de planning (ERR-GRP-014), passage automatique en COMPLET (dépend des inscriptions, non construites). Simplification volontaire : matière/niveau/année académique sont verrouillés dès la création du groupe (pas seulement après la 1ère inscription comme le prévoit littéralement le §10.11) — écarte l'ambiguïté tant que les inscriptions n'existent pas.
+- Ch.10 : duplication de groupe, liste d'attente (Version 2), tarif de référence calculé automatiquement (Ch.10.7), détection de conflit de planning (ERR-GRP-014). Simplification volontaire : matière/niveau/année académique sont verrouillés dès la création du groupe (pas seulement après la 1ère inscription comme le prévoit littéralement le §10.11) — écarte l'ambiguïté tant que les inscriptions n'existent pas.
+- Ch.11/12/13 (Préinscriptions/Inscriptions/Séances) : capacité d'abonnement du Professeur, compte de suivi comptable, comportement de paiement du Parent (tous trois dépendent des domaines Comptable/Commercial non construits) ; changement de groupe (Ch.12.12) ; file d'attente formelle de priorité chronologique pour les préinscriptions (RM-PRE-014, couverte de fait par la revérification de capacité à la confirmation) ; ouverture/fermeture explicite des préinscriptions par le Professeur par année (ERR-PRE-003/006, seule la contrainte "année future" est vérifiée) ; périodes d'interruption formelles pour la génération de séances (vacances/congés, Ch.13.4) ; modification exceptionnelle présentiel↔ligne avec confirmation du Parent (Ch.13.6, dépend de Ch.14) ; notifications réelles pour les trois chapitres (`EmailService` stub).
 
 ## Repères pratiques
 

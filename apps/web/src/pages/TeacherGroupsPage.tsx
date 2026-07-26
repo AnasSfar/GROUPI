@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ApiError } from '../api/client';
 import * as referentialsApi from '../api/referentialsApi';
@@ -242,6 +243,7 @@ export function TeacherGroupsPage() {
                     {group._count.enrollments} / {group.capacity}
                   </td>
                   <td className="admin-actions">
+                    <Link to={`/teacher/groups/${group.id}/sessions`}>Séances</Link>
                     {group.status === 'DRAFT' && (
                       <>
                         <button

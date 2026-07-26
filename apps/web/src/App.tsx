@@ -14,6 +14,11 @@ import { StudentSituationPage } from './pages/StudentSituationPage';
 import { AdminSchoolSituationsPage } from './pages/AdminSchoolSituationsPage';
 import { TeacherGroupsPage } from './pages/TeacherGroupsPage';
 import { ParentGroupSearchPage } from './pages/ParentGroupSearchPage';
+import { TeacherSessionsPage } from './pages/TeacherSessionsPage';
+import { ParentEnrollmentsPage } from './pages/ParentEnrollmentsPage';
+import { TeacherEnrollmentsPage } from './pages/TeacherEnrollmentsPage';
+import { ParentPreEnrollmentsPage } from './pages/ParentPreEnrollmentsPage';
+import { TeacherPreEnrollmentsPage } from './pages/TeacherPreEnrollmentsPage';
 
 function App() {
   return (
@@ -86,6 +91,46 @@ function App() {
               element={
                 <ProtectedRoute roles={['PARENT']}>
                   <ParentGroupSearchPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/teacher/groups/:groupId/sessions"
+              element={
+                <ProtectedRoute roles={['TEACHER']}>
+                  <TeacherSessionsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/parent/enrollments"
+              element={
+                <ProtectedRoute roles={['PARENT']}>
+                  <ParentEnrollmentsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/teacher/enrollments"
+              element={
+                <ProtectedRoute roles={['TEACHER']}>
+                  <TeacherEnrollmentsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/parent/pre-enrollments"
+              element={
+                <ProtectedRoute roles={['PARENT']}>
+                  <ParentPreEnrollmentsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/teacher/pre-enrollments"
+              element={
+                <ProtectedRoute roles={['TEACHER']}>
+                  <TeacherPreEnrollmentsPage />
                 </ProtectedRoute>
               }
             />

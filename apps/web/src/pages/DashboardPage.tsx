@@ -8,6 +8,8 @@ import {
   IconCalendarCheck,
   IconLayers,
   IconSearch,
+  IconClipboardCheck,
+  IconUserPlus,
 } from '../components/icons';
 
 interface DashCard {
@@ -56,6 +58,18 @@ export function DashboardPage() {
             title: 'Mes groupes',
             description: 'Créer et gérer vos groupes, plannings et lieux d’enseignement.',
           },
+          {
+            to: '/teacher/enrollments',
+            icon: <IconClipboardCheck />,
+            title: "Demandes d'inscription",
+            description: 'Accepter, refuser et gérer les inscriptions de vos groupes.',
+          },
+          {
+            to: '/teacher/pre-enrollments',
+            icon: <IconUserPlus />,
+            title: 'Préinscriptions',
+            description: "Consulter les manifestations d'intérêt et proposer un groupe.",
+          },
         ]
       : []),
     ...(isParent
@@ -71,6 +85,18 @@ export function DashboardPage() {
             icon: <IconSearch />,
             title: 'Rechercher un groupe',
             description: 'Trouver un groupe par matière, niveau ou ville.',
+          },
+          {
+            to: '/parent/enrollments',
+            icon: <IconClipboardCheck />,
+            title: "Mes demandes d'inscription",
+            description: "Suivre l'état de vos demandes d'inscription en cours.",
+          },
+          {
+            to: '/parent/pre-enrollments',
+            icon: <IconUserPlus />,
+            title: 'Mes préinscriptions',
+            description: 'Manifester votre intérêt pour la prochaine année académique.',
           },
         ]
       : []),
