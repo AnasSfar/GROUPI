@@ -122,6 +122,11 @@ enum PreEnrollmentStatus {
   REJECTED
   TRANSFORMED
   EXPIRED
+  /// Ch.11.14/PRE-STAT-007 : annulée par le Parent avant toute proposition (RM-PRE-020).
+  CANCELLED
+  /// Ch.11.14/PRE-STAT-006 : clôturée sans transformation (RM-PRE-028) — hors scope MVP (pas de
+  /// job planifié ici), la valeur existe pour compléter fidèlement le cycle de vie du référentiel.
+  CLOSED
 }
 
 enum AttendanceStatus {
@@ -492,6 +497,8 @@ model Group {
   schedules   GroupSchedule[]
   sessions    Session[]
   enrollments Enrollment[]
+  /// Ch.11.7/11.8 : préinscriptions auxquelles ce groupe a été proposé.
+  proposedToPreEnrollments PreEnrollment[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -590,6 +597,10 @@ model PreEnrollment {
   academicYear   AcademicYear        @relation(fields: [academicYearId], references: [id])
   status         PreEnrollmentStatus
   expiresAt      DateTime?           @map("expires_at")
+  /// Ch.11.7/11.8 : groupe auquel une proposition a été envoyée (RM-PRE-021/022) — permet de
+  /// revérifier la capacité de CE groupe précis au moment de la confirmation par le Parent.
+  proposedGroupId String?            @map("proposed_group_id") @db.Uuid
+  proposedGroup   Group?             @relation(fields: [proposedGroupId], references: [id])
 
   createdAt DateTime @default(now()) @map("created_at")
 
