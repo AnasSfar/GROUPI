@@ -109,6 +109,10 @@ enum EnrollmentStatus {
   SUSPENDED
   REJECTED
   ARCHIVED
+  /// Ch.12.11 : demande annulée par le Parent avant toute décision du Professeur (RM-INS-038/040).
+  CANCELLED
+  /// Ch.12.11 : demande sans décision du Professeur au-delà du délai de 7 jours (RM-INS-026/058).
+  EXPIRED
 }
 
 enum PreEnrollmentStatus {
