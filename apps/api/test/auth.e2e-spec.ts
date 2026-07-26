@@ -38,8 +38,14 @@ describe('Auth (e2e)', () => {
   afterAll(async () => {
     // Clean up everything created under the emails used in this file so the suite can be
     // re-run indefinitely without accumulating rows or hitting unique-email conflicts.
+    // Scoped to this file's own prefixes (not the broader 'e2e-') — other e2e suites
+    // (enrollments: 'e2e-ins-', sessions: 'e2e-ses-', ...) also start with 'e2e-' and manage
+    // their own cleanup; a broad 'e2e-' match here could try to delete their still-referenced
+    // rows (e.g. a TeacherProfile with an active Group) and fail on a foreign key constraint.
     const users = await prisma.user.findMany({
-      where: { email: { startsWith: 'e2e-' } },
+      where: {
+        OR: [{ email: { startsWith: 'e2e-teacher-' } }, { email: { startsWith: 'e2e-lockout-' } }],
+      },
       select: { id: true },
     });
     const userIds = users.map((u) => u.id);
