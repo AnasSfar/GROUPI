@@ -849,3 +849,13 @@ button {
   background: var(--bg);
   color: var(--text-h);
 }
+
+/* --- Ch.11 Préinscriptions --- */
+
+.proposal-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  color: var(--text-muted, var(--text-h));
+}
