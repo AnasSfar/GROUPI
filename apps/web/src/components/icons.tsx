@@ -142,3 +142,25 @@ export function IconWallet(props: SVGProps<SVGSVGElement>) {
     </Icon>
   );
 }
+
+export function IconAlertTriangle(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
+    </Icon>
+  );
+}
+
+export function IconGauge(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M12 20a8 8 0 1 0-8-8" />
+      <path d="M12 12 8.5 8.5" />
+      <path d="M2 12h2" />
+      <path d="M12 2v2" />
+      <path d="M22 12h-2" />
+    </Icon>
+  );
+}
