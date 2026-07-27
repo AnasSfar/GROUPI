@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { ApiError } from '../api/client';
 import * as groupsApi from '../api/groupsApi';
 import * as attendanceApi from '../api/attendanceApi';
+import * as absenceNoticeApi from '../api/absenceNoticeApi';
 import type { Group } from '../api/groupsApi';
 import type {
   AbandonmentAlert,
@@ -11,6 +12,7 @@ import type {
   AttendanceStatus,
   SessionAttendanceView,
 } from '../api/attendanceApi';
+import type { AbsenceNoticeWithStudent } from '../api/absenceNoticeApi';
 
 const STATUS_OPTIONS: { value: AttendanceStatus; label: string }[] = [
   { value: 'PRESENT', label: 'Présent' },
@@ -128,6 +130,7 @@ export function TeacherAttendancePage() {
   const [view, setView] = useState<SessionAttendanceView | null>(null);
   const [group, setGroup] = useState<Group | null>(null);
   const [alerts, setAlerts] = useState<AbandonmentAlert[]>([]);
+  const [absenceNotices, setAbsenceNotices] = useState<AbsenceNoticeWithStudent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -140,12 +143,14 @@ export function TeacherAttendancePage() {
     try {
       const attendance = await attendanceApi.getSessionAttendance(token, sessionId);
       setView(attendance);
-      const [groups, abandonAlerts] = await Promise.all([
+      const [groups, abandonAlerts, notices] = await Promise.all([
         groupsApi.listMine(token),
         attendanceApi.getAbandonmentAlerts(token, attendance.session.groupId),
+        absenceNoticeApi.listAbsenceNotices(token, sessionId),
       ]);
       setGroup(groups.find((g) => g.id === attendance.session.groupId) ?? null);
       setAlerts(abandonAlerts);
+      setAbsenceNotices(notices);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Impossible de charger les présences.');
     } finally {
@@ -251,6 +256,21 @@ export function TeacherAttendancePage() {
               <li key={a.enrollmentId}>
                 {a.student.firstName} {a.student.lastName} — {a.consecutiveUnexcusedAbsences} absences non
                 excusées consécutives
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {absenceNotices.length > 0 && (
+        <div className="alert-banner">
+          <h3>Absences signalées par les Parents (Ch.16.4)</h3>
+          <ul>
+            {absenceNotices.map((n) => (
+              <li key={n.id}>
+                {n.student.firstName} {n.student.lastName}
+                {n.reason ? ` — ${n.reason}` : ''}
+                {n.comment ? ` (${n.comment})` : ''} — signalement informatif, ne modifie pas la présence
               </li>
             ))}
           </ul>

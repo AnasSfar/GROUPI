@@ -1107,6 +1107,50 @@ export class AccountingService {
     };
   }
 
+  /**
+   * Ch.16.3 "Paiements" : comptes en solde négatif (Parents en retard de paiement), triés du plus
+   * débiteur au moins débiteur. Réutilise `computeBalance`/`ACCOUNT_INCLUDE` plutôt que de
+   * recalculer un solde — voir la remarque du chantier Ch.16 dans progress.md.
+   */
+  async listDebtorAccounts(teacherId: string, limit = 20) {
+    const accounts = await this.prisma.accountingAccount.findMany({
+      where: { enrollment: { group: { teacherId } } },
+      include: ACCOUNT_INCLUDE,
+    });
+    const withBalance = await Promise.all(
+      accounts.map(async (a) => {
+        const balance = await this.computeBalance(a.id);
+        const rate = Number(a.enrollment.customPrice ?? a.enrollment.group.publicPrice);
+        // RM-CPT-022 : même seuil que l'alerte de compte débiteur du Ch.15.
+        const threshold = rate * a.enrollment.group.debtAlertThresholdSessions;
+        return { account: this.toAccountView(a), balance, alert: balance < 0 && -balance > threshold };
+      }),
+    );
+    return withBalance
+      .filter((a) => a.balance < 0)
+      .sort((a, b) => a.balance - b.balance)
+      .slice(0, limit);
+  }
+
+  /** Ch.16.3 "Paiements" : derniers paiements enregistrés (écritures PAYMENT créditrices). */
+  async listRecentPayments(teacherId: string, limit = 10) {
+    const entries = await this.prisma.accountingEntry.findMany({
+      where: {
+        type: 'PAYMENT',
+        direction: 'CREDIT',
+        status: { not: 'CREATED' },
+        account: { enrollment: { group: { teacherId } } },
+      },
+      include: { account: { include: ACCOUNT_INCLUDE } },
+      orderBy: [{ effectiveDate: 'desc' }, { createdAt: 'desc' }],
+      take: limit,
+    });
+    return entries.map((e) => ({
+      ...this.toEntryView(e),
+      account: this.toAccountView(e.account),
+    }));
+  }
+
   // --- Vue Parent (Ch.15.11) ---------------------------------------------------------------------
 
   /** Résumé par enfant : groupes suivis, professeur, matière, tarif, solde actuel. */

@@ -183,4 +183,22 @@ export class EmailService implements OnModuleDestroy {
         `${newDate.toLocaleDateString('fr-FR')} à ${newStartTime}.`,
     );
   }
+
+  /** Ch.16.4/RM-DSH-006/EVT-DSH-007 : notification immédiate au Professeur — jamais de code NOT-DSH
+   *  dédié dans le référentiel, notification purement informative (ne modifie jamais Attendance). */
+  async sendAbsenceNoticeReported(
+    to: string,
+    studentName: string,
+    groupName: string,
+    date: Date,
+    startTime: string,
+  ): Promise<void> {
+    await this.send(
+      to,
+      'GROUPI — Absence signalée par un Parent',
+      `Le Parent de ${studentName} a signalé une absence prévisible à la séance du groupe "${groupName}" ` +
+        `le ${date.toLocaleDateString('fr-FR')} à ${startTime}. Ce signalement est informatif : la présence ` +
+        `définitive reste à votre charge lors de la séance.`,
+    );
+  }
 }

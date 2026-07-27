@@ -390,6 +390,8 @@ model ParentProfile {
   preEnrollments         PreEnrollment[]
   /// Ch.19.4 : première lecture de chaque annonce de groupe (RM-COM-011).
   groupAnnouncementReads GroupAnnouncementRead[]
+  /// Ch.16.4 : signalements d'absence prévisible faits par ce Parent.
+  absenceNotices         AbsenceNotice[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -564,6 +566,7 @@ model Student {
   enrollments      Enrollment[]
   preEnrollments   PreEnrollment[]
   attendances      Attendance[]
+  absenceNotices   AbsenceNotice[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -685,6 +688,8 @@ model Session {
   attendances       Attendance[]
   /// Ch.15.9 : écritures SESSION (facturation) et ADJUSTMENT (correction de présence) référençant cette séance.
   accountingEntries AccountingEntry[]
+  /// Ch.16.4 : signalements d'absence prévisible reçus pour cette séance.
+  absenceNotices    AbsenceNotice[]
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -716,6 +721,8 @@ model Enrollment {
   comments                EnrollmentComment[]
   /// Ch.15.3/RM-CPT-001/002 : créé automatiquement à l'activation de l'inscription (ACTIVE).
   accountingAccount       AccountingAccount?
+  /// Ch.16.4 : signalements d'absence prévisible faits par le Parent pour cette inscription.
+  absenceNotices          AbsenceNotice[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -930,6 +937,33 @@ model GroupAnnouncementRead {
 
   @@id([announcementId, parentId])
   @@map("group_announcement_read")
+}
+
+/// Ch.16.4/RM-DSH-006 : signalement par le Parent de l'absence prévisible de son enfant, avant le
+/// début d'une séance. Purement informatif — ne modifie JAMAIS `Attendance` (RM-DSH-006 : "le
+/// Professeur reste seul responsable de la validation définitive lors de la séance"). Le
+/// référentiel renvoie à un "délai de signalement d'une absence excusée" paramétrable par groupe
+/// qui n'existe dans aucun champ de `Group` — simplification assumée (voir progress.md) : le
+/// signalement doit simplement précéder le début théorique de la séance (date + heure de début),
+/// sinon ERR-DSH-007. Un seul signalement par (séance, élève) : un nouveau signalement avant le
+/// début de la séance corrige le précédent plutôt que d'en empiler un nouveau.
+model AbsenceNotice {
+  id           String        @id @default(uuid()) @db.Uuid
+  sessionId    String        @map("session_id") @db.Uuid
+  session      Session       @relation(fields: [sessionId], references: [id])
+  studentId    String        @map("student_id") @db.Uuid
+  student      Student       @relation(fields: [studentId], references: [id])
+  enrollmentId String        @map("enrollment_id") @db.Uuid
+  enrollment   Enrollment    @relation(fields: [enrollmentId], references: [id])
+  parentId     String        @map("parent_id") @db.Uuid
+  parent       ParentProfile @relation(fields: [parentId], references: [id])
+  reason       String?
+  comment      String?
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  @@unique([sessionId, studentId])
+  @@map("absence_notice")
 }
 
 // ---------------------------------------------------------------------------

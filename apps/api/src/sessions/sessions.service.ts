@@ -63,6 +63,17 @@ function theoreticalEnd(session: Pick<LockableSession, 'date' | 'startTime' | 'd
 }
 
 /**
+ * Début théorique d'une séance (date + heure de début) — Ch.16.4/RM-DSH-006 : la borne du délai de
+ * signalement d'absence par le Parent (voir `AbsenceNoticeService`, aucun champ dédié dans `Group`).
+ */
+export function theoreticalStart(session: Pick<LockableSession, 'date' | 'startTime'>): Date {
+  const [hours, minutes] = session.startTime.split(':').map(Number);
+  const start = new Date(session.date);
+  start.setUTCHours(hours, minutes, 0, 0);
+  return start;
+}
+
+/**
  * Ch.13.7/13.9 : une séance TERMINEE devient définitivement VERROUILLEE 48h après sa fin
  * théorique (ou à `lockedAt` si celui-ci a déjà été posé explicitement). Aucune transition
  * automatique PLANIFIEE -> TERMINEE -> VERROUILLEE n'est câblée dans ce chantier : la marque
