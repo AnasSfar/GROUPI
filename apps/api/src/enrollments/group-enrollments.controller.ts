@@ -9,10 +9,11 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
+import { SubscriptionGuard } from '../subscriptions/subscription.guard';
 
 /** Ch.12 : vue Professeur — décision, tarification et cycle de vie des inscriptions d'un groupe qu'il possède. */
 @Controller('groups/:groupId/enrollments')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, SubscriptionGuard)
 @Roles(Role.TEACHER)
 export class GroupEnrollmentsController {
   constructor(private readonly service: EnrollmentsService) {}

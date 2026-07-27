@@ -10,6 +10,8 @@ import {
   IconSearch,
   IconClipboardCheck,
   IconUserPlus,
+  IconCreditCard,
+  IconWallet,
 } from '../components/icons';
 
 interface DashCard {
@@ -42,6 +44,18 @@ export function DashboardPage() {
             title: 'Situations scolaires',
             description: "Valider les changements d'établissement, redoublements et réorientations.",
           },
+          {
+            to: '/admin/academic-years',
+            icon: <IconCalendarCheck />,
+            title: 'Années académiques',
+            description: 'Consulter et créer les années académiques (référentiel partagé).',
+          },
+          {
+            to: '/admin/subscriptions',
+            icon: <IconCreditCard />,
+            title: 'Abonnements Professeur',
+            description: 'Valider les paiements, suspendre ou réactiver un abonnement.',
+          },
         ]
       : []),
     ...(isTeacher
@@ -69,6 +83,18 @@ export function DashboardPage() {
             icon: <IconUserPlus />,
             title: 'Préinscriptions',
             description: "Consulter les manifestations d'intérêt et proposer un groupe.",
+          },
+          {
+            to: '/teacher/subscription',
+            icon: <IconCreditCard />,
+            title: 'Mon abonnement',
+            description: 'Offres GROUPI, souscription et historique de vos abonnements.',
+          },
+          {
+            to: '/teacher/accounting',
+            icon: <IconWallet />,
+            title: 'Comptabilité',
+            description: 'Chiffre d’affaires, comptes débiteurs/créditeurs et indicateurs financiers.',
           },
         ]
       : []),

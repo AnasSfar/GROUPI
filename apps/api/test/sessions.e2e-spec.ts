@@ -7,6 +7,7 @@ import { AuthModule } from '../src/auth/auth.module';
 import { GroupsModule } from '../src/groups/groups.module';
 import { SessionsModule } from '../src/sessions/sessions.module';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { grantActiveSubscription } from './helpers/grant-subscription';
 
 /**
  * E2E tests for the sessions module (Ch.13 — Les Séances), run against the real Postgres
@@ -88,6 +89,8 @@ describe('Sessions (e2e)', () => {
       where: { id: registerRes.body.id },
       data: { status: 'VALIDATED' },
     });
+    // Ch.22 : SubscriptionGuard exige un abonnement exploitable pour créer/modifier.
+    await grantActiveSubscription(prisma, registerRes.body.id, academicYearId);
 
     const loginRes = await api().post('/api/v1/auth/login').send({ email, password }).expect(200);
     return loginRes.body.accessToken as string;
@@ -142,6 +145,15 @@ describe('Sessions (e2e)', () => {
   });
 
   afterAll(async () => {
+    const users = await prisma.user.findMany({
+      where: { email: { startsWith: 'e2e-ses-' } },
+      select: { id: true },
+    });
+    const userIds = users.map((u) => u.id);
+    // Ch.22 : FK RESTRICT sur subscription.{teacher_id,academic_year_id} — doit précéder la
+    // suppression de l'année académique et du professeur ci-dessous.
+    await prisma.subscription.deleteMany({ where: { teacherId: { in: userIds } } });
+
     const groups = await prisma.group.findMany({
       where: { name: { startsWith: `E2E-SES-${runId}` } },
       select: { id: true },
@@ -158,11 +170,6 @@ describe('Sessions (e2e)', () => {
     await prisma.schoolLevel.deleteMany({ where: { id: schoolLevelId } });
     await prisma.academicYear.deleteMany({ where: { id: academicYearId } });
 
-    const users = await prisma.user.findMany({
-      where: { email: { startsWith: 'e2e-ses-' } },
-      select: { id: true },
-    });
-    const userIds = users.map((u) => u.id);
     if (userIds.length > 0) {
       await prisma.loginHistory.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.userSession.deleteMany({ where: { userId: { in: userIds } } });

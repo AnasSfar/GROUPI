@@ -21,8 +21,13 @@ export interface City {
 export interface School {
   id: string;
   name: string;
+  nameAr: string | null;
   type: string;
   cityId: string;
+  city: City;
+  officialCode: string | null;
+  latitude: string | null;
+  longitude: string | null;
 }
 
 export interface AcademicYear {
@@ -52,3 +57,18 @@ export function listSchools(accessToken: string): Promise<School[]> {
 export function listAcademicYears(accessToken: string): Promise<AcademicYear[]> {
   return apiRequest<AcademicYear[]>('/referentials/academic-years', { accessToken });
 }
+
+export interface CreateAcademicYearPayload {
+  label: string;
+  startDate: string;
+  endDate: string;
+}
+
+/** PERM-REF-001 — réservé Super Admin / Admin délégué. */
+export function createAcademicYear(
+  accessToken: string,
+  payload: CreateAcademicYearPayload,
+): Promise<AcademicYear> {
+  return apiRequest<AcademicYear>('/referentials/academic-years', { method: 'POST', accessToken, body: payload });
+}
+

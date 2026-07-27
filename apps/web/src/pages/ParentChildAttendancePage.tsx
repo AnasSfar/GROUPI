@@ -1,0 +1,139 @@
+import { useCallback, useEffect, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { ApiError } from '../api/client';
+import * as attendanceApi from '../api/attendanceApi';
+import { AttendanceMeter } from '../components/AttendanceMeter';
+import type { ParentAttendanceView } from '../api/attendanceApi';
+
+const STATUS_BADGE: Record<string, string> = {
+  PRESENT: 'badge-success',
+  LATE: 'badge-info',
+  EXCUSED_ABSENT: 'badge-warning',
+  UNEXCUSED_ABSENT: 'badge-danger',
+};
+
+/** Ch.14.2 : le Parent consulte l'historique de présence de son enfant, tous groupes confondus. */
+export function ParentChildAttendancePage() {
+  const { studentId } = useParams<{ studentId: string }>();
+  const { getAccessToken } = useAuth();
+  const [view, setView] = useState<ParentAttendanceView | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const token = getAccessToken();
+    if (!token || !studentId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await attendanceApi.getChildAttendance(token, studentId);
+      setView(data);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Impossible de charger les présences de l'enfant.");
+    } finally {
+      setLoading(false);
+    }
+  }, [getAccessToken, studentId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (loading) {
+    return <p>Chargement...</p>;
+  }
+
+  if (!view) {
+    return <p className="form-error">{error ?? 'Élève introuvable.'}</p>;
+  }
+
+  const { summary, entries } = view;
+
+  return (
+    <>
+      <div className="page-header">
+        <div>
+          <h1>
+            Présences — {summary.student.firstName} {summary.student.lastName}
+          </h1>
+          <p>Historique complet de présence, tous groupes confondus.</p>
+        </div>
+        <div className="page-actions">
+          <Link to="/parent/children">← Retour à mes enfants</Link>
+        </div>
+      </div>
+
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      )}
+
+      <section className="card-section">
+        <h2>Assiduité</h2>
+        <div className="stat-tiles">
+          <div className="stat-tile">
+            <div className="stat-tile-value">{summary.totalSessions}</div>
+            <div className="stat-tile-label">Séances</div>
+          </div>
+          <div className="stat-tile">
+            <div className="stat-tile-value">{summary.present}</div>
+            <div className="stat-tile-label">Présent</div>
+          </div>
+          <div className="stat-tile">
+            <div className="stat-tile-value">{summary.late}</div>
+            <div className="stat-tile-label">Retards</div>
+          </div>
+          <div className="stat-tile">
+            <div className="stat-tile-value">{summary.excusedAbsences}</div>
+            <div className="stat-tile-label">Absences excusées</div>
+          </div>
+          <div className="stat-tile">
+            <div className="stat-tile-value">{summary.unexcusedAbsences}</div>
+            <div className="stat-tile-label">Absences non excusées</div>
+          </div>
+        </div>
+        <label>
+          Taux d'assiduité global
+          <AttendanceMeter rate={summary.attendanceRate} />
+        </label>
+      </section>
+
+      <section className="card-section">
+        <h2>Historique ({entries.length})</h2>
+        {entries.length === 0 && <p>Aucune présence enregistrée pour le moment.</p>}
+        {entries.length > 0 && (
+          <div className="table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Heure</th>
+                  <th>Groupe</th>
+                  <th>Statut</th>
+                  <th>Facturation</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map((entry) => (
+                  <tr key={entry.id}>
+                    <td>{new Date(entry.session.date).toLocaleDateString('fr-FR')}</td>
+                    <td>{entry.session.startTime}</td>
+                    <td>{entry.group.name}</td>
+                    <td>
+                      <span className={`badge ${STATUS_BADGE[entry.status] ?? 'badge-neutral'}`}>
+                        {entry.statusLabel}
+                      </span>
+                    </td>
+                    <td>{entry.billable ? 'Facturée' : 'Non facturée'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </>
+  );
+}

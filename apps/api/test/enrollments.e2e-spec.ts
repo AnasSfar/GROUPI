@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { grantActiveSubscription } from './helpers/grant-subscription';
 
 /**
  * E2E tests for the enrollments module (Ch.12 — Les Inscriptions), run against the real
@@ -55,6 +56,8 @@ describe('Enrollments (e2e)', () => {
     await prisma.user.update({ where: { id: userId }, data: { status: 'ACTIVE' } });
     if (role === 'TEACHER') {
       await prisma.teacherProfile.update({ where: { id: userId }, data: { status: 'VALIDATED' } });
+      // Ch.22 : SubscriptionGuard exige un abonnement exploitable pour créer/modifier.
+      await grantActiveSubscription(prisma, userId, academicYearId);
     } else {
       await prisma.parentProfile.update({ where: { id: userId }, data: { validatedAt: new Date() } });
     }
@@ -184,6 +187,18 @@ describe('Enrollments (e2e)', () => {
       const students = await prisma.student.findMany({ where: { parentId: { in: parentIds } }, select: { id: true } });
       const studentIds = students.map((s) => s.id);
 
+      // Ch.15 : chaque inscription active possède un compte de suivi comptable (FK stricte).
+      const enrollmentsToDelete = await prisma.enrollment.findMany({
+        where: { OR: [{ groupId: { in: groupIds } }, { studentId: { in: studentIds } }] },
+        select: { id: true },
+      });
+      const accountsToDelete = await prisma.accountingAccount.findMany({
+        where: { enrollmentId: { in: enrollmentsToDelete.map((e) => e.id) } },
+        select: { id: true },
+      });
+      await prisma.accountingEntry.deleteMany({ where: { accountId: { in: accountsToDelete.map((a) => a.id) } } });
+      await prisma.accountingAccount.deleteMany({ where: { id: { in: accountsToDelete.map((a) => a.id) } } });
+
       await prisma.enrollment.deleteMany({
         where: { OR: [{ groupId: { in: groupIds } }, { studentId: { in: studentIds } }] },
       });
@@ -199,9 +214,11 @@ describe('Enrollments (e2e)', () => {
         await prisma.student.deleteMany({ where: { id: { in: studentIds } } });
       }
 
+      await prisma.activity.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.loginHistory.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.userSession.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.passwordResetToken.deleteMany({ where: { userId: { in: userIds } } });
+      await prisma.subscription.deleteMany({ where: { teacherId: { in: teacherIds } } });
       await prisma.teacherProfile.deleteMany({ where: { id: { in: teacherIds } } });
       await prisma.parentProfile.deleteMany({ where: { id: { in: parentIds } } });
       await prisma.user.deleteMany({ where: { id: { in: userIds } } });

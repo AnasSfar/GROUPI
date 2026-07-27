@@ -19,6 +19,16 @@ import { ParentEnrollmentsPage } from './pages/ParentEnrollmentsPage';
 import { TeacherEnrollmentsPage } from './pages/TeacherEnrollmentsPage';
 import { ParentPreEnrollmentsPage } from './pages/ParentPreEnrollmentsPage';
 import { TeacherPreEnrollmentsPage } from './pages/TeacherPreEnrollmentsPage';
+import { TeacherAttendancePage } from './pages/TeacherAttendancePage';
+import { TeacherAttendanceOverviewPage } from './pages/TeacherAttendanceOverviewPage';
+import { ParentChildAttendancePage } from './pages/ParentChildAttendancePage';
+import { AdminAcademicYearsPage } from './pages/AdminAcademicYearsPage';
+import { NotificationsPage } from './pages/NotificationsPage';
+import { TeacherGroupAnnouncementsPage } from './pages/TeacherGroupAnnouncementsPage';
+import { TeacherSubscriptionPage } from './pages/TeacherSubscriptionPage';
+import { AdminSubscriptionsPage } from './pages/AdminSubscriptionsPage';
+import { TeacherAccountingPage } from './pages/TeacherAccountingPage';
+import { ParentChildAccountingPage } from './pages/ParentChildAccountingPage';
 
 function App() {
   return (
@@ -38,6 +48,7 @@ function App() {
             }
           >
             <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/notifications" element={<NotificationsPage />} />
             <Route
               path="/admin/users"
               element={
@@ -103,6 +114,14 @@ function App() {
               }
             />
             <Route
+              path="/teacher/groups/:groupId/announcements"
+              element={
+                <ProtectedRoute roles={['TEACHER']}>
+                  <TeacherGroupAnnouncementsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/parent/enrollments"
               element={
                 <ProtectedRoute roles={['PARENT']}>
@@ -131,6 +150,70 @@ function App() {
               element={
                 <ProtectedRoute roles={['TEACHER']}>
                   <TeacherPreEnrollmentsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/teacher/sessions/:sessionId/attendance"
+              element={
+                <ProtectedRoute roles={['TEACHER']}>
+                  <TeacherAttendancePage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/teacher/groups/:groupId/attendance"
+              element={
+                <ProtectedRoute roles={['TEACHER']}>
+                  <TeacherAttendanceOverviewPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/parent/children/:studentId/attendance"
+              element={
+                <ProtectedRoute roles={['PARENT']}>
+                  <ParentChildAttendancePage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/academic-years"
+              element={
+                <ProtectedRoute roles={['SUPER_ADMIN', 'ADMIN']}>
+                  <AdminAcademicYearsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/subscriptions"
+              element={
+                <ProtectedRoute roles={['SUPER_ADMIN', 'ADMIN']}>
+                  <AdminSubscriptionsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/teacher/subscription"
+              element={
+                <ProtectedRoute roles={['TEACHER']}>
+                  <TeacherSubscriptionPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/teacher/accounting"
+              element={
+                <ProtectedRoute roles={['TEACHER']}>
+                  <TeacherAccountingPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/parent/children/:studentId/accounting"
+              element={
+                <ProtectedRoute roles={['PARENT']}>
+                  <ParentChildAccountingPage />
                 </ProtectedRoute>
               }
             />

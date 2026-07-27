@@ -244,6 +244,7 @@ export function TeacherGroupsPage() {
                   </td>
                   <td className="admin-actions">
                     <Link to={`/teacher/groups/${group.id}/sessions`}>Séances</Link>
+                    <Link to={`/teacher/groups/${group.id}/announcements`}>Annonces</Link>
                     {group.status === 'DRAFT' && (
                       <>
                         <button

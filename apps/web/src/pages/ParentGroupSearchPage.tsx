@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ApiError } from '../api/client';
 import * as referentialsApi from '../api/referentialsApi';
 import * as groupsApi from '../api/groupsApi';
 import * as parentProfileApi from '../api/parentProfileApi';
 import * as enrollmentsApi from '../api/enrollmentsApi';
+import * as groupChangeApi from '../api/groupChangeApi';
 import type { Subject, SchoolLevel } from '../api/referentialsApi';
 import type { PublicGroup, DayOfWeek } from '../api/groupsApi';
 import type { Student } from '../api/parentProfileApi';
@@ -28,6 +29,8 @@ function formatSchedule(group: PublicGroup): string {
 
 export function ParentGroupSearchPage() {
   const { getAccessToken } = useAuth();
+  const [searchParams] = useSearchParams();
+  const changeFromEnrollmentId = searchParams.get('changeFromEnrollment');
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [schoolLevels, setSchoolLevels] = useState<SchoolLevel[]>([]);
   const [subjectId, setSubjectId] = useState('');
@@ -93,6 +96,23 @@ export function ParentGroupSearchPage() {
     }
   }
 
+  async function handleRequestGroupChange(groupId: string) {
+    const token = getAccessToken();
+    if (!token || !changeFromEnrollmentId) return;
+    setError(null);
+    setNotice(null);
+    try {
+      await groupChangeApi.createGroupChangeRequest(token, {
+        enrollmentId: changeFromEnrollmentId,
+        targetGroupId: groupId,
+      });
+      setNotice('Demande de changement de groupe envoyée. Suivez son statut dans "Mes demandes d’inscription".');
+      setRequestingGroupId(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Impossible d'envoyer la demande de changement.");
+    }
+  }
+
   return (
     <>
       <div className="page-header">
@@ -104,6 +124,13 @@ export function ParentGroupSearchPage() {
           <Link to="/parent/enrollments">Mes demandes d'inscription</Link>
         </div>
       </div>
+
+      {changeFromEnrollmentId && (
+        <p className="form-notice" role="status">
+          Vous choisissez un nouveau groupe pour un changement — la décision finale (dont la date effective)
+          appartient au Professeur du groupe cible.
+        </p>
+      )}
 
       {error && (
         <p className="form-error" role="alert">
@@ -187,7 +214,24 @@ export function ParentGroupSearchPage() {
                     )}
                   </td>
                   <td className="admin-actions">
-                    {group.status === 'FULL' || students.length === 0 ? (
+                    {changeFromEnrollmentId ? (
+                      group.status === 'FULL' ? (
+                        <span className="table-hint">Groupe complet</span>
+                      ) : requestingGroupId === group.id ? (
+                        <div className="reason-prompt">
+                          <button type="button" onClick={() => handleRequestGroupChange(group.id)}>
+                            Confirmer ce groupe
+                          </button>
+                          <button type="button" className="ghost" onClick={() => setRequestingGroupId(null)}>
+                            Annuler
+                          </button>
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => setRequestingGroupId(group.id)}>
+                          Demander ce changement
+                        </button>
+                      )
+                    ) : group.status === 'FULL' || students.length === 0 ? (
                       requestingGroupId === group.id ? null : (
                         <span className="table-hint">
                           {students.length === 0 ? 'Ajoutez un enfant' : 'Groupe complet'}

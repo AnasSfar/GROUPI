@@ -1,0 +1,186 @@
+[
+  {
+    "name": "Algorithme et programmation",
+    "code": "ALGO"
+  },
+  {
+    "name": "Allemand",
+    "code": "ALL"
+  },
+  {
+    "name": "Anglais",
+    "code": "ANG"
+  },
+  {
+    "name": "Arabe",
+    "code": "AR"
+  },
+  {
+    "name": "Dictée",
+    "code": "DICT"
+  },
+  {
+    "name": "Economie",
+    "code": "ECO"
+  },
+  {
+    "name": "Education artistique",
+    "code": "ART"
+  },
+  {
+    "name": "Education civique",
+    "code": "CIV"
+  },
+  {
+    "name": "Education islamique",
+    "code": "ISLAM"
+  },
+  {
+    "name": "Espagnol",
+    "code": "ESP"
+  },
+  {
+    "name": "Français",
+    "code": "FR"
+  },
+  {
+    "name": "Gestion",
+    "code": "GEST"
+  },
+  {
+    "name": "Géographie",
+    "code": "GEO"
+  },
+  {
+    "name": "Histoire",
+    "code": "HIST"
+  },
+  {
+    "name": "Histoire - Géo",
+    "code": "HG"
+  },
+  {
+    "name": "Informatique",
+    "code": "INFO"
+  },
+  {
+    "name": "Italien",
+    "code": "ITA"
+  },
+  {
+    "name": "Langue",
+    "code": "LANG"
+  },
+  {
+    "name": "Lecture",
+    "code": "LECT"
+  },
+  {
+    "name": "Mathématiques",
+    "code": "MATH"
+  },
+  {
+    "name": "Philosophie",
+    "code": "PHILO"
+  },
+  {
+    "name": "Physique",
+    "code": "PHYS"
+  },
+  {
+    "name": "Production écrite",
+    "code": "PROD_ECR"
+  },
+  {
+    "name": "Sciences SVT",
+    "code": "SVT"
+  },
+  {
+    "name": "Sciences de l'informatique",
+    "code": "SCI_INFO"
+  },
+  {
+    "name": "Sport",
+    "code": "EPS"
+  },
+  {
+    "name": "Système d'exploitation",
+    "code": "OS"
+  },
+  {
+    "name": "TIC",
+    "code": "TIC"
+  },
+  {
+    "name": "Technologie",
+    "code": "TECH"
+  },
+  {
+    "name": "الإملاء",
+    "code": "AR_01E3F6FB"
+  },
+  {
+    "name": "الإنتاج الكتابي",
+    "code": "AR_03D684BA"
+  },
+  {
+    "name": "الإيقاظ العلمي",
+    "code": "AR_E5F32B3D"
+  },
+  {
+    "name": "التاريخ",
+    "code": "AR_D94D702D"
+  },
+  {
+    "name": "التربية الإسلامية",
+    "code": "AR_94425B17"
+  },
+  {
+    "name": "التربية التشكيلية",
+    "code": "AR_8D15796C"
+  },
+  {
+    "name": "التربية التكنولوجية",
+    "code": "AR_20D472B7"
+  },
+  {
+    "name": "التربية المدنية",
+    "code": "AR_D390ABB9"
+  },
+  {
+    "name": "التربية المسرحية",
+    "code": "AR_A0BAE1ED"
+  },
+  {
+    "name": "التربية الموسيقية",
+    "code": "AR_0F4867AC"
+  },
+  {
+    "name": "الجغرافيا",
+    "code": "AR_58EB8B4A"
+  },
+  {
+    "name": "الخط والإملاء",
+    "code": "AR_A5F5A3FD"
+  },
+  {
+    "name": "الرسم",
+    "code": "AR_1730B833"
+  },
+  {
+    "name": "الرياضيات",
+    "code": "AR_825DE895"
+  },
+  {
+    "name": "العربية",
+    "code": "AR_9970632F"
+  },
+  {
+    "name": "القراءة",
+    "code": "AR_06FD0CCD"
+  },
+  {
+    "name": "قواعد اللغة",
+    "code": "AR_527BCAAC"
+  }
+]

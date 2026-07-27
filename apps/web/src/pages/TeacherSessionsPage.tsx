@@ -222,6 +222,7 @@ export function TeacherSessionsPage() {
         </div>
         <div className="page-actions">
           <Link to="/teacher/groups">← Retour à mes groupes</Link>
+          <Link to={`/teacher/groups/${groupId}/attendance`}>Statistiques de présence</Link>
         </div>
       </div>
 
@@ -287,6 +288,11 @@ export function TeacherSessionsPage() {
                       </span>
                     </td>
                     <td className="admin-actions">
+                      {(session.status === 'PLANNED' ||
+                        session.status === 'COMPLETED' ||
+                        session.status === 'LOCKED') && (
+                        <Link to={`/teacher/sessions/${session.id}/attendance`}>Présences</Link>
+                      )}
                       {postponeTargetId === session.id ? (
                         <PostponePrompt
                           initialDate={session.date.slice(0, 10)}

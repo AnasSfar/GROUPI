@@ -49,6 +49,12 @@ export class CreateGroupDto {
   @Min(1)
   abandonmentThreshold?: number;
 
+  /** RM-CPT-022 : seuil (en nombre de séances au tarif appliqué) au-delà duquel un solde débiteur est "important". */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  debtAlertThresholdSessions?: number;
+
   @IsEnum(VisibilityWhenFull)
   visibilityWhenFull!: VisibilityWhenFull;
 

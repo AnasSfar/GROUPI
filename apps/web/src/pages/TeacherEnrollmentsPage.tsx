@@ -1,10 +1,28 @@
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { ApiError } from '../api/client';
 import * as groupsApi from '../api/groupsApi';
 import * as enrollmentsApi from '../api/enrollmentsApi';
+import * as groupChangeApi from '../api/groupChangeApi';
 import type { Group } from '../api/groupsApi';
 import type { TeacherEnrollment, EnrollmentStatus } from '../api/enrollmentsApi';
+import type { GroupChangeRequestView, GroupChangeStatus } from '../api/groupChangeApi';
+import { EnrollmentCommentThread } from '../components/EnrollmentCommentThread';
+import { EnrollmentAccountingPanel } from '../components/EnrollmentAccountingPanel';
+
+const CHANGE_STATUS_LABELS: Record<GroupChangeStatus, string> = {
+  PENDING: 'En attente',
+  ACCEPTED: 'Acceptée',
+  REJECTED: 'Refusée',
+  CANCELLED: 'Annulée',
+};
+
+const CHANGE_STATUS_BADGE: Record<GroupChangeStatus, string> = {
+  PENDING: 'badge-warning',
+  ACCEPTED: 'badge-success',
+  REJECTED: 'badge-danger',
+  CANCELLED: 'badge-neutral',
+};
 
 const STATUS_LABELS: Record<EnrollmentStatus, string> = {
   PENDING_VALIDATION: 'En attente',
@@ -31,12 +49,16 @@ export function TeacherEnrollmentsPage() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState('');
   const [enrollments, setEnrollments] = useState<TeacherEnrollment[]>([]);
+  const [groupChanges, setGroupChanges] = useState<GroupChangeRequestView[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingEnrollments, setLoadingEnrollments] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
+  const [effectiveDateDrafts, setEffectiveDateDrafts] = useState<Record<string, string>>({});
+  const [expandedComments, setExpandedComments] = useState<string | null>(null);
+  const [expandedAccounting, setExpandedAccounting] = useState<string | null>(null);
 
   const loadGroups = useCallback(async () => {
     const token = getAccessToken();
@@ -58,13 +80,18 @@ export function TeacherEnrollmentsPage() {
     const token = getAccessToken();
     if (!token || !selectedGroupId) {
       setEnrollments([]);
+      setGroupChanges([]);
       return;
     }
     setLoadingEnrollments(true);
     setError(null);
     try {
-      const result = await enrollmentsApi.listByGroup(token, selectedGroupId);
+      const [result, changes] = await Promise.all([
+        enrollmentsApi.listByGroup(token, selectedGroupId),
+        groupChangeApi.listByTargetGroup(token, selectedGroupId),
+      ]);
       setEnrollments(result);
+      setGroupChanges(changes);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Impossible de charger les inscriptions.');
     } finally {
@@ -155,6 +182,40 @@ export function TeacherEnrollmentsPage() {
     runAction(() => enrollmentsApi.archiveEnrollment(token, selectedGroupId, enrollmentId));
   }
 
+  function effectiveDateDraftValue(requestId: string) {
+    return effectiveDateDrafts[requestId] ?? '';
+  }
+
+  function setEffectiveDateDraft(requestId: string, value: string) {
+    setEffectiveDateDrafts((prev) => ({ ...prev, [requestId]: value }));
+  }
+
+  async function runGroupChangeAction(action: () => Promise<GroupChangeRequestView>) {
+    setError(null);
+    try {
+      const updated = await action();
+      setGroupChanges((prev) => prev.map((g) => (g.id === updated.id ? updated : g)));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "L'opération a échoué.");
+    }
+  }
+
+  function handleAcceptGroupChange(requestId: string) {
+    const token = getAccessToken();
+    const effectiveDate = effectiveDateDraftValue(requestId);
+    if (!token || !effectiveDate) return;
+    runGroupChangeAction(() => groupChangeApi.acceptGroupChangeRequest(token, requestId, effectiveDate));
+  }
+
+  function handleRejectGroupChange(requestId: string) {
+    const token = getAccessToken();
+    if (!token) return;
+    const reason = commentDraftValue(requestId);
+    runGroupChangeAction(() =>
+      groupChangeApi.rejectGroupChangeRequest(token, requestId, reason.trim() === '' ? undefined : reason),
+    );
+  }
+
   if (loading) {
     return <p>Chargement...</p>;
   }
@@ -205,11 +266,14 @@ export function TeacherEnrollmentsPage() {
                   <th>Statut</th>
                   <th>Tarif personnalisé</th>
                   <th>Actions</th>
+                  <th>Commentaires</th>
+                  <th>Comptabilité</th>
                 </tr>
               </thead>
               <tbody>
                 {enrollments.map((enrollment) => (
-                  <tr key={enrollment.id}>
+                  <Fragment key={enrollment.id}>
+                  <tr>
                     <td>
                       {enrollment.student.firstName} {enrollment.student.lastName}
                     </td>
@@ -280,6 +344,118 @@ export function TeacherEnrollmentsPage() {
                           </button>
                           <button type="button" className="danger" onClick={() => handleArchive(enrollment.id)}>
                             Archiver
+                          </button>
+                        </>
+                      )}
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="ghost-link"
+                        onClick={() =>
+                          setExpandedComments((current) => (current === enrollment.id ? null : enrollment.id))
+                        }
+                      >
+                        {expandedComments === enrollment.id ? 'Masquer' : 'Voir'}
+                      </button>
+                    </td>
+                    <td>
+                      {/* Ch.15.3 : le compte de suivi comptable n'existe qu'à partir de l'activation. */}
+                      {['ACTIVE', 'SUSPENDED', 'ARCHIVED'].includes(enrollment.status) ? (
+                        <button
+                          type="button"
+                          className="ghost-link"
+                          onClick={() =>
+                            setExpandedAccounting((current) => (current === enrollment.id ? null : enrollment.id))
+                          }
+                        >
+                          {expandedAccounting === enrollment.id ? 'Masquer' : 'Voir'}
+                        </button>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                  </tr>
+                  {expandedComments === enrollment.id && (
+                    <tr>
+                      <td colSpan={7}>
+                        <EnrollmentCommentThread enrollmentId={enrollment.id} />
+                      </td>
+                    </tr>
+                  )}
+                  {expandedAccounting === enrollment.id && (
+                    <tr>
+                      <td colSpan={7}>
+                        <EnrollmentAccountingPanel enrollmentId={enrollment.id} canWrite />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section className="card-section">
+        <h2>Demandes de changement de groupe reçues ({groupChanges.length})</h2>
+        <p className="table-hint">
+          Un Parent souhaite transférer un élève depuis un autre groupe vers celui sélectionné ci-dessus.
+        </p>
+        {!loadingEnrollments && groupChanges.length === 0 && <p>Aucune demande de changement reçue.</p>}
+        {!loadingEnrollments && groupChanges.length > 0 && (
+          <div className="table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Élève</th>
+                  <th>Groupe d'origine</th>
+                  <th>Statut</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {groupChanges.map((change) => (
+                  <tr key={change.id}>
+                    <td>
+                      {change.originalEnrollment.student.firstName} {change.originalEnrollment.student.lastName}
+                    </td>
+                    <td>{change.originalEnrollment.group.name}</td>
+                    <td>
+                      <span className={`badge ${CHANGE_STATUS_BADGE[change.status]}`}>
+                        {CHANGE_STATUS_LABELS[change.status]}
+                      </span>
+                      {change.status === 'ACCEPTED' && change.effectiveDate && (
+                        <span className="table-hint">
+                          {' '}
+                          — effectif le {new Date(change.effectiveDate).toLocaleDateString('fr-FR')}
+                        </span>
+                      )}
+                    </td>
+                    <td className="admin-actions">
+                      {change.status === 'PENDING' && (
+                        <>
+                          <input
+                            type="date"
+                            value={effectiveDateDraftValue(change.id)}
+                            onChange={(e) => setEffectiveDateDraft(change.id, e.target.value)}
+                          />
+                          <button
+                            type="button"
+                            disabled={!effectiveDateDraftValue(change.id)}
+                            onClick={() => handleAcceptGroupChange(change.id)}
+                          >
+                            Accepter
+                          </button>
+                          <input
+                            type="text"
+                            placeholder="Motif de refus (optionnel)"
+                            value={commentDraftValue(change.id)}
+                            onChange={(e) => setCommentDraft(change.id, e.target.value)}
+                          />
+                          <button type="button" className="danger" onClick={() => handleRejectGroupChange(change.id)}>
+                            Refuser
                           </button>
                         </>
                       )}

@@ -4,6 +4,7 @@ import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PreEnrollmentsModule } from '../src/pre-enrollments/pre-enrollments.module';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { grantActiveSubscription } from './helpers/grant-subscription';
 
 /**
  * E2E tests for the pre-enrollments module (/api/v1/pre-enrollments/*, and
@@ -135,6 +136,8 @@ describe('Pre-enrollments (e2e)', () => {
     // Validation du professeur : pas de flux d'admin exercé ici, mise à jour directe (comme le
     // ferait l'admin en réalité) pour pouvoir tester le module Préinscriptions en isolation.
     await prisma.teacherProfile.update({ where: { id: teacherId }, data: { status: 'VALIDATED' } });
+    // Ch.22 : SubscriptionGuard exige un abonnement exploitable pour créer/modifier (ici `propose`).
+    await grantActiveSubscription(prisma, teacherId, currentYearId);
 
     const parentRegister = await api()
       .post('/api/v1/auth/register')
@@ -217,6 +220,18 @@ describe('Pre-enrollments (e2e)', () => {
     });
     const groupIds = groups.map((g) => g.id);
 
+    // Ch.15 : chaque inscription active possède un compte de suivi comptable (FK stricte).
+    const enrollmentsToDelete = await prisma.enrollment.findMany({
+      where: { studentId: { in: studentIds } },
+      select: { id: true },
+    });
+    const accountsToDelete = await prisma.accountingAccount.findMany({
+      where: { enrollmentId: { in: enrollmentsToDelete.map((e) => e.id) } },
+      select: { id: true },
+    });
+    await prisma.accountingEntry.deleteMany({ where: { accountId: { in: accountsToDelete.map((a) => a.id) } } });
+    await prisma.accountingAccount.deleteMany({ where: { id: { in: accountsToDelete.map((a) => a.id) } } });
+
     await prisma.enrollment.deleteMany({ where: { studentId: { in: studentIds } } });
     await prisma.preEnrollment.deleteMany({ where: { parentId: { in: userIds } } });
     await prisma.groupSchedule.deleteMany({ where: { groupId: { in: groupIds } } });
@@ -230,13 +245,14 @@ describe('Pre-enrollments (e2e)', () => {
     await prisma.studentSchoolSituation.deleteMany({ where: { studentId: { in: studentIds } } });
     await prisma.student.deleteMany({ where: { id: { in: studentIds } } });
 
-    await prisma.loginHistory.deleteMany({ where: { userId: { in: userIds } } });
-    await prisma.userSession.deleteMany({ where: { userId: { in: userIds } } });
-    await prisma.passwordResetToken.deleteMany({ where: { userId: { in: userIds } } });
-    await prisma.teacherProfile.deleteMany({ where: { id: { in: userIds } } });
-    await prisma.parentProfile.deleteMany({ where: { id: { in: userIds } } });
-    await prisma.user.deleteMany({ where: { id: { in: userIds } } });
+    // Ch.22 : FK RESTRICT sur subscription.{teacher_id,academic_year_id} — doit précéder la
+    // suppression de l'année académique et du professeur ci-dessous.
+    await prisma.subscription.deleteMany({ where: { teacherId: { in: userIds } } });
 
+    // Nettoyage des référentiels créés par cette suite AVANT les Users : si une étape suivante
+    // (ex. user.deleteMany) échoue pour une raison quelconque, ces lignes ne doivent jamais rester
+    // orphelines (elles ont empoisonné une exécution passée du fait de l'ordre inverse — voir
+    // l'incident documenté dans l'historique de ce fichier).
     await prisma.academicYear.deleteMany({
       where: { id: { in: [pastYearId, currentYearId, futureYearId] } },
     });
@@ -244,6 +260,14 @@ describe('Pre-enrollments (e2e)', () => {
     await prisma.city.deleteMany({ where: { id: cityId } });
     await prisma.subject.deleteMany({ where: { id: subjectId } });
     await prisma.schoolLevel.deleteMany({ where: { id: schoolLevelId } });
+
+    await prisma.activity.deleteMany({ where: { userId: { in: userIds } } });
+    await prisma.loginHistory.deleteMany({ where: { userId: { in: userIds } } });
+    await prisma.userSession.deleteMany({ where: { userId: { in: userIds } } });
+    await prisma.passwordResetToken.deleteMany({ where: { userId: { in: userIds } } });
+    await prisma.teacherProfile.deleteMany({ where: { id: { in: userIds } } });
+    await prisma.parentProfile.deleteMany({ where: { id: { in: userIds } } });
+    await prisma.user.deleteMany({ where: { id: { in: userIds } } });
 
     await app.close();
   });

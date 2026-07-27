@@ -202,7 +202,8 @@ code {
   font-weight: 600;
 }
 
-.app-nav-user button {
+.app-nav-user button,
+.app-nav-user a.nav-bell {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -220,6 +221,12 @@ code {
   color: var(--danger);
   border-color: var(--danger);
   background: var(--danger-bg);
+}
+
+.app-nav-user a.nav-bell:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  text-decoration: none;
 }
 
 .app-main {
@@ -858,4 +865,270 @@ button {
   gap: 2px;
   font-size: 13px;
   color: var(--text-muted, var(--text-h));
+}
+
+/* --- Ch.14 Présences : tuiles de stats, jauge d'assiduité, bannière d'alerte --- */
+
+.stat-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.stat-tile {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+
+.stat-tile-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-h);
+  line-height: 1.2;
+}
+
+.stat-tile-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-top: 2px;
+}
+
+.meter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.meter-track {
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.meter-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--success);
+}
+
+.meter-fill.meter-warning {
+  background: var(--warning);
+}
+
+.meter-fill.meter-danger {
+  background: var(--danger);
+}
+
+.meter-value {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-h);
+  min-width: 3.5ch;
+  text-align: right;
+}
+
+.alert-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  background: var(--warning-bg);
+  border: 1px solid var(--warning);
+  color: var(--text-h);
+  margin-bottom: 16px;
+}
+
+.alert-banner h3 {
+  margin: 0;
+  color: var(--warning);
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.alert-banner ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+
+/* --- Centre d'activités (Ch.18) -------------------------------------------- */
+
+.nav-bell {
+  position: relative;
+}
+
+.nav-bell-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+.activity-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.activity-item {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.activity-item-unread {
+  border-color: var(--accent);
+  background: var(--bg-shell);
+}
+
+.activity-item-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.activity-item-date {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.activity-item p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
+/* --- Communication (Ch.19) : commentaires d'inscription et annonces de groupe -- */
+
+.comment-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-shell);
+}
+
+.comment-item {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.comment-item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.comment-item-header strong {
+  color: var(--text-h);
+}
+
+.comment-item p {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+
+.comment-item-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.comment-item-actions button {
+  font-size: 12px;
+}
+
+.comment-form {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.comment-form textarea {
+  flex: 1;
+  min-height: 60px;
+}
+
+/* --- Moteur comptable (Ch.15) -- */
+
+.accounting-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0 10px;
+}
+
+.stat-grid {
+  margin-top: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+
+.stat-tile {
+  margin-top: 0;
+  padding: 14px 16px;
+}
+
+.stat-tile .table-hint {
+  margin: 0 0 6px;
+}
+
+.stat-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-h);
+  margin: 0;
+}
+
+.announcement-item {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  margin-bottom: 10px;
+}
+
+.announcement-item-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.announcement-item-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
 }

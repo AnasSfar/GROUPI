@@ -7,6 +7,11 @@ import * as parentProfileApi from '../api/parentProfileApi';
 import type { School, SchoolLevel } from '../api/referentialsApi';
 import type { ParentProfile, Student } from '../api/parentProfileApi';
 
+function formatSchoolOption(school: School) {
+  const city = school.city?.name ? ` - ${school.city.name}` : '';
+  const code = school.officialCode ? ` (${school.officialCode})` : '';
+  return `${school.name}${city}${code}`;
+}
 export function ParentChildrenPage() {
   const { getAccessToken } = useAuth();
   const [profile, setProfile] = useState<ParentProfile | null>(null);
@@ -194,6 +199,8 @@ export function ParentChildrenPage() {
                     </td>
                     <td className="admin-actions">
                       <Link to={`/parent/children/${student.id}/situation`}>Situation scolaire</Link>
+                      <Link to={`/parent/children/${student.id}/attendance`}>Présences</Link>
+                      <Link to={`/parent/children/${student.id}/accounting`}>Comptabilité</Link>
                       {student.status === 'ACTIVE' ? (
                         <button type="button" className="ghost" onClick={() => handleArchive(student.id)}>
                           Archiver
@@ -260,7 +267,7 @@ export function ParentChildrenPage() {
               <option value="">Sélectionner...</option>
               {schools.map((school) => (
                 <option key={school.id} value={school.id}>
-                  {school.name}
+                  {formatSchoolOption(school)}
                 </option>
               ))}
             </select>
@@ -281,3 +288,5 @@ export function ParentChildrenPage() {
     </>
   );
 }
+
+

@@ -1,0 +1,1186 @@
+[
+  {
+    "subjectCode": "AR_03D684BA",
+    "schoolLevelCode": "PRIM1"
+  },
+  {
+    "subjectCode": "AR_06FD0CCD",
+    "schoolLevelCode": "PRIM1"
+  },
+  {
+    "subjectCode": "AR_825DE895",
+    "schoolLevelCode": "PRIM1"
+  },
+  {
+    "subjectCode": "AR_94425B17",
+    "schoolLevelCode": "PRIM1"
+  },
+  {
+    "subjectCode": "AR_A5F5A3FD",
+    "schoolLevelCode": "PRIM1"
+  },
+  {
+    "subjectCode": "AR_E5F32B3D",
+    "schoolLevelCode": "PRIM1"
+  },
+  {
+    "subjectCode": "AR_03D684BA",
+    "schoolLevelCode": "PRIM2"
+  },
+  {
+    "subjectCode": "AR_06FD0CCD",
+    "schoolLevelCode": "PRIM2"
+  },
+  {
+    "subjectCode": "AR_825DE895",
+    "schoolLevelCode": "PRIM2"
+  },
+  {
+    "subjectCode": "AR_94425B17",
+    "schoolLevelCode": "PRIM2"
+  },
+  {
+    "subjectCode": "AR_A5F5A3FD",
+    "schoolLevelCode": "PRIM2"
+  },
+  {
+    "subjectCode": "AR_E5F32B3D",
+    "schoolLevelCode": "PRIM2"
+  },
+  {
+    "subjectCode": "AR_03D684BA",
+    "schoolLevelCode": "PRIM3"
+  },
+  {
+    "subjectCode": "AR_06FD0CCD",
+    "schoolLevelCode": "PRIM3"
+  },
+  {
+    "subjectCode": "AR_527BCAAC",
+    "schoolLevelCode": "PRIM3"
+  },
+  {
+    "subjectCode": "AR_825DE895",
+    "schoolLevelCode": "PRIM3"
+  },
+  {
+    "subjectCode": "AR_94425B17",
+    "schoolLevelCode": "PRIM3"
+  },
+  {
+    "subjectCode": "AR_E5F32B3D",
+    "schoolLevelCode": "PRIM3"
+  },
+  {
+    "subjectCode": "DICT",
+    "schoolLevelCode": "PRIM3"
+  },
+  {
+    "subjectCode": "LECT",
+    "schoolLevelCode": "PRIM3"
+  },
+  {
+    "subjectCode": "PROD_ECR",
+    "schoolLevelCode": "PRIM3"
+  },
+  {
+    "subjectCode": "AR_03D684BA",
+    "schoolLevelCode": "PRIM4"
+  },
+  {
+    "subjectCode": "AR_06FD0CCD",
+    "schoolLevelCode": "PRIM4"
+  },
+  {
+    "subjectCode": "AR_527BCAAC",
+    "schoolLevelCode": "PRIM4"
+  },
+  {
+    "subjectCode": "AR_825DE895",
+    "schoolLevelCode": "PRIM4"
+  },
+  {
+    "subjectCode": "AR_94425B17",
+    "schoolLevelCode": "PRIM4"
+  },
+  {
+    "subjectCode": "AR_E5F32B3D",
+    "schoolLevelCode": "PRIM4"
+  },
+  {
+    "subjectCode": "DICT",
+    "schoolLevelCode": "PRIM4"
+  },
+  {
+    "subjectCode": "LECT",
+    "schoolLevelCode": "PRIM4"
+  },
+  {
+    "subjectCode": "PROD_ECR",
+    "schoolLevelCode": "PRIM4"
+  },
+  {
+    "subjectCode": "AR_03D684BA",
+    "schoolLevelCode": "PRIM5"
+  },
+  {
+    "subjectCode": "AR_06FD0CCD",
+    "schoolLevelCode": "PRIM5"
+  },
+  {
+    "subjectCode": "AR_1730B833",
+    "schoolLevelCode": "PRIM5"
+  },
+  {
+    "subjectCode": "AR_20D472B7",
+    "schoolLevelCode": "PRIM5"
+  },
+  {
+    "subjectCode": "AR_527BCAAC",
+    "schoolLevelCode": "PRIM5"
+  },
+  {
+    "subjectCode": "AR_58EB8B4A",
+    "schoolLevelCode": "PRIM5"
+  },
+  {
+    "subjectCode": "AR_825DE895",
+    "schoolLevelCode": "PRIM5"
+  },
+  {
+    "subjectCode": "AR_94425B17",
+    "schoolLevelCode": "PRIM5"
+  },
+  {
+    "subjectCode": "AR_D390ABB9",
+    "schoolLevelCode": "PRIM5"
+  },
+  {
+    "subjectCode": "AR_D94D702D",
+    "schoolLevelCode": "PRIM5"
+  },
+  {
+    "subjectCode": "AR_E5F32B3D",
+    "schoolLevelCode": "PRIM5"
+  },
+  {
+    "subjectCode": "LECT",
+    "schoolLevelCode": "PRIM5"
+  },
+  {
+    "subjectCode": "PROD_ECR",
+    "schoolLevelCode": "PRIM5"
+  },
+  {
+    "subjectCode": "ANG",
+    "schoolLevelCode": "PRIM6"
+  },
+  {
+    "subjectCode": "AR_01E3F6FB",
+    "schoolLevelCode": "PRIM6"
+  },
+  {
+    "subjectCode": "AR_03D684BA",
+    "schoolLevelCode": "PRIM6"
+  },
+  {
+    "subjectCode": "AR_06FD0CCD",
+    "schoolLevelCode": "PRIM6"
+  },
+  {
+    "subjectCode": "AR_527BCAAC",
+    "schoolLevelCode": "PRIM6"
+  },
+  {
+    "subjectCode": "AR_58EB8B4A",
+    "schoolLevelCode": "PRIM6"
+  },
+  {
+    "subjectCode": "AR_825DE895",
+    "schoolLevelCode": "PRIM6"
+  },
+  {
+    "subjectCode": "AR_94425B17",
+    "schoolLevelCode": "PRIM6"
+  },
+  {
+    "subjectCode": "AR_D390ABB9",
+    "schoolLevelCode": "PRIM6"
+  },
+  {
+    "subjectCode": "AR_D94D702D",
+    "schoolLevelCode": "PRIM6"
+  },
+  {
+    "subjectCode": "AR_E5F32B3D",
+    "schoolLevelCode": "PRIM6"
+  },
+  {
+    "subjectCode": "DICT",
+    "schoolLevelCode": "PRIM6"
+  },
+  {
+    "subjectCode": "LANG",
+    "schoolLevelCode": "PRIM6"
+  },
+  {
+    "subjectCode": "LECT",
+    "schoolLevelCode": "PRIM6"
+  },
+  {
+    "subjectCode": "PROD_ECR",
+    "schoolLevelCode": "PRIM6"
+  },
+  {
+    "subjectCode": "ANG",
+    "schoolLevelCode": "COL7"
+  },
+  {
+    "subjectCode": "AR_0F4867AC",
+    "schoolLevelCode": "COL7"
+  },
+  {
+    "subjectCode": "AR_58EB8B4A",
+    "schoolLevelCode": "COL7"
+  },
+  {
+    "subjectCode": "AR_8D15796C",
+    "schoolLevelCode": "COL7"
+  },
+  {
+    "subjectCode": "AR_94425B17",
+    "schoolLevelCode": "COL7"
+  },
+  {
+    "subjectCode": "AR_9970632F",
+    "schoolLevelCode": "COL7"
+  },
+  {
+    "subjectCode": "AR_A0BAE1ED",
+    "schoolLevelCode": "COL7"
+  },
+  {
+    "subjectCode": "AR_D390ABB9",
+    "schoolLevelCode": "COL7"
+  },
+  {
+    "subjectCode": "AR_D94D702D",
+    "schoolLevelCode": "COL7"
+  },
+  {
+    "subjectCode": "FR",
+    "schoolLevelCode": "COL7"
+  },
+  {
+    "subjectCode": "INFO",
+    "schoolLevelCode": "COL7"
+  },
+  {
+    "subjectCode": "MATH",
+    "schoolLevelCode": "COL7"
+  },
+  {
+    "subjectCode": "PHYS",
+    "schoolLevelCode": "COL7"
+  },
+  {
+    "subjectCode": "SVT",
+    "schoolLevelCode": "COL7"
+  },
+  {
+    "subjectCode": "TECH",
+    "schoolLevelCode": "COL7"
+  },
+  {
+    "subjectCode": "ANG",
+    "schoolLevelCode": "COL8"
+  },
+  {
+    "subjectCode": "AR_0F4867AC",
+    "schoolLevelCode": "COL8"
+  },
+  {
+    "subjectCode": "AR_58EB8B4A",
+    "schoolLevelCode": "COL8"
+  },
+  {
+    "subjectCode": "AR_8D15796C",
+    "schoolLevelCode": "COL8"
+  },
+  {
+    "subjectCode": "AR_94425B17",
+    "schoolLevelCode": "COL8"
+  },
+  {
+    "subjectCode": "AR_9970632F",
+    "schoolLevelCode": "COL8"
+  },
+  {
+    "subjectCode": "AR_A0BAE1ED",
+    "schoolLevelCode": "COL8"
+  },
+  {
+    "subjectCode": "AR_D390ABB9",
+    "schoolLevelCode": "COL8"
+  },
+  {
+    "subjectCode": "AR_D94D702D",
+    "schoolLevelCode": "COL8"
+  },
+  {
+    "subjectCode": "FR",
+    "schoolLevelCode": "COL8"
+  },
+  {
+    "subjectCode": "INFO",
+    "schoolLevelCode": "COL8"
+  },
+  {
+    "subjectCode": "MATH",
+    "schoolLevelCode": "COL8"
+  },
+  {
+    "subjectCode": "PHYS",
+    "schoolLevelCode": "COL8"
+  },
+  {
+    "subjectCode": "SVT",
+    "schoolLevelCode": "COL8"
+  },
+  {
+    "subjectCode": "TECH",
+    "schoolLevelCode": "COL8"
+  },
+  {
+    "subjectCode": "ANG",
+    "schoolLevelCode": "COL9"
+  },
+  {
+    "subjectCode": "AR_0F4867AC",
+    "schoolLevelCode": "COL9"
+  },
+  {
+    "subjectCode": "AR_58EB8B4A",
+    "schoolLevelCode": "COL9"
+  },
+  {
+    "subjectCode": "AR_8D15796C",
+    "schoolLevelCode": "COL9"
+  },
+  {
+    "subjectCode": "AR_94425B17",
+    "schoolLevelCode": "COL9"
+  },
+  {
+    "subjectCode": "AR_9970632F",
+    "schoolLevelCode": "COL9"
+  },
+  {
+    "subjectCode": "AR_A0BAE1ED",
+    "schoolLevelCode": "COL9"
+  },
+  {
+    "subjectCode": "AR_D390ABB9",
+    "schoolLevelCode": "COL9"
+  },
+  {
+    "subjectCode": "AR_D94D702D",
+    "schoolLevelCode": "COL9"
+  },
+  {
+    "subjectCode": "FR",
+    "schoolLevelCode": "COL9"
+  },
+  {
+    "subjectCode": "INFO",
+    "schoolLevelCode": "COL9"
+  },
+  {
+    "subjectCode": "MATH",
+    "schoolLevelCode": "COL9"
+  },
+  {
+    "subjectCode": "PHYS",
+    "schoolLevelCode": "COL9"
+  },
+  {
+    "subjectCode": "SVT",
+    "schoolLevelCode": "COL9"
+  },
+  {
+    "subjectCode": "TECH",
+    "schoolLevelCode": "COL9"
+  },
+  {
+    "subjectCode": "ANG",
+    "schoolLevelCode": "SEC1_TC"
+  },
+  {
+    "subjectCode": "AR",
+    "schoolLevelCode": "SEC1_TC"
+  },
+  {
+    "subjectCode": "CIV",
+    "schoolLevelCode": "SEC1_TC"
+  },
+  {
+    "subjectCode": "FR",
+    "schoolLevelCode": "SEC1_TC"
+  },
+  {
+    "subjectCode": "HIST",
+    "schoolLevelCode": "SEC1_TC"
+  },
+  {
+    "subjectCode": "INFO",
+    "schoolLevelCode": "SEC1_TC"
+  },
+  {
+    "subjectCode": "ISLAM",
+    "schoolLevelCode": "SEC1_TC"
+  },
+  {
+    "subjectCode": "MATH",
+    "schoolLevelCode": "SEC1_TC"
+  },
+  {
+    "subjectCode": "PHYS",
+    "schoolLevelCode": "SEC1_TC"
+  },
+  {
+    "subjectCode": "SVT",
+    "schoolLevelCode": "SEC1_TC"
+  },
+  {
+    "subjectCode": "TECH",
+    "schoolLevelCode": "SEC1_TC"
+  },
+  {
+    "subjectCode": "ANG",
+    "schoolLevelCode": "SEC2_ECO_SERV"
+  },
+  {
+    "subjectCode": "AR",
+    "schoolLevelCode": "SEC2_ECO_SERV"
+  },
+  {
+    "subjectCode": "CIV",
+    "schoolLevelCode": "SEC2_ECO_SERV"
+  },
+  {
+    "subjectCode": "ECO",
+    "schoolLevelCode": "SEC2_ECO_SERV"
+  },
+  {
+    "subjectCode": "FR",
+    "schoolLevelCode": "SEC2_ECO_SERV"
+  },
+  {
+    "subjectCode": "GEO",
+    "schoolLevelCode": "SEC2_ECO_SERV"
+  },
+  {
+    "subjectCode": "GEST",
+    "schoolLevelCode": "SEC2_ECO_SERV"
+  },
+  {
+    "subjectCode": "HIST",
+    "schoolLevelCode": "SEC2_ECO_SERV"
+  },
+  {
+    "subjectCode": "INFO",
+    "schoolLevelCode": "SEC2_ECO_SERV"
+  },
+  {
+    "subjectCode": "ISLAM",
+    "schoolLevelCode": "SEC2_ECO_SERV"
+  },
+  {
+    "subjectCode": "MATH",
+    "schoolLevelCode": "SEC2_ECO_SERV"
+  },
+  {
+    "subjectCode": "ANG",
+    "schoolLevelCode": "SEC2_LETTRES"
+  },
+  {
+    "subjectCode": "AR",
+    "schoolLevelCode": "SEC2_LETTRES"
+  },
+  {
+    "subjectCode": "FR",
+    "schoolLevelCode": "SEC2_LETTRES"
+  },
+  {
+    "subjectCode": "HIST",
+    "schoolLevelCode": "SEC2_LETTRES"
+  },
+  {
+    "subjectCode": "MATH",
+    "schoolLevelCode": "SEC2_LETTRES"
+  },
+  {
+    "subjectCode": "SVT",
+    "schoolLevelCode": "SEC2_LETTRES"
+  },
+  {
+    "subjectCode": "ANG",
+    "schoolLevelCode": "SEC2_TECH_INFO"
+  },
+  {
+    "subjectCode": "AR",
+    "schoolLevelCode": "SEC2_TECH_INFO"
+  },
+  {
+    "subjectCode": "CIV",
+    "schoolLevelCode": "SEC2_TECH_INFO"
+  },
+  {
+    "subjectCode": "FR",
+    "schoolLevelCode": "SEC2_TECH_INFO"
+  },
+  {
+    "subjectCode": "GEO",
+    "schoolLevelCode": "SEC2_TECH_INFO"
+  },
+  {
+    "subjectCode": "HIST",
+    "schoolLevelCode": "SEC2_TECH_INFO"
+  },
+  {
+    "subjectCode": "INFO",
+    "schoolLevelCode": "SEC2_TECH_INFO"
+  },
+  {
+    "subjectCode": "ISLAM",
+    "schoolLevelCode": "SEC2_TECH_INFO"
+  },
+  {
+    "subjectCode": "MATH",
+    "schoolLevelCode": "SEC2_TECH_INFO"
+  },
+  {
+    "subjectCode": "PHYS",
+    "schoolLevelCode": "SEC2_TECH_INFO"
+  },
+  {
+    "subjectCode": "TECH",
+    "schoolLevelCode": "SEC2_TECH_INFO"
+  },
+  {
+    "subjectCode": "ANG",
+    "schoolLevelCode": "SEC2_SCIENCES"
+  },
+  {
+    "subjectCode": "AR",
+    "schoolLevelCode": "SEC2_SCIENCES"
+  },
+  {
+    "subjectCode": "CIV",
+    "schoolLevelCode": "SEC2_SCIENCES"
+  },
+  {
+    "subjectCode": "FR",
+    "schoolLevelCode": "SEC2_SCIENCES"
+  },
+  {
+    "subjectCode": "GEO",
+    "schoolLevelCode": "SEC2_SCIENCES"
+  },
+  {
+    "subjectCode": "HIST",
+    "schoolLevelCode": "SEC2_SCIENCES"
+  },
+  {
+    "subjectCode": "INFO",
+    "schoolLevelCode": "SEC2_SCIENCES"
+  },
+  {
+    "subjectCode": "ISLAM",
+    "schoolLevelCode": "SEC2_SCIENCES"
+  },
+  {
+    "subjectCode": "MATH",
+    "schoolLevelCode": "SEC2_SCIENCES"
+  },
+  {
+    "subjectCode": "PHYS",
+    "schoolLevelCode": "SEC2_SCIENCES"
+  },
+  {
+    "subjectCode": "SVT",
+    "schoolLevelCode": "SEC2_SCIENCES"
+  },
+  {
+    "subjectCode": "TECH",
+    "schoolLevelCode": "SEC2_SCIENCES"
+  },
+  {
+    "subjectCode": "ALL",
+    "schoolLevelCode": "SEC3_SCI_EXP"
+  },
+  {
+    "subjectCode": "ANG",
+    "schoolLevelCode": "SEC3_SCI_EXP"
+  },
+  {
+    "subjectCode": "AR",
+    "schoolLevelCode": "SEC3_SCI_EXP"
+  },
+  {
+    "subjectCode": "ART",
+    "schoolLevelCode": "SEC3_SCI_EXP"
+  },
+  {
+    "subjectCode": "ESP",
+    "schoolLevelCode": "SEC3_SCI_EXP"
+  },
+  {
+    "subjectCode": "FR",
+    "schoolLevelCode": "SEC3_SCI_EXP"
+  },
+  {
+    "subjectCode": "GEO",
+    "schoolLevelCode": "SEC3_SCI_EXP"
+  },
+  {
+    "subjectCode": "HIST",
+    "schoolLevelCode": "SEC3_SCI_EXP"
+  },
+  {
+    "subjectCode": "INFO",
+    "schoolLevelCode": "SEC3_SCI_EXP"
+  },
+  {
+    "subjectCode": "ISLAM",
+    "schoolLevelCode": "SEC3_SCI_EXP"
+  },
+  {
+    "subjectCode": "ITA",
+    "schoolLevelCode": "SEC3_SCI_EXP"
+  },
+  {
+    "subjectCode": "MATH",
+    "schoolLevelCode": "SEC3_SCI_EXP"
+  },
+  {
+    "subjectCode": "PHILO",
+    "schoolLevelCode": "SEC3_SCI_EXP"
+  },
+  {
+    "subjectCode": "PHYS",
+    "schoolLevelCode": "SEC3_SCI_EXP"
+  },
+  {
+    "subjectCode": "SVT",
+    "schoolLevelCode": "SEC3_SCI_EXP"
+  },
+  {
+    "subjectCode": "ALL",
+    "schoolLevelCode": "SEC3_MATH"
+  },
+  {
+    "subjectCode": "ANG",
+    "schoolLevelCode": "SEC3_MATH"
+  },
+  {
+    "subjectCode": "AR",
+    "schoolLevelCode": "SEC3_MATH"
+  },
+  {
+    "subjectCode": "ESP",
+    "schoolLevelCode": "SEC3_MATH"
+  },
+  {
+    "subjectCode": "FR",
+    "schoolLevelCode": "SEC3_MATH"
+  },
+  {
+    "subjectCode": "GEO",
+    "schoolLevelCode": "SEC3_MATH"
+  },
+  {
+    "subjectCode": "HIST",
+    "schoolLevelCode": "SEC3_MATH"
+  },
+  {
+    "subjectCode": "INFO",
+    "schoolLevelCode": "SEC3_MATH"
+  },
+  {
+    "subjectCode": "ISLAM",
+    "schoolLevelCode": "SEC3_MATH"
+  },
+  {
+    "subjectCode": "ITA",
+    "schoolLevelCode": "SEC3_MATH"
+  },
+  {
+    "subjectCode": "MATH",
+    "schoolLevelCode": "SEC3_MATH"
+  },
+  {
+    "subjectCode": "PHILO",
+    "schoolLevelCode": "SEC3_MATH"
+  },
+  {
+    "subjectCode": "PHYS",
+    "schoolLevelCode": "SEC3_MATH"
+  },
+  {
+    "subjectCode": "SVT",
+    "schoolLevelCode": "SEC3_MATH"
+  },
+  {
+    "subjectCode": "ALL",
+    "schoolLevelCode": "SEC3_LETTRES"
+  },
+  {
+    "subjectCode": "ANG",
+    "schoolLevelCode": "SEC3_LETTRES"
+  },
+  {
+    "subjectCode": "AR",
+    "schoolLevelCode": "SEC3_LETTRES"
+  },
+  {
+    "subjectCode": "ESP",
+    "schoolLevelCode": "SEC3_LETTRES"
+  },
+  {
+    "subjectCode": "FR",
+    "schoolLevelCode": "SEC3_LETTRES"
+  },
+  {
+    "subjectCode": "GEO",
+    "schoolLevelCode": "SEC3_LETTRES"
+  },
+  {
+    "subjectCode": "HIST",
+    "schoolLevelCode": "SEC3_LETTRES"
+  },
+  {
+    "subjectCode": "INFO",
+    "schoolLevelCode": "SEC3_LETTRES"
+  },
+  {
+    "subjectCode": "ISLAM",
+    "schoolLevelCode": "SEC3_LETTRES"
+  },
+  {
+    "subjectCode": "ITA",
+    "schoolLevelCode": "SEC3_LETTRES"
+  },
+  {
+    "subjectCode": "MATH",
+    "schoolLevelCode": "SEC3_LETTRES"
+  },
+  {
+    "subjectCode": "PHILO",
+    "schoolLevelCode": "SEC3_LETTRES"
+  },
+  {
+    "subjectCode": "ALGO",
+    "schoolLevelCode": "SEC3_INFO"
+  },
+  {
+    "subjectCode": "HIST",
+    "schoolLevelCode": "SEC3_INFO"
+  },
+  {
+    "subjectCode": "MATH",
+    "schoolLevelCode": "SEC3_INFO"
+  },
+  {
+    "subjectCode": "OS",
+    "schoolLevelCode": "SEC3_INFO"
+  },
+  {
+    "subjectCode": "PHILO",
+    "schoolLevelCode": "SEC3_INFO"
+  },
+  {
+    "subjectCode": "PHYS",
+    "schoolLevelCode": "SEC3_INFO"
+  },
+  {
+    "subjectCode": "TIC",
+    "schoolLevelCode": "SEC3_INFO"
+  },
+  {
+    "subjectCode": "ALL",
+    "schoolLevelCode": "SEC3_TECH"
+  },
+  {
+    "subjectCode": "ANG",
+    "schoolLevelCode": "SEC3_TECH"
+  },
+  {
+    "subjectCode": "AR",
+    "schoolLevelCode": "SEC3_TECH"
+  },
+  {
+    "subjectCode": "ESP",
+    "schoolLevelCode": "SEC3_TECH"
+  },
+  {
+    "subjectCode": "FR",
+    "schoolLevelCode": "SEC3_TECH"
+  },
+  {
+    "subjectCode": "GEO",
+    "schoolLevelCode": "SEC3_TECH"
+  },
+  {
+    "subjectCode": "HIST",
+    "schoolLevelCode": "SEC3_TECH"
+  },
+  {
+    "subjectCode": "INFO",
+    "schoolLevelCode": "SEC3_TECH"
+  },
+  {
+    "subjectCode": "ISLAM",
+    "schoolLevelCode": "SEC3_TECH"
+  },
+  {
+    "subjectCode": "ITA",
+    "schoolLevelCode": "SEC3_TECH"
+  },
+  {
+    "subjectCode": "MATH",
+    "schoolLevelCode": "SEC3_TECH"
+  },
+  {
+    "subjectCode": "PHILO",
+    "schoolLevelCode": "SEC3_TECH"
+  },
+  {
+    "subjectCode": "PHYS",
+    "schoolLevelCode": "SEC3_TECH"
+  },
+  {
+    "subjectCode": "TECH",
+    "schoolLevelCode": "SEC3_TECH"
+  },
+  {
+    "subjectCode": "ALL",
+    "schoolLevelCode": "SEC3_ECO_GEST"
+  },
+  {
+    "subjectCode": "ANG",
+    "schoolLevelCode": "SEC3_ECO_GEST"
+  },
+  {
+    "subjectCode": "AR",
+    "schoolLevelCode": "SEC3_ECO_GEST"
+  },
+  {
+    "subjectCode": "ART",
+    "schoolLevelCode": "SEC3_ECO_GEST"
+  },
+  {
+    "subjectCode": "ECO",
+    "schoolLevelCode": "SEC3_ECO_GEST"
+  },
+  {
+    "subjectCode": "ESP",
+    "schoolLevelCode": "SEC3_ECO_GEST"
+  },
+  {
+    "subjectCode": "FR",
+    "schoolLevelCode": "SEC3_ECO_GEST"
+  },
+  {
+    "subjectCode": "GEO",
+    "schoolLevelCode": "SEC3_ECO_GEST"
+  },
+  {
+    "subjectCode": "GEST",
+    "schoolLevelCode": "SEC3_ECO_GEST"
+  },
+  {
+    "subjectCode": "HIST",
+    "schoolLevelCode": "SEC3_ECO_GEST"
+  },
+  {
+    "subjectCode": "INFO",
+    "schoolLevelCode": "SEC3_ECO_GEST"
+  },
+  {
+    "subjectCode": "ISLAM",
+    "schoolLevelCode": "SEC3_ECO_GEST"
+  },
+  {
+    "subjectCode": "ITA",
+    "schoolLevelCode": "SEC3_ECO_GEST"
+  },
+  {
+    "subjectCode": "MATH",
+    "schoolLevelCode": "SEC3_ECO_GEST"
+  },
+  {
+    "subjectCode": "PHILO",
+    "schoolLevelCode": "SEC3_ECO_GEST"
+  },
+  {
+    "subjectCode": "INFO",
+    "schoolLevelCode": "SEC4_SPORT"
+  },
+  {
+    "subjectCode": "MATH",
+    "schoolLevelCode": "SEC4_SPORT"
+  },
+  {
+    "subjectCode": "PHYS",
+    "schoolLevelCode": "SEC4_SPORT"
+  },
+  {
+    "subjectCode": "SVT",
+    "schoolLevelCode": "SEC4_SPORT"
+  },
+  {
+    "subjectCode": "ALL",
+    "schoolLevelCode": "SEC4_MATH"
+  },
+  {
+    "subjectCode": "ANG",
+    "schoolLevelCode": "SEC4_MATH"
+  },
+  {
+    "subjectCode": "AR",
+    "schoolLevelCode": "SEC4_MATH"
+  },
+  {
+    "subjectCode": "ESP",
+    "schoolLevelCode": "SEC4_MATH"
+  },
+  {
+    "subjectCode": "FR",
+    "schoolLevelCode": "SEC4_MATH"
+  },
+  {
+    "subjectCode": "INFO",
+    "schoolLevelCode": "SEC4_MATH"
+  },
+  {
+    "subjectCode": "ISLAM",
+    "schoolLevelCode": "SEC4_MATH"
+  },
+  {
+    "subjectCode": "ITA",
+    "schoolLevelCode": "SEC4_MATH"
+  },
+  {
+    "subjectCode": "MATH",
+    "schoolLevelCode": "SEC4_MATH"
+  },
+  {
+    "subjectCode": "PHILO",
+    "schoolLevelCode": "SEC4_MATH"
+  },
+  {
+    "subjectCode": "PHYS",
+    "schoolLevelCode": "SEC4_MATH"
+  },
+  {
+    "subjectCode": "SCI_INFO",
+    "schoolLevelCode": "SEC4_MATH"
+  },
+  {
+    "subjectCode": "SVT",
+    "schoolLevelCode": "SEC4_MATH"
+  },
+  {
+    "subjectCode": "ALL",
+    "schoolLevelCode": "SEC4_TECH"
+  },
+  {
+    "subjectCode": "ANG",
+    "schoolLevelCode": "SEC4_TECH"
+  },
+  {
+    "subjectCode": "AR",
+    "schoolLevelCode": "SEC4_TECH"
+  },
+  {
+    "subjectCode": "EPS",
+    "schoolLevelCode": "SEC4_TECH"
+  },
+  {
+    "subjectCode": "ESP",
+    "schoolLevelCode": "SEC4_TECH"
+  },
+  {
+    "subjectCode": "FR",
+    "schoolLevelCode": "SEC4_TECH"
+  },
+  {
+    "subjectCode": "INFO",
+    "schoolLevelCode": "SEC4_TECH"
+  },
+  {
+    "subjectCode": "ITA",
+    "schoolLevelCode": "SEC4_TECH"
+  },
+  {
+    "subjectCode": "MATH",
+    "schoolLevelCode": "SEC4_TECH"
+  },
+  {
+    "subjectCode": "PHYS",
+    "schoolLevelCode": "SEC4_TECH"
+  },
+  {
+    "subjectCode": "TECH",
+    "schoolLevelCode": "SEC4_TECH"
+  },
+  {
+    "subjectCode": "ALL",
+    "schoolLevelCode": "SEC4_ECO_GEST"
+  },
+  {
+    "subjectCode": "ANG",
+    "schoolLevelCode": "SEC4_ECO_GEST"
+  },
+  {
+    "subjectCode": "AR",
+    "schoolLevelCode": "SEC4_ECO_GEST"
+  },
+  {
+    "subjectCode": "ECO",
+    "schoolLevelCode": "SEC4_ECO_GEST"
+  },
+  {
+    "subjectCode": "EPS",
+    "schoolLevelCode": "SEC4_ECO_GEST"
+  },
+  {
+    "subjectCode": "ESP",
+    "schoolLevelCode": "SEC4_ECO_GEST"
+  },
+  {
+    "subjectCode": "FR",
+    "schoolLevelCode": "SEC4_ECO_GEST"
+  },
+  {
+    "subjectCode": "GEST",
+    "schoolLevelCode": "SEC4_ECO_GEST"
+  },
+  {
+    "subjectCode": "HG",
+    "schoolLevelCode": "SEC4_ECO_GEST"
+  },
+  {
+    "subjectCode": "INFO",
+    "schoolLevelCode": "SEC4_ECO_GEST"
+  },
+  {
+    "subjectCode": "ITA",
+    "schoolLevelCode": "SEC4_ECO_GEST"
+  },
+  {
+    "subjectCode": "MATH",
+    "schoolLevelCode": "SEC4_ECO_GEST"
+  },
+  {
+    "subjectCode": "PHILO",
+    "schoolLevelCode": "SEC4_ECO_GEST"
+  },
+  {
+    "subjectCode": "ALL",
+    "schoolLevelCode": "SEC4_SCI_EXP"
+  },
+  {
+    "subjectCode": "ANG",
+    "schoolLevelCode": "SEC4_SCI_EXP"
+  },
+  {
+    "subjectCode": "AR",
+    "schoolLevelCode": "SEC4_SCI_EXP"
+  },
+  {
+    "subjectCode": "EPS",
+    "schoolLevelCode": "SEC4_SCI_EXP"
+  },
+  {
+    "subjectCode": "ESP",
+    "schoolLevelCode": "SEC4_SCI_EXP"
+  },
+  {
+    "subjectCode": "FR",
+    "schoolLevelCode": "SEC4_SCI_EXP"
+  },
+  {
+    "subjectCode": "INFO",
+    "schoolLevelCode": "SEC4_SCI_EXP"
+  },
+  {
+    "subjectCode": "ITA",
+    "schoolLevelCode": "SEC4_SCI_EXP"
+  },
+  {
+    "subjectCode": "MATH",
+    "schoolLevelCode": "SEC4_SCI_EXP"
+  },
+  {
+    "subjectCode": "PHILO",
+    "schoolLevelCode": "SEC4_SCI_EXP"
+  },
+  {
+    "subjectCode": "PHYS",
+    "schoolLevelCode": "SEC4_SCI_EXP"
+  },
+  {
+    "subjectCode": "SVT",
+    "schoolLevelCode": "SEC4_SCI_EXP"
+  },
+  {
+    "subjectCode": "ALL",
+    "schoolLevelCode": "SEC4_LETTRES"
+  },
+  {
+    "subjectCode": "ANG",
+    "schoolLevelCode": "SEC4_LETTRES"
+  },
+  {
+    "subjectCode": "AR",
+    "schoolLevelCode": "SEC4_LETTRES"
+  },
+  {
+    "subjectCode": "EPS",
+    "schoolLevelCode": "SEC4_LETTRES"
+  },
+  {
+    "subjectCode": "ESP",
+    "schoolLevelCode": "SEC4_LETTRES"
+  },
+  {
+    "subjectCode": "FR",
+    "schoolLevelCode": "SEC4_LETTRES"
+  },
+  {
+    "subjectCode": "HIST",
+    "schoolLevelCode": "SEC4_LETTRES"
+  },
+  {
+    "subjectCode": "INFO",
+    "schoolLevelCode": "SEC4_LETTRES"
+  },
+  {
+    "subjectCode": "ISLAM",
+    "schoolLevelCode": "SEC4_LETTRES"
+  },
+  {
+    "subjectCode": "ITA",
+    "schoolLevelCode": "SEC4_LETTRES"
+  },
+  {
+    "subjectCode": "PHILO",
+    "schoolLevelCode": "SEC4_LETTRES"
+  },
+  {
+    "subjectCode": "SVT",
+    "schoolLevelCode": "SEC4_LETTRES"
+  }
+]

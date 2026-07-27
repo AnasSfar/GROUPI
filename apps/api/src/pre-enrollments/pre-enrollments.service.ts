@@ -1,6 +1,8 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { AcademicYear } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { EmailService } from '../email/email.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreatePreEnrollmentDto } from './dto/create-pre-enrollment.dto';
 import { ProposePreEnrollmentDto } from './dto/propose-pre-enrollment.dto';
 import { EligibleTeachersQueryDto } from './dto/eligible-teachers-query.dto';
@@ -8,7 +10,9 @@ import { EligibleTeachersQueryDto } from './dto/eligible-teachers-query.dto';
 const INCLUDE_DETAILS = {
   student: { select: { id: true, firstName: true, lastName: true } },
   /** Ch.11.5 : le Professeur consulte les coordonnées des Parents ayant préinscrit un élève. */
-  parent: { select: { id: true, firstName: true, lastName: true, phone: true, city: true } },
+  parent: {
+    select: { id: true, firstName: true, lastName: true, phone: true, city: true, user: { select: { email: true } } },
+  },
   teacher: { select: { id: true, firstName: true, lastName: true, city: true } },
   schoolLevel: true,
   subject: true,
@@ -33,7 +37,11 @@ interface ExpirableItem {
 
 @Injectable()
 export class PreEnrollmentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly email: EmailService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   /**
    * Ch.11.3 : dans ce MVP il n'existe pas de notion formelle "d'ouverture/fermeture" des
@@ -290,11 +298,28 @@ export class PreEnrollmentsService {
       throw new BadRequestException('La date limite de réponse doit être dans le futur');
     }
 
-    return this.prisma.preEnrollment.update({
+    const updated = await this.prisma.preEnrollment.update({
       where: { id },
       data: { status: 'PROPOSAL_SENT', proposedGroupId: group.id, expiresAt },
       include: INCLUDE_DETAILS,
     });
+    // NOT-PRE-* : hors chemin critique — un échec d'envoi ne doit jamais annuler la proposition.
+    await this.notifications.notify({
+      recipientUserId: updated.parentId,
+      type: 'PRE_PROPOSAL_SENT',
+      priority: 'IMPORTANT',
+      title: 'Proposition de groupe',
+      body: `Un groupe "${group.name}" a été proposé pour ${updated.student.firstName} ${updated.student.lastName} suite à votre préinscription.`,
+      refType: 'PreEnrollment',
+      refId: updated.id,
+      sendEmail: () =>
+        this.email.sendPreEnrollmentProposal(
+          updated.parent.user.email,
+          `${updated.student.firstName} ${updated.student.lastName}`,
+          group.name,
+        ),
+    });
+    return updated;
   }
 
   /** Ch.11.7, RM-PRE-008 : préinscriptions compatibles avec un groupe (à sa création/consultation). */

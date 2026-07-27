@@ -7,10 +7,11 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
+import { SubscriptionGuard } from '../subscriptions/subscription.guard';
 
 /** Ch.13 : opérations sur une séance individuelle — Professeur propriétaire du groupe uniquement. */
 @Controller('sessions')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, SubscriptionGuard)
 @Roles(Role.TEACHER)
 export class SessionsController {
   constructor(private readonly service: SessionsService) {}

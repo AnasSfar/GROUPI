@@ -95,12 +95,50 @@ export function IconUserPlus(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function IconUserCheck(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <circle cx="9" cy="8" r="4" />
+      <path d="M2 21v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2" />
+      <path d="m16 11 2 2 4-4" />
+    </Icon>
+  );
+}
+
+export function IconBell(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+    </Icon>
+  );
+}
+
 export function IconLogOut(props: SVGProps<SVGSVGElement>) {
   return (
     <Icon {...props}>
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
       <path d="M16 17l5-5-5-5" />
       <path d="M21 12H9" />
+    </Icon>
+  );
+}
+
+export function IconCreditCard(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <rect x="2" y="5" width="20" height="14" rx="2" />
+      <path d="M2 10h20" />
+    </Icon>
+  );
+}
+
+export function IconWallet(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M20 7H5a2 2 0 0 1 0-4h13v4" />
+      <path d="M4 7h16v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7Z" />
+      <path d="M16 14h.01" />
     </Icon>
   );
 }

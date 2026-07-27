@@ -104,6 +104,7 @@ export class GroupsService {
           teachingMode: dto.teachingMode,
           absenceBillingPolicy: dto.absenceBillingPolicy,
           abandonmentThreshold: dto.abandonmentThreshold ?? 3,
+          debtAlertThresholdSessions: dto.debtAlertThresholdSessions ?? 4,
           visibilityWhenFull: dto.visibilityWhenFull,
           startDate: new Date(dto.startDate),
           endDate: dto.endDate ? new Date(dto.endDate) : undefined,
@@ -169,6 +170,9 @@ export class GroupsService {
             : {}),
           ...(dto.abandonmentThreshold !== undefined
             ? { abandonmentThreshold: dto.abandonmentThreshold }
+            : {}),
+          ...(dto.debtAlertThresholdSessions !== undefined
+            ? { debtAlertThresholdSessions: dto.debtAlertThresholdSessions }
             : {}),
           ...(dto.visibilityWhenFull !== undefined
             ? { visibilityWhenFull: dto.visibilityWhenFull }

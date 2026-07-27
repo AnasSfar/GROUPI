@@ -22,6 +22,11 @@ const STATUS_BADGE: Record<StudentSituation['status'], string> = {
   REJECTED: 'badge-danger',
 };
 
+function formatSchoolOption(school: School) {
+  const city = school.city?.name ? ` - ${school.city.name}` : '';
+  const code = school.officialCode ? ` (${school.officialCode})` : '';
+  return `${school.name}${city}${code}`;
+}
 export function StudentSituationPage() {
   const { studentId } = useParams<{ studentId: string }>();
   const { getAccessToken } = useAuth();
@@ -203,7 +208,7 @@ export function StudentSituationPage() {
               <option value="">Sélectionner...</option>
               {schools.map((school) => (
                 <option key={school.id} value={school.id}>
-                  {school.name}
+                  {formatSchoolOption(school)}
                 </option>
               ))}
             </select>
@@ -220,3 +225,5 @@ export function StudentSituationPage() {
     </>
   );
 }
+
+

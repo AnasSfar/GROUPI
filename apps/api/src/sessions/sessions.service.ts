@@ -1,6 +1,8 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { AcademicYearStatus, DayOfWeek, GroupStatus, SessionStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { EmailService } from '../email/email.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { PostponeSessionDto } from './dto/postpone-session.dto';
 import { ListSessionsQueryDto } from './dto/list-sessions-query.dto';
@@ -85,7 +87,42 @@ export function isLockable(session: LockableSession): boolean {
 
 @Injectable()
 export class SessionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly email: EmailService,
+    private readonly notifications: NotificationsService,
+  ) {}
+
+  /**
+   * Ch.13 : notifie chaque Parent ayant une inscription ACTIVE dans le groupe — NOT-SES-001
+   * (exceptionnelle), NOT-SES-003 (annulée), NOT-SES-007/018 (reportée). Même forme de requête que
+   * `AttendanceService.validate` (`enrollment.findMany({ status: 'ACTIVE' })` joint au Parent).
+   */
+  private async notifyGroupParents(
+    groupId: string,
+    build: (groupName: string, parentEmail: string) => { type: string; title: string; body: string; sendEmail: () => Promise<void> },
+  ): Promise<void> {
+    const [group, enrollments] = await Promise.all([
+      this.prisma.group.findUniqueOrThrow({ where: { id: groupId }, select: { name: true } }),
+      this.prisma.enrollment.findMany({
+        where: { groupId, status: 'ACTIVE' },
+        include: { student: { select: { parentId: true, parent: { select: { user: { select: { email: true } } } } } } },
+      }),
+    ]);
+    for (const e of enrollments) {
+      const { type, title, body, sendEmail } = build(group.name, e.student.parent.user.email);
+      await this.notifications.notify({
+        recipientUserId: e.student.parentId,
+        type,
+        priority: 'IMPORTANT',
+        title,
+        body,
+        refType: 'Group',
+        refId: groupId,
+        sendEmail,
+      });
+    }
+  }
 
   /** Vérifie que le groupe existe et appartient bien au Professeur courant (cf. GroupsService.loadOwned). */
   private async loadOwnedGroup(teacherId: string, groupId: string) {
@@ -242,6 +279,15 @@ export class SessionsService {
         status: 'PLANNED',
       },
     });
+
+    // NOT-SES-001 : hors chemin critique — un échec de notification ne doit jamais annuler la création.
+    await this.notifyGroupParents(groupId, (groupName, parentEmail) => ({
+      type: 'SES_EXCEPTIONAL_CREATED',
+      title: 'Nouvelle séance exceptionnelle',
+      body: `Une séance exceptionnelle a été ajoutée au groupe "${groupName}" le ${date.toLocaleDateString('fr-FR')} à ${dto.startTime}.`,
+      sendEmail: () => this.email.sendSessionExceptional(parentEmail, groupName, date, dto.startTime),
+    }));
+
     return this.toResponse(session);
   }
 
@@ -322,6 +368,15 @@ export class SessionsService {
       }),
     ]);
 
+    // NOT-SES-007+018 : fusionnées en une seule notification par parent pour cette action atomique
+    // (voir le commentaire de `EmailService.sendSessionPostponed`).
+    await this.notifyGroupParents(session.groupId, (groupName, parentEmail) => ({
+      type: 'SES_POSTPONED',
+      title: 'Séance reportée',
+      body: `La séance du groupe "${groupName}" prévue le ${session.date.toLocaleDateString('fr-FR')} a été reportée au ${newDate.toLocaleDateString('fr-FR')} à ${dto.startTime}.`,
+      sendEmail: () => this.email.sendSessionPostponed(parentEmail, groupName, session.date, newDate, dto.startTime),
+    }));
+
     return this.toResponse(created);
   }
 
@@ -343,6 +398,15 @@ export class SessionsService {
       where: { id: sessionId },
       data: { status: 'CANCELLED' },
     });
+
+    // NOT-SES-003 : hors chemin critique — un échec de notification ne doit jamais annuler l'annulation.
+    await this.notifyGroupParents(session.groupId, (groupName, parentEmail) => ({
+      type: 'SES_CANCELLED',
+      title: 'Séance annulée',
+      body: `La séance du groupe "${groupName}" prévue le ${session.date.toLocaleDateString('fr-FR')} à ${session.startTime} a été annulée.`,
+      sendEmail: () => this.email.sendSessionCancelled(parentEmail, groupName, session.date, session.startTime),
+    }));
+
     return this.toResponse(updated);
   }
 

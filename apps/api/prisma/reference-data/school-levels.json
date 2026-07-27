@@ -1,0 +1,132 @@
+[
+  {
+    "name": "1ère année primaire",
+    "code": "PRIM1",
+    "order": 1
+  },
+  {
+    "name": "2ème année primaire",
+    "code": "PRIM2",
+    "order": 2
+  },
+  {
+    "name": "3ème année primaire",
+    "code": "PRIM3",
+    "order": 3
+  },
+  {
+    "name": "4ème année primaire",
+    "code": "PRIM4",
+    "order": 4
+  },
+  {
+    "name": "5ème année primaire",
+    "code": "PRIM5",
+    "order": 5
+  },
+  {
+    "name": "6ème année primaire",
+    "code": "PRIM6",
+    "order": 6
+  },
+  {
+    "name": "7éme année de base",
+    "code": "COL7",
+    "order": 7
+  },
+  {
+    "name": "8éme année de base",
+    "code": "COL8",
+    "order": 8
+  },
+  {
+    "name": "9éme année de base",
+    "code": "COL9",
+    "order": 9
+  },
+  {
+    "name": "1ère année secondaire - Tronc commun",
+    "code": "SEC1_TC",
+    "order": 10
+  },
+  {
+    "name": "2ème année secondaire - Economie et services",
+    "code": "SEC2_ECO_SERV",
+    "order": 11
+  },
+  {
+    "name": "2ème année secondaire - Lettres",
+    "code": "SEC2_LETTRES",
+    "order": 12
+  },
+  {
+    "name": "2ème année secondaire - Technologies de l'informatique",
+    "code": "SEC2_TECH_INFO",
+    "order": 13
+  },
+  {
+    "name": "2ème année secondaire - Sciences",
+    "code": "SEC2_SCIENCES",
+    "order": 14
+  },
+  {
+    "name": "3ème année secondaire - Sciences experimentales",
+    "code": "SEC3_SCI_EXP",
+    "order": 15
+  },
+  {
+    "name": "3ème année secondaire - Mathématiques",
+    "code": "SEC3_MATH",
+    "order": 16
+  },
+  {
+    "name": "3ème année secondaire - Lettres",
+    "code": "SEC3_LETTRES",
+    "order": 17
+  },
+  {
+    "name": "3ème année secondaire - Sciences de l'informatique",
+    "code": "SEC3_INFO",
+    "order": 18
+  },
+  {
+    "name": "3ème année secondaire - Sciences techniques",
+    "code": "SEC3_TECH",
+    "order": 19
+  },
+  {
+    "name": "3ème année secondaire - Economie et Gestion",
+    "code": "SEC3_ECO_GEST",
+    "order": 20
+  },
+  {
+    "name": "4ème année secondaire - Sport",
+    "code": "SEC4_SPORT",
+    "order": 21
+  },
+  {
+    "name": "4ème année secondaire - Mathématiques",
+    "code": "SEC4_MATH",
+    "order": 22
+  },
+  {
+    "name": "4ème année secondaire - Sciences techniques",
+    "code": "SEC4_TECH",
+    "order": 23
+  },
+  {
+    "name": "4ème année secondaire - Economie et Gestion",
+    "code": "SEC4_ECO_GEST",
+    "order": 24
+  },
+  {
+    "name": "4ème année secondaire - Sciences experimentales",
+    "code": "SEC4_SCI_EXP",
+    "order": 25
+  },
+  {
+    "name": "4ème année secondaire - Lettres",
+    "code": "SEC4_LETTRES",
+    "order": 26
+  }
+]

@@ -1,192 +1,61 @@
 // GROUPI — seed de développement pour le domaine Référentiels
-// (villes, établissements, matières, niveaux scolaires, année académique,
-// combinaisons matière/niveau — référentiel Ch. 23.8).
+// Source de vérité : fichiers officiels dans prisma/reference-data, générés depuis
+// gps_etablissements_scolaires.xls et levelsubject.xlsx.
 //
-// Idempotent : entièrement basé sur `upsert` sur les clés uniques du schéma,
-// donc rejouable sans erreur de duplication (`npx prisma db seed`).
+// Idempotent : les référentiels sont rejouables sans duplication grâce aux clés uniques
+// (code pour matières/niveaux, name pour villes, sourceKey GPS pour établissements).
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { PrismaClient, SchoolType, AcademicYearStatus } from '@prisma/client';
+
+/// Ch.4.3/21.3 : catalogue commercial des 3 offres — tarifs/capacités définis dans le cadre
+/// général, indépendants des règles fonctionnelles (Ch.21.2). Découverte : gratuite, 30 jours,
+/// utilisable une seule fois par Professeur (RM-SUB-005, `isTrial`).
+const SUBSCRIPTION_PLANS = [
+  { code: 'DECOUVERTE', name: 'Découverte', price: 0, maxActiveEnrollments: 20, durationDays: 30, isTrial: true },
+  { code: 'INTERMEDIAIRE', name: 'Intermédiaire', price: 49, maxActiveEnrollments: 50, durationDays: null, isTrial: false },
+  { code: 'PRO', name: 'Pro', price: 99, maxActiveEnrollments: null, durationDays: null, isTrial: false },
+] as const;
 
 const prisma = new PrismaClient();
 
-// ---------------------------------------------------------------------------
-// Données — Villes tunisiennes
-// ---------------------------------------------------------------------------
-
-const CITIES = [
-  'Tunis',
-  'Sfax',
-  'Sousse',
-  'Ariana',
-  'Ben Arous',
-  'Nabeul',
-  'Bizerte',
-  'Gabès',
-  'Kairouan',
-  'Monastir',
-  'La Marsa',
-  'Manouba',
-  'Gafsa',
-  'Médenine',
-  'Mahdia',
-  'Kasserine',
-  'Sidi Bouzid',
-  'Tozeur',
-  'Zaghouan',
-];
-
-// ---------------------------------------------------------------------------
-// Données — Établissements (quelques-uns par grande ville)
-// ---------------------------------------------------------------------------
-
-const SCHOOLS: {
+type ReferenceSubject = { name: string; code: string };
+type ReferenceSchoolLevel = { name: string; code: string; order: number };
+type ReferenceSubjectLevel = { subjectCode: string; schoolLevelCode: string };
+type ReferenceSchool = {
+  sourceKey: string;
+  officialCode: string;
+  autoCode: string | null;
   name: string;
+  nameAr: string | null;
   type: SchoolType;
-  city: string;
-  address?: string;
-}[] = [
-  // Tunis
-  { name: 'Lycée Pilote Bourguiba Tunis', type: SchoolType.HIGH_SCHOOL, city: 'Tunis', address: 'Avenue Bab Bnet, Tunis' },
-  { name: 'Collège Ibn Khaldoun Tunis', type: SchoolType.COLLEGE, city: 'Tunis', address: 'Rue de Marseille, Tunis' },
-  { name: 'École Primaire Khaznadar', type: SchoolType.PRIMARY, city: 'Tunis' },
+  cityName: string;
+  regionalDirectorate: string | null;
+  regionalDirectorateAr: string | null;
+  delegation: string | null;
+  delegationAr: string | null;
+  regionAr: string | null;
+  cycleAr: string | null;
+  latitude: number | null;
+  longitude: number | null;
+};
 
-  // Sfax
-  { name: 'Lycée Sfax Pilote', type: SchoolType.HIGH_SCHOOL, city: 'Sfax', address: 'Route de l’Aéroport, Sfax' },
-  { name: 'Collège Habib Bourguiba Sfax', type: SchoolType.COLLEGE, city: 'Sfax' },
-  { name: 'École Primaire Hached Sfax', type: SchoolType.PRIMARY, city: 'Sfax' },
-
-  // Sousse
-  { name: 'Lycée Sousse Pilote', type: SchoolType.HIGH_SCHOOL, city: 'Sousse', address: 'Boulevard 14 Janvier, Sousse' },
-  { name: 'Collège Farhat Hached Sousse', type: SchoolType.COLLEGE, city: 'Sousse' },
-  { name: 'École Primaire Khezama Sousse', type: SchoolType.PRIMARY, city: 'Sousse' },
-
-  // Ariana
-  { name: 'Lycée Secondaire Ariana', type: SchoolType.HIGH_SCHOOL, city: 'Ariana' },
-  { name: 'Collège Ariana Ville', type: SchoolType.COLLEGE, city: 'Ariana' },
-
-  // Ben Arous
-  { name: 'Lycée Secondaire Ben Arous', type: SchoolType.HIGH_SCHOOL, city: 'Ben Arous' },
-  { name: 'Collège El Mourouj', type: SchoolType.COLLEGE, city: 'Ben Arous' },
-
-  // Nabeul
-  { name: 'Lycée Secondaire Nabeul', type: SchoolType.HIGH_SCHOOL, city: 'Nabeul' },
-  { name: 'Collège Nabeul Centre', type: SchoolType.COLLEGE, city: 'Nabeul' },
-];
-
-// ---------------------------------------------------------------------------
-// Données — Matières (curriculum tunisien standard)
-// ---------------------------------------------------------------------------
-
-const SUBJECTS = [
-  { name: 'Mathématiques', code: 'MATH' },
-  { name: 'Physique', code: 'PHYS' },
-  { name: 'Sciences de la Vie et de la Terre', code: 'SVT' },
-  { name: 'Français', code: 'FR' },
-  { name: 'Anglais', code: 'ANG' },
-  { name: 'Arabe', code: 'AR' },
-  { name: 'Philosophie', code: 'PHILO' },
-  { name: 'Histoire-Géographie', code: 'HG' },
-  { name: 'Informatique', code: 'INFO' },
-  { name: 'Économie', code: 'ECO' },
-  { name: 'Gestion', code: 'GEST' },
-  { name: 'Comptabilité', code: 'COMPTA' },
-  { name: 'Éducation Islamique', code: 'ISLAM' },
-  { name: 'Espagnol', code: 'ESP' },
-  { name: 'Allemand', code: 'ALL' },
-  { name: 'Italien', code: 'ITA' },
-  { name: 'Sport / EPS', code: 'EPS' },
-] as const;
-
-// ---------------------------------------------------------------------------
-// Données — Niveaux scolaires (système tunisien : primaire, collège, lycée)
-// ---------------------------------------------------------------------------
-
-const SCHOOL_LEVELS = [
-  // Primaire — 1ère à 6ème année
-  { name: '1ère année primaire', code: 'PRIM1', order: 1 },
-  { name: '2ème année primaire', code: 'PRIM2', order: 2 },
-  { name: '3ème année primaire', code: 'PRIM3', order: 3 },
-  { name: '4ème année primaire', code: 'PRIM4', order: 4 },
-  { name: '5ème année primaire', code: 'PRIM5', order: 5 },
-  { name: '6ème année primaire', code: 'PRIM6', order: 6 },
-  // Collège — 7ème, 8ème, 9ème année de base
-  { name: '7ème année de base', code: 'COL7', order: 7 },
-  { name: '8ème année de base', code: 'COL8', order: 8 },
-  { name: '9ème année de base', code: 'COL9', order: 9 },
-  // Lycée — 1ère, 2ème, 3ème, 4ème année secondaire (génériques, sans filière)
-  { name: '1ère année secondaire', code: 'SEC1', order: 10 },
-  { name: '2ème année secondaire', code: 'SEC2', order: 11 },
-  { name: '3ème année secondaire', code: 'SEC3', order: 12 },
-  { name: '4ème année secondaire (Bac)', code: 'SEC4', order: 13 },
-] as const;
-
-// Codes de niveau regroupés par cycle, pour construire les combinaisons SubjectLevel.
-const PRIMARY_CODES = ['PRIM1', 'PRIM2', 'PRIM3', 'PRIM4', 'PRIM5', 'PRIM6'];
-const COLLEGE_CODES = ['COL7', 'COL8', 'COL9'];
-const LYCEE_CODES = ['SEC1', 'SEC2', 'SEC3', 'SEC4'];
-const ALL_LEVEL_CODES = [...PRIMARY_CODES, ...COLLEGE_CODES, ...LYCEE_CODES];
-
-// À partir de la 8ème année de base (2ème année de collège) pour les langues étrangères
-// optionnelles (Espagnol/Allemand/Italien) — approximation raisonnable, non normative.
-const FROM_COLLEGE_8_ONWARD = ALL_LEVEL_CODES.slice(ALL_LEVEL_CODES.indexOf('COL8'));
-// Du collège au lycée pour SVT / Physique / Histoire-Géo.
-const FROM_COLLEGE_ONWARD = ALL_LEVEL_CODES.slice(ALL_LEVEL_CODES.indexOf('COL7'));
-
-/**
- * Construit la table des combinaisons Matière/Niveau autorisées (Ch. 23.8).
- * Approche volontairement simplifiée, pas une reconstitution officielle du
- * programme scolaire tunisien :
- *  - matières "tronc commun" (Maths, Français, Arabe, Anglais, Sport/EPS) : tous les niveaux
- *  - SVT, Physique, Histoire-Géo : à partir du collège
- *  - Philosophie, Économie, Gestion, Comptabilité : lycée uniquement
- *  - Informatique, Éducation Islamique : à partir du collège
- *  - Langues étrangères optionnelles (Espagnol, Allemand, Italien) : à partir de la 8ème
- */
-function buildSubjectLevelCombinations(): { subjectCode: string; levelCode: string }[] {
-  const combos: { subjectCode: string; levelCode: string }[] = [];
-
-  const add = (subjectCode: string, levelCodes: string[]) => {
-    for (const levelCode of levelCodes) {
-      combos.push({ subjectCode, levelCode });
-    }
-  };
-
-  // Tronc commun — tous les niveaux, de la 1ère primaire à la 4ème secondaire.
-  add('MATH', ALL_LEVEL_CODES);
-  add('FR', ALL_LEVEL_CODES);
-  add('AR', ALL_LEVEL_CODES);
-  add('ANG', ALL_LEVEL_CODES);
-  add('EPS', ALL_LEVEL_CODES);
-
-  // Sciences / Histoire-Géo — à partir du collège.
-  add('SVT', FROM_COLLEGE_ONWARD);
-  add('PHYS', FROM_COLLEGE_ONWARD);
-  add('HG', FROM_COLLEGE_ONWARD);
-  add('ISLAM', FROM_COLLEGE_ONWARD);
-  add('INFO', FROM_COLLEGE_ONWARD);
-
-  // Matières spécifiques au lycée.
-  add('PHILO', LYCEE_CODES);
-  add('ECO', LYCEE_CODES);
-  add('GEST', LYCEE_CODES);
-  add('COMPTA', LYCEE_CODES);
-
-  // Langues étrangères optionnelles — à partir de la 8ème année de base.
-  add('ESP', FROM_COLLEGE_8_ONWARD);
-  add('ALL', FROM_COLLEGE_8_ONWARD);
-  add('ITA', FROM_COLLEGE_8_ONWARD);
-
-  return combos;
+function readReferenceData<T>(fileName: string): T {
+  const fullPath = join(__dirname, 'reference-data', fileName);
+  return JSON.parse(readFileSync(fullPath, 'utf8')) as T;
 }
 
-// ---------------------------------------------------------------------------
-// Seed
-// ---------------------------------------------------------------------------
+const CITIES = readReferenceData<string[]>('cities.json');
+const SCHOOLS = readReferenceData<ReferenceSchool[]>('schools.json');
+const SUBJECTS = readReferenceData<ReferenceSubject[]>('subjects.json');
+const SCHOOL_LEVELS = readReferenceData<ReferenceSchoolLevel[]>('school-levels.json');
+const SUBJECT_LEVELS = readReferenceData<ReferenceSubjectLevel[]>('subject-levels.json');
 
 async function main() {
   console.log('Seed GROUPI — domaine Référentiels\n');
 
-  // --- Villes -----------------------------------------------------------
+  // --- Villes / délégations ---------------------------------------------
   let citiesCount = 0;
   const cityIdByName = new Map<string, string>();
   for (const name of CITIES) {
@@ -200,26 +69,49 @@ async function main() {
   }
   console.log(`Villes : ${citiesCount} upserted`);
 
-  // --- Établissements -----------------------------------------------------
+  // --- Établissements scolaires officiels GPS ----------------------------
   let schoolsCount = 0;
   for (const school of SCHOOLS) {
-    const cityId = cityIdByName.get(school.city);
+    const cityId = cityIdByName.get(school.cityName);
     if (!cityId) {
-      throw new Error(`Ville inconnue pour l'établissement "${school.name}": ${school.city}`);
+      throw new Error(`Ville inconnue pour l'établissement "${school.name}": ${school.cityName}`);
     }
+
     await prisma.school.upsert({
-      where: { name: school.name },
+      where: { sourceKey: school.sourceKey },
       update: {
+        officialCode: school.officialCode,
+        autoCode: school.autoCode,
+        name: school.name,
+        nameAr: school.nameAr,
         type: school.type,
         cityId,
-        address: school.address ?? null,
+        regionalDirectorate: school.regionalDirectorate,
+        regionalDirectorateAr: school.regionalDirectorateAr,
+        delegation: school.delegation,
+        delegationAr: school.delegationAr,
+        regionAr: school.regionAr,
+        cycleAr: school.cycleAr,
+        latitude: school.latitude,
+        longitude: school.longitude,
         isActive: true,
       },
       create: {
+        sourceKey: school.sourceKey,
+        officialCode: school.officialCode,
+        autoCode: school.autoCode,
         name: school.name,
+        nameAr: school.nameAr,
         type: school.type,
         cityId,
-        address: school.address ?? null,
+        regionalDirectorate: school.regionalDirectorate,
+        regionalDirectorateAr: school.regionalDirectorateAr,
+        delegation: school.delegation,
+        delegationAr: school.delegationAr,
+        regionAr: school.regionAr,
+        cycleAr: school.cycleAr,
+        latitude: school.latitude,
+        longitude: school.longitude,
         isActive: true,
       },
     });
@@ -227,7 +119,8 @@ async function main() {
   }
   console.log(`Établissements : ${schoolsCount} upserted`);
 
-  // --- Matières -------------------------------------------------------------
+  // --- Matières -----------------------------------------------------------
+  await prisma.subject.updateMany({ data: { isActive: false } });
   let subjectsCount = 0;
   const subjectIdByCode = new Map<string, string>();
   for (const subject of SUBJECTS) {
@@ -241,19 +134,15 @@ async function main() {
   }
   console.log(`Matières : ${subjectsCount} upserted`);
 
-  // --- Niveaux scolaires ------------------------------------------------
+  // --- Niveaux scolaires --------------------------------------------------
+  await prisma.schoolLevel.updateMany({ data: { isActive: false } });
   let levelsCount = 0;
   const levelIdByCode = new Map<string, string>();
   for (const level of SCHOOL_LEVELS) {
     const created = await prisma.schoolLevel.upsert({
       where: { code: level.code },
       update: { name: level.name, order: level.order, isActive: true },
-      create: {
-        name: level.name,
-        code: level.code,
-        order: level.order,
-        isActive: true,
-      },
+      create: { name: level.name, code: level.code, order: level.order, isActive: true },
     });
     levelIdByCode.set(level.code, created.id);
     levelsCount++;
@@ -261,7 +150,6 @@ async function main() {
   console.log(`Niveaux scolaires : ${levelsCount} upserted`);
 
   // --- Année académique ---------------------------------------------------
-  // Année académique tunisienne courante : mi-septembre à fin juin.
   const academicYear = await prisma.academicYear.upsert({
     where: { label: '2026-2027' },
     update: {
@@ -278,14 +166,32 @@ async function main() {
   });
   console.log(`Année académique : 1 upserted (${academicYear.label}, ${academicYear.status})`);
 
+  // --- Offres d'abonnement (SubscriptionPlan, Ch. 21.3) ------------------
+  let plansCount = 0;
+  for (const p of SUBSCRIPTION_PLANS) {
+    await prisma.subscriptionPlan.upsert({
+      where: { code: p.code },
+      update: {
+        name: p.name,
+        price: p.price,
+        maxActiveEnrollments: p.maxActiveEnrollments,
+        durationDays: p.durationDays,
+        isTrial: p.isTrial,
+      },
+      create: p,
+    });
+    plansCount++;
+  }
+  console.log(`Offres d'abonnement : ${plansCount} upserted`);
+
   // --- Combinaisons Matière/Niveau (SubjectLevel, Ch. 23.8) --------------
-  const combinations = buildSubjectLevelCombinations();
+  await prisma.subjectLevel.updateMany({ data: { isAllowed: false, isActive: false } });
   let subjectLevelsCount = 0;
-  for (const { subjectCode, levelCode } of combinations) {
+  for (const { subjectCode, schoolLevelCode } of SUBJECT_LEVELS) {
     const subjectId = subjectIdByCode.get(subjectCode);
-    const schoolLevelId = levelIdByCode.get(levelCode);
+    const schoolLevelId = levelIdByCode.get(schoolLevelCode);
     if (!subjectId || !schoolLevelId) {
-      throw new Error(`Combinaison invalide subject=${subjectCode} level=${levelCode}`);
+      throw new Error(`Combinaison invalide subject=${subjectCode} level=${schoolLevelCode}`);
     }
     await prisma.subjectLevel.upsert({
       where: { subjectId_schoolLevelId: { subjectId, schoolLevelId } },
@@ -301,7 +207,8 @@ async function main() {
   console.log(`  - School       : ${schoolsCount}`);
   console.log(`  - Subject      : ${subjectsCount}`);
   console.log(`  - SchoolLevel  : ${levelsCount}`);
-  console.log(`  - AcademicYear : 1`);
+  console.log('  - AcademicYear : 1');
+  console.log(`  - SubscriptionPlan : ${plansCount}`);
   console.log(`  - SubjectLevel : ${subjectLevelsCount}`);
   console.log('\nSeed terminé avec succès.');
 }

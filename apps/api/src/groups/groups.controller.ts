@@ -9,9 +9,11 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
+import { SubscriptionGuard } from '../subscriptions/subscription.guard';
 
+/** Ch.22 : `SubscriptionGuard` ne restreint que la création/modification (GET toujours autorisé). */
 @Controller('groups')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, SubscriptionGuard)
 export class GroupsController {
   constructor(private readonly service: GroupsService) {}
 

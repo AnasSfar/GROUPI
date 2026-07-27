@@ -58,7 +58,7 @@ function extractMessage(body: unknown, fallback: string): string {
 }
 
 export interface ApiRequestOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   /** Bearer token to attach, if the endpoint requires authentication. */
   accessToken?: string | null;

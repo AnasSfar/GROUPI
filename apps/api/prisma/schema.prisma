@@ -115,6 +115,16 @@ enum EnrollmentStatus {
   EXPIRED
 }
 
+/// Ch.12.12 : cycle de vie d'une demande de changement de groupe (variante définitive uniquement,
+/// voir le commentaire du modèle `GroupChangeRequest`).
+enum GroupChangeStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  /// Annulée par le Parent avant toute décision du Professeur (miroir RM-INS-038/040).
+  CANCELLED
+}
+
 enum PreEnrollmentStatus {
   PENDING
   PROPOSAL_SENT
@@ -147,38 +157,134 @@ enum DayOfWeek {
 }
 
 // ---------------------------------------------------------------------------
+// Enums — Domaine Communication (Ch. 18-19)
+// ---------------------------------------------------------------------------
+
+/// Ch.18.6 : les 3 niveaux de priorité déterminent aussi le canal (§18.9) — voir `Activity`.
+enum ActivityPriority {
+  INFORMATION
+  IMPORTANT
+  CRITICAL
+}
+
+enum CommentAuthorRole {
+  TEACHER
+  PARENT
+}
+
+// ---------------------------------------------------------------------------
+// Enums — Domaine Abonnement (Ch. 21)
+// ---------------------------------------------------------------------------
+
+/// Ch.21/Annexe P : statuts opérationnels couverts par ce chantier. `DISABLED`/`ARCHIVED` (Ch.4.8)
+/// n'ont aucun déclencheur décrit au Ch.21 et sont volontairement omis (voir progress.md).
+enum SubscriptionStatus {
+  PENDING_PAYMENT
+  ACTIVE
+  SUSPENDED
+  EXPIRED
+}
+
+// ---------------------------------------------------------------------------
+// Enums — Domaine Comptable (Ch. 15)
+// ---------------------------------------------------------------------------
+
+/// Ch.15.16 : cycle de vie du compte de suivi comptable.
+enum AccountingAccountStatus {
+  CREATED
+  ACTIVE
+  LOCKED
+  CLOSED
+  ARCHIVED
+}
+
+/// Ch.15.16 : cycle de vie d'une écriture. Dans ce chantier, une écriture passe directement en
+/// POSTED à sa création (aucun flux de brouillon décrit au Ch.15) ; REVERSED marque une écriture
+/// annulée par une écriture inverse (RM-CPT-029) ; LOCKED marque une écriture figée par le
+/// verrouillage de son compte/période (RM-CPT-020) — elle reste alors définitivement immuable.
+enum AccountingEntryStatus {
+  CREATED
+  POSTED
+  REVERSED
+  LOCKED
+}
+
+/// RM-CPT-008 : PAYMENT/SESSION/ADJUSTMENT + ADMIN_ADJUSTMENT (15.8, hors RM-CPT-008 mais présent
+/// dans le tableau et les évènements EVT-CPT-009/010).
+enum AccountingEntryType {
+  PAYMENT
+  SESSION
+  ADJUSTMENT
+  ADMIN_ADJUSTMENT
+}
+
+/// RM-CPT-030 : le montant est toujours positif, le sens comptable (crédit/débit) est porté par
+/// ce champ plutôt que déduit du type — nécessaire car une écriture PAYMENT peut être un débit
+/// (écriture inverse annulant un paiement erroné, Ch.15.7/15.10) tout en restant de type PAYMENT
+/// (RM-CPT-008 : "le type d'une écriture est immuable").
+enum AccountingEntryDirection {
+  CREDIT
+  DEBIT
+}
+
+/// Ch.15.4 : état d'une période comptable (généralement une année académique).
+enum AccountingPeriodStatus {
+  OPEN
+  LOCKED
+  ARCHIVED
+}
+
+/// Ch.15.8 : motifs listés pour un ADJUSTMENT/ADMIN_ADJUSTMENT.
+enum AdjustmentReason {
+  DATA_ENTRY_ERROR
+  ATTENDANCE_CORRECTION
+  EXCEPTIONAL_DISCOUNT
+  ADMIN_CORRECTION
+}
+
+// ---------------------------------------------------------------------------
 // Domaine Utilisateurs (référentiel Ch. 3, Annexe P)
 // ---------------------------------------------------------------------------
 
 model User {
-  id            String     @id @default(uuid()) @db.Uuid
-  email         String     @unique
-  passwordHash  String     @map("password_hash")
-  status        UserStatus
-  roles         Role[]
-  emailVerifiedAt DateTime? @map("email_verified_at")
-  lastLoginAt   DateTime?  @map("last_login_at")
-  deletedAt     DateTime?  @map("deleted_at")
+  id              String     @id @default(uuid()) @db.Uuid
+  email           String     @unique
+  passwordHash    String     @map("password_hash")
+  status          UserStatus
+  roles           Role[]
+  emailVerifiedAt DateTime?  @map("email_verified_at")
+  lastLoginAt     DateTime?  @map("last_login_at")
+  deletedAt       DateTime?  @map("deleted_at")
 
   /// Verrouillage temporaire après échecs d'authentification (RM-SEC-016/037) — distinct de `status`.
   failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
   lockedUntil         DateTime? @map("locked_until")
   /// Incrémenté à chaque invalidation globale de session (RM-SEC-017/019/030) pour permettre
   /// la révocation immédiate d'un JWT déjà émis (vérifié dans JwtStrategy à chaque requête).
-  tokenVersion         Int       @default(0) @map("token_version")
+  tokenVersion        Int       @default(0) @map("token_version")
 
-  createdAt     DateTime   @default(now()) @map("created_at")
-  updatedAt     DateTime   @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  teacherProfile         TeacherProfile?
-  parentProfile          ParentProfile?
-  administrator          Administrator?
-  administratorsCreated  Administrator[] @relation("AdministratorCreatedBy")
-  enrollmentsDecided     Enrollment[]    @relation("EnrollmentDecidedBy")
-  sessions               UserSession[]
-  passwordResetTokens    PasswordResetToken[]
-  loginHistory           LoginHistory[]
-  auditLogs              AuditLog[]
+  teacherProfile             TeacherProfile?
+  parentProfile              ParentProfile?
+  administrator              Administrator?
+  administratorsCreated      Administrator[]      @relation("AdministratorCreatedBy")
+  enrollmentsDecided         Enrollment[]         @relation("EnrollmentDecidedBy")
+  groupChangeRequestsDecided GroupChangeRequest[] @relation("GroupChangeDecidedBy")
+  attendancesRecorded        Attendance[]         @relation("AttendanceRecordedBy")
+  attendanceHistoryEntries   AttendanceHistory[]  @relation("AttendanceHistoryChangedBy")
+  sessions                   UserSession[]
+  passwordResetTokens        PasswordResetToken[]
+  loginHistory               LoginHistory[]
+  auditLogs                  AuditLog[]
+  /// Ch.18 : centre d'activités personnel (une ligne par activité reçue, tous rôles confondus).
+  activities                 Activity[]
+  enrollmentCommentsAuthored EnrollmentComment[]  @relation("EnrollmentCommentAuthor")
+  groupAnnouncementsCreated  GroupAnnouncement[]  @relation("GroupAnnouncementAuthor")
+  subscriptionsValidated     Subscription[]       @relation("SubscriptionValidatedBy")
+  subscriptionsSuspended     Subscription[]       @relation("SubscriptionSuspendedBy")
+  accountingEntriesAuthored  AccountingEntry[]    @relation("AccountingEntryAuthor")
 
   @@map("user")
 }
@@ -245,45 +351,48 @@ model LoginHistory {
 
 /// Professeur — hérite de User (RM-ACC-*, Ch. 5)
 model TeacherProfile {
-  id                 String                @id @db.Uuid
-  user               User                  @relation(fields: [id], references: [id])
-  firstName          String                @map("first_name")
-  lastName           String                @map("last_name")
-  phone              String
-  city               String
-  bio                String?
-  photo              String?
-  experience         String?
-  completenessScore  Int                   @default(0) @map("completeness_score")
-  status             TeacherProfileStatus
+  id                String               @id @db.Uuid
+  user              User                 @relation(fields: [id], references: [id])
+  firstName         String               @map("first_name")
+  lastName          String               @map("last_name")
+  phone             String
+  city              String
+  bio               String?
+  photo             String?
+  experience        String?
+  completenessScore Int                  @default(0) @map("completeness_score")
+  status            TeacherProfileStatus
 
-  subjects           TeacherSubject[]
-  schoolLevels       TeacherSchoolLevel[]
-  groups             Group[]
-  teachingLocations  TeachingLocation[]
-  preEnrollments     PreEnrollment[]
+  subjects          TeacherSubject[]
+  schoolLevels      TeacherSchoolLevel[]
+  groups            Group[]
+  teachingLocations TeachingLocation[]
+  preEnrollments    PreEnrollment[]
+  subscriptions     Subscription[]
 
-  createdAt          DateTime              @default(now()) @map("created_at")
-  updatedAt          DateTime              @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("teacher_profile")
 }
 
 /// Parent — hérite de User (Ch. 6)
 model ParentProfile {
-  id             String    @id @db.Uuid
-  user           User      @relation(fields: [id], references: [id])
-  firstName      String    @map("first_name")
-  lastName       String    @map("last_name")
-  phone          String
-  city           String
-  validatedAt    DateTime? @map("validated_at")
+  id          String    @id @db.Uuid
+  user        User      @relation(fields: [id], references: [id])
+  firstName   String    @map("first_name")
+  lastName    String    @map("last_name")
+  phone       String
+  city        String
+  validatedAt DateTime? @map("validated_at")
 
-  students       Student[]
-  preEnrollments PreEnrollment[]
+  students               Student[]
+  preEnrollments         PreEnrollment[]
+  /// Ch.19.4 : première lecture de chaque annonce de groupe (RM-COM-011).
+  groupAnnouncementReads GroupAnnouncementRead[]
 
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("parent_profile")
 }
@@ -291,13 +400,13 @@ model ParentProfile {
 /// Administrateur — hérite de User, délégation du Super Administrateur (Ch. 3.4-3.5)
 /// Pas de table SuperAdmin séparée : représenté par Role.SUPER_ADMIN dans User.roles.
 model Administrator {
-  id           String    @id @db.Uuid
-  user         User      @relation(fields: [id], references: [id])
-  permissions  String[]
-  createdById  String    @map("created_by_id") @db.Uuid
-  createdBy    User      @relation("AdministratorCreatedBy", fields: [createdById], references: [id])
-  disabledAt   DateTime? @map("disabled_at")
-  createdAt    DateTime  @default(now()) @map("created_at")
+  id          String    @id @db.Uuid
+  user        User      @relation(fields: [id], references: [id])
+  permissions String[]
+  createdById String    @map("created_by_id") @db.Uuid
+  createdBy   User      @relation("AdministratorCreatedBy", fields: [createdById], references: [id])
+  disabledAt  DateTime? @map("disabled_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
 
   @@map("administrator")
 }
@@ -307,15 +416,19 @@ model Administrator {
 // ---------------------------------------------------------------------------
 
 model AcademicYear {
-  id     String             @id @default(uuid()) @db.Uuid
-  label  String             @unique
-  startDate DateTime        @map("start_date") @db.Date
-  endDate   DateTime        @map("end_date") @db.Date
-  status AcademicYearStatus
+  id        String             @id @default(uuid()) @db.Uuid
+  label     String             @unique
+  startDate DateTime           @map("start_date") @db.Date
+  endDate   DateTime           @map("end_date") @db.Date
+  status    AcademicYearStatus
 
   groups                  Group[]
   preEnrollments          PreEnrollment[]
   studentSchoolSituations StudentSchoolSituation[]
+  subscriptions           Subscription[]
+  /// Ch.15.4 : créée paresseusement au premier besoin (première activation d'inscription de
+  /// l'année), comme le reste des transitions temporelles de ce projet (pas de cron).
+  accountingPeriod        AccountingPeriod?
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -383,15 +496,25 @@ model City {
 }
 
 model School {
-  id        String     @id @default(uuid()) @db.Uuid
-  name      String     @unique
-  type      SchoolType
-  cityId    String     @map("city_id") @db.Uuid
-  city      City       @relation(fields: [cityId], references: [id])
-  address   String?
-  latitude  Decimal?   @db.Decimal(9, 6)
-  longitude Decimal?   @db.Decimal(9, 6)
-  isActive  Boolean    @default(true) @map("is_active")
+  id                    String     @id @default(uuid()) @db.Uuid
+  sourceKey             String?    @unique @map("source_key")
+  officialCode          String?    @map("official_code")
+  autoCode              String?    @map("auto_code")
+  name                  String
+  nameAr                String?    @map("name_ar")
+  type                  SchoolType
+  cityId                String     @map("city_id") @db.Uuid
+  city                  City       @relation(fields: [cityId], references: [id])
+  address               String?
+  regionalDirectorate   String?    @map("regional_directorate")
+  regionalDirectorateAr String?    @map("regional_directorate_ar")
+  delegation            String?
+  delegationAr          String?    @map("delegation_ar")
+  regionAr              String?    @map("region_ar")
+  cycleAr               String?    @map("cycle_ar")
+  latitude              Decimal?   @db.Decimal(9, 6)
+  longitude             Decimal?   @db.Decimal(9, 6)
+  isActive              Boolean    @default(true) @map("is_active")
 
   studentSchoolSituations StudentSchoolSituation[]
 
@@ -450,20 +573,20 @@ model Student {
 
 /// Situation scolaire d'un élève pour une année académique donnée (Ch. 7)
 model StudentSchoolSituation {
-  id             String       @id @default(uuid()) @db.Uuid
-  studentId      String       @map("student_id") @db.Uuid
-  student        Student      @relation("StudentSituations", fields: [studentId], references: [id])
-  academicYearId String       @map("academic_year_id") @db.Uuid
-  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
-  schoolLevelId  String       @map("school_level_id") @db.Uuid
-  schoolLevel    SchoolLevel  @relation(fields: [schoolLevelId], references: [id])
-  schoolId       String       @map("school_id") @db.Uuid
-  school         School       @relation(fields: [schoolId], references: [id])
-  class          String?
-  startDate      DateTime     @map("start_date") @db.Date
-  endDate        DateTime?    @map("end_date") @db.Date
-  status         SituationStatus @default(ACTIVE)
-  rejectionReason String?     @map("rejection_reason")
+  id              String          @id @default(uuid()) @db.Uuid
+  studentId       String          @map("student_id") @db.Uuid
+  student         Student         @relation("StudentSituations", fields: [studentId], references: [id])
+  academicYearId  String          @map("academic_year_id") @db.Uuid
+  academicYear    AcademicYear    @relation(fields: [academicYearId], references: [id])
+  schoolLevelId   String          @map("school_level_id") @db.Uuid
+  schoolLevel     SchoolLevel     @relation(fields: [schoolLevelId], references: [id])
+  schoolId        String          @map("school_id") @db.Uuid
+  school          School          @relation(fields: [schoolId], references: [id])
+  class           String?
+  startDate       DateTime        @map("start_date") @db.Date
+  endDate         DateTime?       @map("end_date") @db.Date
+  status          SituationStatus @default(ACTIVE)
+  rejectionReason String?         @map("rejection_reason")
 
   currentForStudent Student? @relation("CurrentSituation")
 
@@ -474,31 +597,38 @@ model StudentSchoolSituation {
 
 /// Unité pédagogique principale de GROUPI (Ch. 10)
 model Group {
-  id                    String                @id @default(uuid()) @db.Uuid
-  teacherId             String                @map("teacher_id") @db.Uuid
-  teacher               TeacherProfile        @relation(fields: [teacherId], references: [id])
-  subjectId             String                @map("subject_id") @db.Uuid
-  subject               Subject               @relation(fields: [subjectId], references: [id])
-  schoolLevelId         String                @map("school_level_id") @db.Uuid
-  schoolLevel           SchoolLevel           @relation(fields: [schoolLevelId], references: [id])
-  academicYearId        String                @map("academic_year_id") @db.Uuid
-  academicYear          AcademicYear          @relation(fields: [academicYearId], references: [id])
-  name                  String
-  capacity              Int
-  publicPrice           Decimal               @map("public_price") @db.Decimal(10, 3)
-  teachingMode          TeachingMode          @map("teaching_mode")
-  absenceBillingPolicy  AbsenceBillingPolicy  @map("absence_billing_policy")
-  abandonmentThreshold  Int                   @default(3) @map("abandonment_threshold")
-  visibilityWhenFull    VisibilityWhenFull    @map("visibility_when_full")
-  startDate             DateTime              @map("start_date") @db.Date
-  endDate               DateTime?             @map("end_date") @db.Date
-  status                GroupStatus
+  id                         String               @id @default(uuid()) @db.Uuid
+  teacherId                  String               @map("teacher_id") @db.Uuid
+  teacher                    TeacherProfile       @relation(fields: [teacherId], references: [id])
+  subjectId                  String               @map("subject_id") @db.Uuid
+  subject                    Subject              @relation(fields: [subjectId], references: [id])
+  schoolLevelId              String               @map("school_level_id") @db.Uuid
+  schoolLevel                SchoolLevel          @relation(fields: [schoolLevelId], references: [id])
+  academicYearId             String               @map("academic_year_id") @db.Uuid
+  academicYear               AcademicYear         @relation(fields: [academicYearId], references: [id])
+  name                       String
+  capacity                   Int
+  publicPrice                Decimal              @map("public_price") @db.Decimal(10, 3)
+  teachingMode               TeachingMode         @map("teaching_mode")
+  absenceBillingPolicy       AbsenceBillingPolicy @map("absence_billing_policy")
+  abandonmentThreshold       Int                  @default(3) @map("abandonment_threshold")
+  /// RM-CPT-022 : nombre de séances (au tarif appliqué) au-delà duquel un solde débiteur est
+  /// considéré "important" (NOT-CPT-003/EVT-CPT-012) — paramétrable à la création du groupe.
+  debtAlertThresholdSessions Int                  @default(4) @map("debt_alert_threshold_sessions")
+  visibilityWhenFull         VisibilityWhenFull   @map("visibility_when_full")
+  startDate                  DateTime             @map("start_date") @db.Date
+  endDate                    DateTime?            @map("end_date") @db.Date
+  status                     GroupStatus
 
-  schedules   GroupSchedule[]
-  sessions    Session[]
-  enrollments Enrollment[]
+  schedules                   GroupSchedule[]
+  sessions                    Session[]
+  enrollments                 Enrollment[]
   /// Ch.11.7/11.8 : préinscriptions auxquelles ce groupe a été proposé.
-  proposedToPreEnrollments PreEnrollment[]
+  proposedToPreEnrollments    PreEnrollment[]
+  /// Ch.12.12 : demandes de changement de groupe reçues (ce groupe est la cible B).
+  incomingGroupChangeRequests GroupChangeRequest[]
+  /// Ch.19.4 : annonces publiées par le Professeur à destination des Parents du groupe.
+  announcements               GroupAnnouncement[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -523,12 +653,12 @@ model GroupSchedule {
 /// Lieu d'enseignement (terminologie officielle §2.19) — non détaillé dans l'Annexe P,
 /// modélisation minimale inférée du Ch. 10 ; à ajuster si le référentiel est complété.
 model TeachingLocation {
-  id        String   @id @default(uuid()) @db.Uuid
-  teacherId String   @map("teacher_id") @db.Uuid
+  id        String         @id @default(uuid()) @db.Uuid
+  teacherId String         @map("teacher_id") @db.Uuid
   teacher   TeacherProfile @relation(fields: [teacherId], references: [id])
   label     String
   address   String?
-  isActive  Boolean  @default(true) @map("is_active")
+  isActive  Boolean        @default(true) @map("is_active")
 
   groupSchedules GroupSchedule[]
   sessions       Session[]
@@ -552,7 +682,9 @@ model Session {
   status             SessionStatus
   lockedAt           DateTime?         @map("locked_at")
 
-  attendances Attendance[]
+  attendances       Attendance[]
+  /// Ch.15.9 : écritures SESSION (facturation) et ADJUSTMENT (correction de présence) référençant cette séance.
+  accountingEntries AccountingEntry[]
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -574,51 +706,397 @@ model Enrollment {
   decidedById   String?          @map("decided_by_id") @db.Uuid
   decidedBy     User?            @relation("EnrollmentDecidedBy", fields: [decidedById], references: [id])
 
+  attendances             Attendance[]
+  /// Ch.12.12 : demandes de changement de groupe faites DEPUIS cette inscription (groupe A).
+  groupChangeRequestsFrom GroupChangeRequest[] @relation("GroupChangeOriginalEnrollment")
+  /// Ch.12.12 : inscription créée dans le groupe B à l'acceptation d'un changement de groupe.
+  groupChangeArrival      GroupChangeRequest?  @relation("GroupChangeNewEnrollment")
+  /// Ch.19.3 : fil de commentaires privé Professeur/Parent (pas de table "conversation" séparée —
+  /// le fil EST l'ensemble ordonné des commentaires de cette inscription).
+  comments                EnrollmentComment[]
+  /// Ch.15.3/RM-CPT-001/002 : créé automatiquement à l'activation de l'inscription (ACTIVE).
+  accountingAccount       AccountingAccount?
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("enrollment")
 }
 
+/// Ch.12.12 : demande de changement de groupe — variante définitive uniquement dans ce chantier.
+/// La variante provisoire (une séance précise couverte ponctuellement par le groupe B, avec
+/// présence "Absent excusé" enregistrée côté groupe A) suppose qu'une présence puisse exister
+/// sans inscription active dans le groupe où elle est enregistrée ; elle est délibérément hors
+/// scope (voir progress.md) plutôt que d'affaiblir `Attendance.enrollmentId` (RM-ATT-022) pour ce
+/// seul cas.
+///
+/// "Le changement de groupe crée systématiquement une nouvelle inscription indépendante" (12.12) :
+/// l'acceptation crée une nouvelle `Enrollment` ACTIVE dans le groupe cible (`newEnrollmentId`).
+/// L'inscription d'origine n'est archivée qu'à la date effective, appliquée paresseusement à la
+/// lecture — même principe que `EnrollmentsService.expireIfDue` / le verrouillage des séances.
+model GroupChangeRequest {
+  id                   String            @id @default(uuid()) @db.Uuid
+  originalEnrollmentId String            @map("original_enrollment_id") @db.Uuid
+  originalEnrollment   Enrollment        @relation("GroupChangeOriginalEnrollment", fields: [originalEnrollmentId], references: [id])
+  targetGroupId        String            @map("target_group_id") @db.Uuid
+  targetGroup          Group             @relation(fields: [targetGroupId], references: [id])
+  status               GroupChangeStatus
+  requestedAt          DateTime          @map("requested_at")
+  decidedAt            DateTime?         @map("decided_at")
+  decidedById          String?           @map("decided_by_id") @db.Uuid
+  decidedBy            User?             @relation("GroupChangeDecidedBy", fields: [decidedById], references: [id])
+  /// Choisie par le Professeur à l'acceptation (RM-INS/12.12 — jamais par le Parent).
+  effectiveDate        DateTime?         @map("effective_date") @db.Date
+  /// `true` une fois l'inscription d'origine effectivement archivée à la date effective.
+  appliedAt            DateTime?         @map("applied_at")
+  rejectionReason      String?           @map("rejection_reason")
+  newEnrollmentId      String?           @unique @map("new_enrollment_id") @db.Uuid
+  newEnrollment        Enrollment?       @relation("GroupChangeNewEnrollment", fields: [newEnrollmentId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("group_change_request")
+}
+
 /// Manifestation d'intérêt d'un Parent pour une future année académique (Ch. 11)
 model PreEnrollment {
-  id             String              @id @default(uuid()) @db.Uuid
-  parentId       String              @map("parent_id") @db.Uuid
-  parent         ParentProfile       @relation(fields: [parentId], references: [id])
-  studentId      String              @map("student_id") @db.Uuid
-  student        Student             @relation(fields: [studentId], references: [id])
-  teacherId      String              @map("teacher_id") @db.Uuid
-  teacher        TeacherProfile      @relation(fields: [teacherId], references: [id])
-  schoolLevelId  String              @map("school_level_id") @db.Uuid
-  schoolLevel    SchoolLevel         @relation(fields: [schoolLevelId], references: [id])
-  subjectId      String?             @map("subject_id") @db.Uuid
-  subject        Subject?            @relation(fields: [subjectId], references: [id])
-  academicYearId String              @map("academic_year_id") @db.Uuid
-  academicYear   AcademicYear        @relation(fields: [academicYearId], references: [id])
-  status         PreEnrollmentStatus
-  expiresAt      DateTime?           @map("expires_at")
+  id              String              @id @default(uuid()) @db.Uuid
+  parentId        String              @map("parent_id") @db.Uuid
+  parent          ParentProfile       @relation(fields: [parentId], references: [id])
+  studentId       String              @map("student_id") @db.Uuid
+  student         Student             @relation(fields: [studentId], references: [id])
+  teacherId       String              @map("teacher_id") @db.Uuid
+  teacher         TeacherProfile      @relation(fields: [teacherId], references: [id])
+  schoolLevelId   String              @map("school_level_id") @db.Uuid
+  schoolLevel     SchoolLevel         @relation(fields: [schoolLevelId], references: [id])
+  subjectId       String?             @map("subject_id") @db.Uuid
+  subject         Subject?            @relation(fields: [subjectId], references: [id])
+  academicYearId  String              @map("academic_year_id") @db.Uuid
+  academicYear    AcademicYear        @relation(fields: [academicYearId], references: [id])
+  status          PreEnrollmentStatus
+  expiresAt       DateTime?           @map("expires_at")
   /// Ch.11.7/11.8 : groupe auquel une proposition a été envoyée (RM-PRE-021/022) — permet de
   /// revérifier la capacité de CE groupe précis au moment de la confirmation par le Parent.
-  proposedGroupId String?            @map("proposed_group_id") @db.Uuid
-  proposedGroup   Group?             @relation(fields: [proposedGroupId], references: [id])
+  proposedGroupId String?             @map("proposed_group_id") @db.Uuid
+  proposedGroup   Group?              @relation(fields: [proposedGroupId], references: [id])
 
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("pre_enrollment")
 }
 
-/// Enregistrement de la participation d'un Élève à une Séance (Ch. 14)
+/// Enregistrement de la participation d'un Élève à une Séance (Ch. 14). Une ligne n'existe que
+/// pour un élève ayant déjà reçu un statut (RM-ATT-003) : l'absence de ligne représente
+/// ATT-STAT-001/NON_RENSEIGNEE (14.13) sans qu'il soit nécessaire de matérialiser cet état.
+/// ATT-STAT-006/VERROUILLEE (14.13) n'est pas non plus une valeur stockée : le verrouillage se
+/// déduit de `Session.status`/`lockedAt` (fenêtre alignée sur celle des séances, Ch.14.7), ce qui
+/// évite de perdre le statut réel (Présent/Absent excusé/…) au moment du verrouillage.
 model Attendance {
-  id           String            @id @default(uuid()) @db.Uuid
-  sessionId    String            @map("session_id") @db.Uuid
-  session      Session           @relation(fields: [sessionId], references: [id])
-  studentId    String            @map("student_id") @db.Uuid
-  student      Student           @relation(fields: [studentId], references: [id])
+  id           String           @id @default(uuid()) @db.Uuid
+  sessionId    String           @map("session_id") @db.Uuid
+  session      Session          @relation(fields: [sessionId], references: [id])
+  studentId    String           @map("student_id") @db.Uuid
+  student      Student          @relation(fields: [studentId], references: [id])
+  /// RM-ATT-022 : une présence appartient définitivement à une seule inscription.
+  enrollmentId String           @map("enrollment_id") @db.Uuid
+  enrollment   Enrollment       @relation(fields: [enrollmentId], references: [id])
   status       AttendanceStatus
-  lateDuration Int?              @map("late_duration")
+  lateDuration Int?             @map("late_duration")
   comment      String?
-  recordedAt   DateTime          @map("recorded_at")
-  modifiedAt   DateTime?         @map("modified_at")
+  recordedAt   DateTime         @map("recorded_at")
+  recordedById String           @map("recorded_by_id") @db.Uuid
+  recordedBy   User             @relation("AttendanceRecordedBy", fields: [recordedById], references: [id])
+  modifiedAt   DateTime?        @map("modified_at")
 
+  history AttendanceHistory[]
+
+  /// RM-ATT-026 : un élève ne peut posséder qu'une seule présence par séance.
+  @@unique([sessionId, studentId])
   @@map("attendance")
+}
+
+/// Historique des modifications d'une présence — traçabilité complète (RM-ATT-028, Ch.14.8).
+/// Une ligne est créée à chaque saisie initiale et à chaque correction ; jamais modifiée ni
+/// supprimée, conformément à RM-ATT-011.
+model AttendanceHistory {
+  id                   String            @id @default(uuid()) @db.Uuid
+  attendanceId         String            @map("attendance_id") @db.Uuid
+  attendance           Attendance        @relation(fields: [attendanceId], references: [id])
+  previousStatus       AttendanceStatus? @map("previous_status")
+  previousLateDuration Int?              @map("previous_late_duration")
+  newStatus            AttendanceStatus  @map("new_status")
+  newLateDuration      Int?              @map("new_late_duration")
+  reason               String?
+  /// Ch.14.8 : "Application mobile / Web" — pas d'application mobile dans ce chantier, `WEB` par défaut.
+  origin               String            @default("WEB")
+  changedById          String            @map("changed_by_id") @db.Uuid
+  changedBy            User              @relation("AttendanceHistoryChangedBy", fields: [changedById], references: [id])
+  changedAt            DateTime          @default(now()) @map("changed_at")
+
+  @@map("attendance_history")
+}
+
+// ---------------------------------------------------------------------------
+// Domaine Communication (référentiel Ch. 18-19)
+// ---------------------------------------------------------------------------
+
+/// Ch.18 : couvre en un seul modèle les 3 concepts distingués par le référentiel (§18.12) —
+/// Activité (la ligne elle-même, immuable, jamais supprimée), Alerte (vue calculée : priority IN
+/// (IMPORTANT, CRITICAL) AND readAt IS NULL, jamais stockée séparément) et Notification (la même
+/// ligne quand `emailSentAt` est renseigné, RM-NOT-002/004/007-009). Même principe que
+/// Session.status/Enrollment.status ailleurs dans ce schéma : ne jamais matérialiser un état
+/// entièrement dérivable des autres colonnes.
+model Activity {
+  id          String           @id @default(uuid()) @db.Uuid
+  userId      String           @map("user_id") @db.Uuid
+  user        User             @relation(fields: [userId], references: [id])
+  /// Code métier libre (ex. "SES_EXCEPTIONAL_CREATED"), pas un enum Prisma — miroir de
+  /// `AuditLog.action` : évite une migration à chaque nouveau déclencheur NOT-* câblé plus tard.
+  type        String
+  priority    ActivityPriority
+  title       String
+  body        String?
+  /// Référence polymorphe optionnelle vers l'objet source, miroir `AuditLog.targetType/targetId`
+  /// (pas de FK réelle — Enrollment/Session/GroupAnnouncement/EnrollmentComment/...).
+  refType     String?          @map("ref_type")
+  refId       String?          @map("ref_id") @db.Uuid
+  readAt      DateTime?        @map("read_at")
+  archivedAt  DateTime?        @map("archived_at")
+  /// Renseigné dès que l'e-mail associé a été envoyé avec succès (présence de cette valeur =
+  /// "Notification" au sens §18.12, plutôt qu'une simple Activité silencieuse).
+  emailSentAt DateTime?        @map("email_sent_at")
+  emailError  String?          @map("email_error")
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+  @@map("activity")
+}
+
+/// Ch.19.3 : fil de commentaires d'une inscription. Pas de table "conversation" séparée — le fil
+/// EST l'ensemble des `EnrollmentComment` d'une même inscription, ordonnés par `createdAt`.
+model EnrollmentComment {
+  id           String            @id @default(uuid()) @db.Uuid
+  enrollmentId String            @map("enrollment_id") @db.Uuid
+  enrollment   Enrollment        @relation(fields: [enrollmentId], references: [id])
+  authorId     String            @map("author_id") @db.Uuid
+  author       User              @relation("EnrollmentCommentAuthor", fields: [authorId], references: [id])
+  /// Snapshot du rôle au moment de la rédaction (RM-COM-004) — figé même si les rôles du compte
+  /// changeaient plus tard, et évite une jointure Teacher/Parent à chaque lecture du fil.
+  authorRole   CommentAuthorRole @map("author_role")
+  body         String            @db.Text
+  editedAt     DateTime?         @map("edited_at")
+  /// RM-COM-014 : suppression logique uniquement, jamais physique.
+  deletedAt    DateTime?         @map("deleted_at")
+  createdAt    DateTime          @default(now()) @map("created_at")
+
+  @@index([enrollmentId, createdAt])
+  @@map("enrollment_comment")
+}
+
+/// Ch.19.4 : annonce de groupe, Professeur → Parents, unidirectionnelle (RM-COM-009/010).
+/// "Statut effectif" (programmée/publiée/expirée) calculé à la lecture, jamais stocké — même
+/// principe que `computeLockDeadline`/`isLockable` pour le verrouillage des séances.
+model GroupAnnouncement {
+  id          String    @id @default(uuid()) @db.Uuid
+  groupId     String    @map("group_id") @db.Uuid
+  group       Group     @relation(fields: [groupId], references: [id])
+  createdById String    @map("created_by_id") @db.Uuid
+  createdBy   User      @relation("GroupAnnouncementAuthor", fields: [createdById], references: [id])
+  title       String
+  body        String    @db.Text
+  /// Toujours renseigné : `now()` pour une publication immédiate, date future choisie sinon.
+  publishAt   DateTime  @map("publish_at")
+  expiresAt   DateTime? @map("expires_at")
+  /// RM-COM-014 : suppression logique, historique conservé.
+  deletedAt   DateTime? @map("deleted_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  reads GroupAnnouncementRead[]
+
+  @@index([groupId, publishAt])
+  @@map("group_announcement")
+}
+
+/// Première lecture d'une annonce par un Parent (RM-COM-011, "lue par 8 Parents sur 12"). Clé
+/// composite = un seul enregistrement par (annonce, parent), jamais mis à jour ensuite.
+model GroupAnnouncementRead {
+  announcementId String            @map("announcement_id") @db.Uuid
+  announcement   GroupAnnouncement @relation(fields: [announcementId], references: [id])
+  parentId       String            @map("parent_id") @db.Uuid
+  parent         ParentProfile     @relation(fields: [parentId], references: [id])
+  readAt         DateTime          @default(now()) @map("read_at")
+
+  @@id([announcementId, parentId])
+  @@map("group_announcement_read")
+}
+
+// ---------------------------------------------------------------------------
+// Domaine Abonnement (Ch. 21 — Gestion des abonnements Professeur)
+// ---------------------------------------------------------------------------
+
+/// Catalogue commercial (Ch.4.3/21.3) — Découverte/Intermédiaire/Pro, seedé, jamais créé via l'API.
+model SubscriptionPlan {
+  id                   String  @id @default(uuid()) @db.Uuid
+  code                 String  @unique
+  name                 String
+  /// Tarif en TND, 0 pour l'offre gratuite.
+  price                Int
+  /// Nombre max d'inscriptions actives simultanées (RM-SUB-006/007/008) ; `null` = illimité (Pro).
+  maxActiveEnrollments Int?    @map("max_active_enrollments")
+  /// Ch.21.5 : durée fixe en jours calendaires à partir de l'activation (30 pour Découverte,
+  /// exception RM-ABO-001) ; `null` = expire en fin d'année académique comme les autres offres.
+  durationDays         Int?    @map("duration_days")
+  /// RM-SUB-005/ERR-SUB-004 : offre d'essai utilisable une seule fois par Professeur (Découverte).
+  isTrial              Boolean @default(false) @map("is_trial")
+
+  subscriptions Subscription[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("subscription_plan")
+}
+
+/// Ch.21 : abonnement d'un Professeur pour une année académique donnée. Statique par construction
+/// (un seul par (teacher, académicYear), RM-ABO-005/RM-SUB-023/ERR-ABO-005) — renouveler pour
+/// l'année suivante crée toujours une nouvelle ligne (RM-SUB-025), jamais une mise à jour.
+model Subscription {
+  id             String             @id @default(uuid()) @db.Uuid
+  teacherId      String             @map("teacher_id") @db.Uuid
+  teacher        TeacherProfile     @relation(fields: [teacherId], references: [id])
+  planId         String             @map("plan_id") @db.Uuid
+  plan           SubscriptionPlan   @relation(fields: [planId], references: [id])
+  academicYearId String             @map("academic_year_id") @db.Uuid
+  academicYear   AcademicYear       @relation(fields: [academicYearId], references: [id])
+  status         SubscriptionStatus
+
+  requestedAt DateTime  @map("requested_at")
+  /// Date d'activation — immédiate pour l'offre gratuite, à la validation du paiement sinon.
+  activatedAt DateTime? @map("activated_at")
+  /// Ch.21.5 : calculée à l'activation (jamais recalculée ensuite), fin d'année académique sauf
+  /// exception Découverte (`activatedAt` + `durationDays`).
+  expiresAt   DateTime? @map("expires_at")
+
+  paidAt        DateTime? @map("paid_at")
+  /// V1 : espèces exclusivement (Ch.21.6) — un seul mode possible, pas d'énumération dédiée.
+  paymentMethod String?   @map("payment_method")
+  validatedById String?   @map("validated_by_id") @db.Uuid
+  validatedBy   User?     @relation("SubscriptionValidatedBy", fields: [validatedById], references: [id])
+
+  suspendedAt      DateTime? @map("suspended_at")
+  suspendedById    String?   @map("suspended_by_id") @db.Uuid
+  suspendedBy      User?     @relation("SubscriptionSuspendedBy", fields: [suspendedById], references: [id])
+  suspensionReason String?   @map("suspension_reason")
+  reactivatedAt    DateTime? @map("reactivated_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([teacherId, academicYearId])
+  @@map("subscription")
+}
+
+// ---------------------------------------------------------------------------
+// Domaine Comptable (Ch. 15 — Le moteur comptable)
+// ---------------------------------------------------------------------------
+//
+// Décisions de modélisation assumées (mêmes principes que le reste du schéma — ne pas
+// matérialiser ce qui se déduit, ne pas multiplier les tables pour des variantes d'un même
+// concept) :
+//  - Pas de table `Payment` séparée : un paiement EST une `AccountingEntry` de type PAYMENT
+//    (montant, méthode indicative RM-CPT-023, auteur, date) — la distinction Payment/Écriture du
+//    §15.17 n'apporte aucun champ supplémentaire dans ce référentiel, comme `Activity` a déjà
+//    absorbé Activité/Alerte/Notification au Ch.18.
+//  - Pas de table `AccountingAdjustment` séparée : un ajustement (ADJUSTMENT/ADMIN_ADJUSTMENT)
+//    EST une `AccountingEntry` portant un `reason` (`AdjustmentReason`) et une justification.
+//  - `AccountingBalance`/`AccountingIndicator` (§15.17) ne sont jamais stockés (RM-CPT-031) : ils
+//    sont recalculés à la demande par `AccountingService` à partir des écritures POSTED/LOCKED.
+
+/// Ch.15.4 : période comptable, généralement calquée sur une année académique (1-1). Créée
+/// paresseusement (`AccountingService.getOrCreatePeriod`) au premier besoin plutôt qu'au moment de
+/// la création de l'année académique, pour ne pas coupler les modules Référentiels/Comptable.
+model AccountingPeriod {
+  id             String                 @id @default(uuid()) @db.Uuid
+  academicYearId String                 @unique @map("academic_year_id") @db.Uuid
+  academicYear   AcademicYear           @relation(fields: [academicYearId], references: [id])
+  openDate       DateTime               @map("open_date") @db.Date
+  closeDate      DateTime               @map("close_date") @db.Date
+  status         AccountingPeriodStatus @default(OPEN)
+  lockedAt       DateTime?              @map("locked_at")
+
+  accounts AccountingAccount[]
+  entries  AccountingEntry[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("accounting_period")
+}
+
+/// Ch.15.3/15.16 : un compte par inscription (RM-CPT-001/003), jamais par Parent/Élève.
+model AccountingAccount {
+  id           String                  @id @default(uuid()) @db.Uuid
+  enrollmentId String                  @unique @map("enrollment_id") @db.Uuid
+  enrollment   Enrollment              @relation(fields: [enrollmentId], references: [id])
+  periodId     String                  @map("period_id") @db.Uuid
+  period       AccountingPeriod        @relation(fields: [periodId], references: [id])
+  status       AccountingAccountStatus @default(CREATED)
+  lockedAt     DateTime?               @map("locked_at")
+  closedAt     DateTime?               @map("closed_at")
+  archivedAt   DateTime?               @map("archived_at")
+
+  entries AccountingEntry[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("accounting_account")
+}
+
+/// Ch.15.6/15.8 : écriture comptable. Immuable une fois POSTED (RM-CPT-005/028) — toute
+/// correction crée une ou plusieurs nouvelles écritures (RM-CPT-029), jamais une modification en
+/// place. `sessionId` n'est renseigné que pour SESSION (facturation) et les ADJUSTMENT liés à une
+/// correction de présence (sert aussi à calculer la fenêtre des 48h, RM-CPT-019, en réutilisant
+/// `computeLockDeadline`/`isLockable` de `sessions.service.ts`, comme le fait déjà `AttendanceService`).
+model AccountingEntry {
+  id              String                   @id @default(uuid()) @db.Uuid
+  /// RM-CPT-038 : format ECR-<année>-000001, unique à l'échelle de la plateforme.
+  entryNumber     String                   @unique @map("entry_number")
+  accountId       String                   @map("account_id") @db.Uuid
+  account         AccountingAccount        @relation(fields: [accountId], references: [id])
+  periodId        String                   @map("period_id") @db.Uuid
+  period          AccountingPeriod         @relation(fields: [periodId], references: [id])
+  type            AccountingEntryType
+  direction       AccountingEntryDirection
+  status          AccountingEntryStatus    @default(POSTED)
+  /// RM-CPT-030 : toujours strictement positif — le sens comptable est porté par `direction`.
+  amount          Decimal                  @db.Decimal(10, 3)
+  effectiveDate   DateTime                 @map("effective_date")
+  sessionId       String?                  @map("session_id") @db.Uuid
+  session         Session?                 @relation(fields: [sessionId], references: [id])
+  reason          AdjustmentReason?
+  /// ERR-CPT-010 : justification obligatoire pour tout ADJUSTMENT/ADMIN_ADJUSTMENT.
+  reasonNote      String?                  @map("reason_note")
+  /// RM-CPT-023 : indicatif uniquement (espèces, chèque, virement...), pour les entrées PAYMENT.
+  paymentMethod   String?                  @map("payment_method")
+  /// RM-CPT-029 : l'écriture qui annule une écriture précédente (elle, réciproquement, passe à REVERSED).
+  reversesEntryId String?                  @unique @map("reverses_entry_id") @db.Uuid
+  reversesEntry   AccountingEntry?         @relation("EntryReversal", fields: [reversesEntryId], references: [id])
+  reversedBy      AccountingEntry?         @relation("EntryReversal")
+  authorId        String                   @map("author_id") @db.Uuid
+  author          User                     @relation("AccountingEntryAuthor", fields: [authorId], references: [id])
+  lockedAt        DateTime?                @map("locked_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([accountId, effectiveDate])
+  @@index([accountId, sessionId])
+  @@map("accounting_entry")
+}
+
+/// RM-CPT-038 : compteur atomique par année civile pour la numérotation ECR-<année>-000001.
+model AccountingEntrySequence {
+  year      Int @id
+  lastValue Int @default(0) @map("last_value")
+
+  @@map("accounting_entry_sequence")
 }

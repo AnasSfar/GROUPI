@@ -10,9 +10,11 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
+import { SubscriptionGuard } from '../subscriptions/subscription.guard';
 
+/** Ch.22 : `SubscriptionGuard` ne s'applique qu'au Professeur (`propose`) — no-op pour le Parent. */
 @Controller('pre-enrollments')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, SubscriptionGuard)
 export class PreEnrollmentsController {
   constructor(private readonly service: PreEnrollmentsService) {}
 

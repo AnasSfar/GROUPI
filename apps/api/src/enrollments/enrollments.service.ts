@@ -1,6 +1,9 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { EnrollmentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { EmailService } from '../email/email.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { AccountingService } from '../accounting/accounting.service';
 import { CreateEnrollmentDto } from './dto/create-enrollment.dto';
 import { AcceptEnrollmentDto } from './dto/accept-enrollment.dto';
 import { RejectEnrollmentDto } from './dto/reject-enrollment.dto';
@@ -36,7 +39,8 @@ const INCLUDE_TEACHER_VIEW = {
       firstName: true,
       lastName: true,
       status: true,
-      parent: { select: { firstName: true, lastName: true } },
+      parentId: true,
+      parent: { select: { firstName: true, lastName: true, user: { select: { email: true } } } },
       currentSchoolSituation: {
         select: {
           school: { select: { name: true } },
@@ -56,7 +60,12 @@ const EXPIRY_DELAY_MS = 7 * 24 * 60 * 60 * 1000; // RM-INS-026 : délai de répo
 
 @Injectable()
 export class EnrollmentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly email: EmailService,
+    private readonly notifications: NotificationsService,
+    private readonly accounting: AccountingService,
+  ) {}
 
   // -------------------------------------------------------------------------
   // RM-INS-026/ERR-INS-011 : expiration paresseuse.
@@ -298,7 +307,7 @@ export class EnrollmentsService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       await tx.enrollment.update({
         where: { id: enrollmentId },
         data: {
@@ -309,6 +318,9 @@ export class EnrollmentsService {
         },
       });
 
+      // RM-CPT-002 : compte de suivi comptable créé automatiquement à l'activation de l'inscription.
+      await this.accounting.createAccountForEnrollment(tx, enrollmentId, group.academicYearId);
+
       if (activeCount + 1 >= group.capacity) {
         await tx.group.update({ where: { id: groupId }, data: { status: 'FULL' } });
       }
@@ -317,6 +329,24 @@ export class EnrollmentsService {
       // pas un instantané capturé avant la mise à jour du groupe dans cette même transaction.
       return tx.enrollment.findUniqueOrThrow({ where: { id: enrollmentId }, include: INCLUDE_TEACHER_VIEW });
     });
+
+    // NOT-INS-002 : hors transaction — un échec d'envoi ne doit jamais annuler la décision.
+    await this.notifications.notify({
+      recipientUserId: updated.student.parentId,
+      type: 'INS_ACCEPTED',
+      priority: 'IMPORTANT',
+      title: 'Demande d’inscription acceptée',
+      body: `La demande d'inscription de ${updated.student.firstName} ${updated.student.lastName} au groupe "${updated.group.name}" a été acceptée.`,
+      refType: 'Enrollment',
+      refId: updated.id,
+      sendEmail: () =>
+        this.email.sendEnrollmentAccepted(
+          updated.student.parent.user.email,
+          `${updated.student.firstName} ${updated.student.lastName}`,
+          updated.group.name,
+        ),
+    });
+    return updated;
   }
 
   async reject(
@@ -329,11 +359,29 @@ export class EnrollmentsService {
     if (enrollment.status !== 'PENDING_VALIDATION') {
       throw new BadRequestException('Cette demande a déjà été traitée (ERR-INS-017)');
     }
-    return this.prisma.enrollment.update({
+    const updated = await this.prisma.enrollment.update({
       where: { id: enrollmentId },
       data: { status: 'REJECTED', decidedAt: new Date(), decidedById: teacherId },
       include: INCLUDE_TEACHER_VIEW,
     });
+
+    // NOT-INS-003
+    await this.notifications.notify({
+      recipientUserId: updated.student.parentId,
+      type: 'INS_REJECTED',
+      priority: 'IMPORTANT',
+      title: 'Demande d’inscription refusée',
+      body: `La demande d'inscription de ${updated.student.firstName} ${updated.student.lastName} au groupe "${updated.group.name}" a été refusée.`,
+      refType: 'Enrollment',
+      refId: updated.id,
+      sendEmail: () =>
+        this.email.sendEnrollmentRejected(
+          updated.student.parent.user.email,
+          `${updated.student.firstName} ${updated.student.lastName}`,
+          updated.group.name,
+        ),
+    });
+    return updated;
   }
 
   /** Ch.12.8/RM-INS-017/018/019 : le tarif personnalisé n'est modifiable que sur une inscription active. */
