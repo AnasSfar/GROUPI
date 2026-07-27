@@ -19,6 +19,7 @@ import { GroupAnnouncementsModule } from './group-announcements/group-announceme
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { AccountingModule } from './accounting/accounting.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { ExportsModule } from './exports/exports.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
     SubscriptionsModule,
     AccountingModule,
     DashboardModule,
+    ExportsModule,
   ],
 })
 export class AppModule {}

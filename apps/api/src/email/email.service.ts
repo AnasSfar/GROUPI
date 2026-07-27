@@ -168,6 +168,20 @@ export class EmailService implements OnModuleDestroy {
     );
   }
 
+  /** NOT-EXP-003 */
+  async sendExportRefused(to: string, reason: string): Promise<void> {
+    await this.send(to, 'GROUPI — Export refusé', reason);
+  }
+
+  /** NOT-EXP-005 */
+  async sendExportFailed(to: string, exportLabel: string): Promise<void> {
+    await this.send(
+      to,
+      'GROUPI — Échec de génération d’export',
+      `La génération de l'export "${exportLabel}" a échoué. Merci de réessayer ou de contacter l'administration.`,
+    );
+  }
+
   /** NOT-SES-007/018 : fusionnées en un seul message pour une action atomique (report). */
   async sendSessionPostponed(
     to: string,

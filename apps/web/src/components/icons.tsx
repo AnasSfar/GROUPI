@@ -164,3 +164,13 @@ export function IconGauge(props: SVGProps<SVGSVGElement>) {
     </Icon>
   );
 }
+
+export function IconDownload(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M12 3v12" />
+      <path d="m7 10 5 5 5-5" />
+      <path d="M4 19h16" />
+    </Icon>
+  );
+}
