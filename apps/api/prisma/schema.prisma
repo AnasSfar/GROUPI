@@ -243,6 +243,53 @@ enum AdjustmentReason {
 }
 
 // ---------------------------------------------------------------------------
+// Enums — Domaine Export (Ch. 17)
+// ---------------------------------------------------------------------------
+
+/// Ch.17.6/RM-EXP-004 : les 3 formats disponibles. Pas d'entrée dédiée pour la portabilité RGPD
+/// (17.4 dernier §) : elle réutilise ces mêmes formats ("structuré et couramment utilisé" n'impose
+/// pas un format distinct, CSV/Excel le sont déjà) plutôt que d'ajouter une variante spéciale.
+enum ExportFormat {
+  PDF
+  EXCEL
+  CSV
+}
+
+/// Ch.17.4/17.11 : type de données exportées — reprend la liste du Professeur/Parent, plus les deux
+/// cas particuliers Administrateur (statistiques agrégées) et RGPD (portabilité).
+enum ExportType {
+  GROUPS
+  STUDENTS
+  ATTENDANCE
+  LATENESS
+  PEDAGOGICAL_COMMENTS
+  ACCOUNTING_ACCOUNTS
+  PAYMENTS
+  STATISTICS
+  DASHBOARD_INDICATORS
+  ADMIN_STATISTICS
+  RGPD_PERSONAL_DATA
+}
+
+/// Ch.17.10 : cycle de vie modélisé fidèlement (RM-EXP-009 — "asynchrone" au-delà du seuil) même si
+/// la génération reste synchrone dans ce chantier (voir le commentaire de `ExportsService.generate`)
+/// — ni scheduler ni worker séparé dans ce projet, même principe que le reste (Enrollment/Session/
+/// Subscription/AccountingAccount ne s'appuient pas non plus sur un job détaché de la requête).
+enum ExportJobStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+  EXPIRED
+}
+
+/// Ch.17.4 dernier § : portabilité RGPD, traitée manuellement par un Administrateur.
+enum DataPortabilityRequestStatus {
+  PENDING
+  FULFILLED
+}
+
+// ---------------------------------------------------------------------------
 // Domaine Utilisateurs (référentiel Ch. 3, Annexe P)
 // ---------------------------------------------------------------------------
 
@@ -266,25 +313,32 @@ model User {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  teacherProfile             TeacherProfile?
-  parentProfile              ParentProfile?
-  administrator              Administrator?
-  administratorsCreated      Administrator[]      @relation("AdministratorCreatedBy")
-  enrollmentsDecided         Enrollment[]         @relation("EnrollmentDecidedBy")
-  groupChangeRequestsDecided GroupChangeRequest[] @relation("GroupChangeDecidedBy")
-  attendancesRecorded        Attendance[]         @relation("AttendanceRecordedBy")
-  attendanceHistoryEntries   AttendanceHistory[]  @relation("AttendanceHistoryChangedBy")
-  sessions                   UserSession[]
-  passwordResetTokens        PasswordResetToken[]
-  loginHistory               LoginHistory[]
-  auditLogs                  AuditLog[]
+  teacherProfile                   TeacherProfile?
+  parentProfile                    ParentProfile?
+  administrator                    Administrator?
+  administratorsCreated            Administrator[]          @relation("AdministratorCreatedBy")
+  enrollmentsDecided               Enrollment[]             @relation("EnrollmentDecidedBy")
+  groupChangeRequestsDecided       GroupChangeRequest[]     @relation("GroupChangeDecidedBy")
+  attendancesRecorded              Attendance[]             @relation("AttendanceRecordedBy")
+  attendanceHistoryEntries         AttendanceHistory[]      @relation("AttendanceHistoryChangedBy")
+  sessions                         UserSession[]
+  passwordResetTokens              PasswordResetToken[]
+  loginHistory                     LoginHistory[]
+  auditLogs                        AuditLog[]
   /// Ch.18 : centre d'activités personnel (une ligne par activité reçue, tous rôles confondus).
-  activities                 Activity[]
-  enrollmentCommentsAuthored EnrollmentComment[]  @relation("EnrollmentCommentAuthor")
-  groupAnnouncementsCreated  GroupAnnouncement[]  @relation("GroupAnnouncementAuthor")
-  subscriptionsValidated     Subscription[]       @relation("SubscriptionValidatedBy")
-  subscriptionsSuspended     Subscription[]       @relation("SubscriptionSuspendedBy")
-  accountingEntriesAuthored  AccountingEntry[]    @relation("AccountingEntryAuthor")
+  activities                       Activity[]
+  enrollmentCommentsAuthored       EnrollmentComment[]      @relation("EnrollmentCommentAuthor")
+  groupAnnouncementsCreated        GroupAnnouncement[]      @relation("GroupAnnouncementAuthor")
+  subscriptionsValidated           Subscription[]           @relation("SubscriptionValidatedBy")
+  subscriptionsSuspended           Subscription[]           @relation("SubscriptionSuspendedBy")
+  accountingEntriesAuthored        AccountingEntry[]        @relation("AccountingEntryAuthor")
+  /// Ch.17 : exports demandés par cet utilisateur (RM-EXP-015 : seul l'auteur peut les télécharger).
+  exportJobsRequested              ExportJob[]              @relation("ExportJobRequestedBy")
+  /// Ch.17 : exports générés PAR cet utilisateur pour le compte d'un autre (RGPD, Ch.17.4 dernier §).
+  exportJobsGenerated              ExportJob[]              @relation("ExportJobGeneratedBy")
+  exportAudits                     ExportAudit[]            @relation("ExportAuditUser")
+  dataPortabilityRequestsMade      DataPortabilityRequest[] @relation("DataPortabilityRequester")
+  dataPortabilityRequestsFulfilled DataPortabilityRequest[] @relation("DataPortabilityFulfilledBy")
 
   @@map("user")
 }
@@ -1099,4 +1153,102 @@ model AccountingEntrySequence {
   lastValue Int @default(0) @map("last_value")
 
   @@map("accounting_entry_sequence")
+}
+
+// ---------------------------------------------------------------------------
+// Domaine Export (Ch. 17 — Exportation des données)
+// ---------------------------------------------------------------------------
+//
+// Décisions de modélisation assumées :
+//  - `ExportJob` stocke les octets générés directement en base (`fileBytes`, type `Bytes`) plutôt
+//    que sur un stockage objet (S3...) : ce projet n'a aucune intégration cloud, et le filesystem
+//    de CI (GitHub Actions) est éphémère — écrire sur disque rendrait la génération non
+//    reproductible en test/CI sans infrastructure supplémentaire. Cohérent avec la posture "V1
+//    pragmatique" déjà assumée pour le reste du projet (voir progress.md).
+//  - `ExportJob` et `ExportAudit` restent deux objets distincts (RM-EXP-012) : `ExportAudit` ne
+//    référence jamais le contenu du fichier, seulement les métadonnées de la demande (comme
+//    `AuditLog` pour le reste de la plateforme) — voir le commentaire de chaque modèle.
+
+/// Ch.17.9/17.11 : le fichier généré, photographie des données au moment de la génération
+/// (RM-EXP-007). `requestedBy` est le seul autorisé à le télécharger (RM-EXP-015) ; pour un export
+/// RGPD généré par un Administrateur au nom d'un autre utilisateur, `requestedBy` reste le titulaire
+/// des données concernées (donc le destinataire du téléchargement), `generatedBy` ne sert qu'à la
+/// traçabilité de qui a déclenché la génération.
+model ExportJob {
+  id            String          @id @default(uuid()) @db.Uuid
+  requestedById String          @map("requested_by_id") @db.Uuid
+  requestedBy   User            @relation("ExportJobRequestedBy", fields: [requestedById], references: [id])
+  generatedById String?         @map("generated_by_id") @db.Uuid
+  generatedBy   User?           @relation("ExportJobGeneratedBy", fields: [generatedById], references: [id])
+  type          ExportType
+  format        ExportFormat
+  status        ExportJobStatus @default(PENDING)
+  /// Critères de sélection utilisés (Ch.17.5) — groupes, période, élève, matière, niveau...
+  criteria      Json?
+  fileName      String?         @map("file_name")
+  fileBytes     Bytes?          @map("file_bytes")
+  fileSize      Int?            @map("file_size")
+  rowCount      Int?            @map("row_count")
+  /// RM-EXP-009/ERR-EXP-005 : volume ayant dépassé le seuil (>10 000 lignes ou >5 Mo) — sert à
+  /// l'affichage/aux notifications NOT-EXP-001/002 ; la génération elle-même reste synchrone (voir
+  /// le commentaire de section plus haut).
+  isAsync       Boolean         @default(false) @map("is_async")
+  errorMessage  String?         @map("error_message")
+  downloadedAt  DateTime?       @map("downloaded_at")
+  readyAt       DateTime?       @map("ready_at")
+  /// RM-EXP-008 : `readyAt` + 7 jours — expiration vérifiée paresseusement à la lecture
+  /// (`ExportsService.ensureCurrent`), même principe que le reste des transitions temporelles du
+  /// projet (pas de cron de nettoyage).
+  expiresAt     DateTime?       @map("expires_at")
+  createdAt     DateTime        @default(now()) @map("created_at")
+
+  auditEntries           ExportAudit[]
+  dataPortabilityRequest DataPortabilityRequest?
+
+  @@index([requestedById, createdAt])
+  @@map("export_job")
+}
+
+/// Ch.17.8/RM-EXP-006/012 : journal des exports. Objet distinct d'`ExportJob` — ne contient JAMAIS
+/// les données exportées elles-mêmes, seulement les métadonnées de la demande. Une ligne est écrite
+/// pour CHAQUE demande d'export, y compris les refus (ERR-EXP-001/003/004 : `exportJobId` reste
+/// `null` puisqu'aucun fichier n'a alors été produit) — accessible uniquement au Super Admin et aux
+/// Admins disposant de la permission `EXP_VIEW_JOURNAL` (PERM-EXP-002).
+model ExportAudit {
+  id            String       @id @default(uuid()) @db.Uuid
+  userId        String       @map("user_id") @db.Uuid
+  user          User         @relation("ExportAuditUser", fields: [userId], references: [id])
+  type          ExportType
+  format        ExportFormat
+  criteria      Json?
+  /// SUCCESS | EMPTY | REFUSED_SUBSCRIPTION | REFUSED_FORMAT | REFUSED_UNAUTHORIZED — code métier
+  /// libre plutôt qu'un enum Prisma, même principe que `Activity.type`/`AuditLog.action`.
+  outcome       String
+  refusalReason String?      @map("refusal_reason")
+  exportJobId   String?      @map("export_job_id") @db.Uuid
+  exportJob     ExportJob?   @relation(fields: [exportJobId], references: [id])
+  createdAt     DateTime     @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@map("export_audit")
+}
+
+/// Ch.17.4 dernier § / EVT-EXP-008 : demande de portabilité RGPD, traitée manuellement par un
+/// Administrateur. `dueAt` (30 jours) est purement indicatif — aucune conséquence automatique à
+/// l'échéance, ce projet n'a pas de scheduler (même limitation que les rappels d'abonnement Ch.21/22).
+model DataPortabilityRequest {
+  id            String                       @id @default(uuid()) @db.Uuid
+  userId        String                       @map("user_id") @db.Uuid
+  user          User                         @relation("DataPortabilityRequester", fields: [userId], references: [id])
+  status        DataPortabilityRequestStatus @default(PENDING)
+  requestedAt   DateTime                     @map("requested_at")
+  dueAt         DateTime                     @map("due_at")
+  fulfilledAt   DateTime?                    @map("fulfilled_at")
+  fulfilledById String?                      @map("fulfilled_by_id") @db.Uuid
+  fulfilledBy   User?                        @relation("DataPortabilityFulfilledBy", fields: [fulfilledById], references: [id])
+  exportJobId   String?                      @unique @map("export_job_id") @db.Uuid
+  exportJob     ExportJob?                   @relation(fields: [exportJobId], references: [id])
+  createdAt     DateTime                     @default(now()) @map("created_at")
+
+  @@map("data_portability_request")
 }

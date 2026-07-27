@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, SubscriptionStatus } from '@prisma/client';
+import { Prisma, SubscriptionPlan, SubscriptionStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -302,5 +302,38 @@ export class SubscriptionsService {
     throw new ForbiddenException(
       "Abonnement en attente de validation du paiement : aucune opération autorisée (ERR-PERM-001)",
     );
+  }
+
+  /**
+   * Ch.17.4/22 : variante "lecture" d'`assertCanWrite` — utilisée par l'export (Ch.17), qui est
+   * fonctionnellement une lecture mais doit tout de même être bloquée pour l'offre Découverte
+   * (RM-EXP-001). Ne lève jamais : renvoie l'offre exploitable (ACTIVE, ou EXPIRED dans son délai
+   * de grâce) pour une année académique OPEN, ou `null` si aucune ne l'est — l'appelant décide du
+   * message d'erreur adapté à son propre contexte plutôt que de réutiliser celui de l'écriture.
+   */
+  async getActivePlan(teacherId: string): Promise<SubscriptionPlan | null> {
+    const subs = await this.prisma.subscription.findMany({
+      where: { teacherId, academicYear: { status: 'OPEN' } },
+      include: { plan: true },
+    });
+
+    const now = new Date();
+    for (const sub of subs) {
+      let status = sub.status;
+      if (status !== 'EXPIRED' && sub.expiresAt && sub.expiresAt <= now) {
+        await this.prisma.subscription.update({ where: { id: sub.id }, data: { status: 'EXPIRED' } });
+        status = 'EXPIRED';
+      }
+      if (status === 'ACTIVE') {
+        return sub.plan;
+      }
+      if (status === 'EXPIRED' && sub.expiresAt) {
+        const graceDeadline = new Date(sub.expiresAt.getTime() + 7 * 86_400_000);
+        if (now <= graceDeadline) {
+          return sub.plan;
+        }
+      }
+    }
+    return null;
   }
 }

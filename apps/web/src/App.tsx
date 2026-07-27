@@ -29,6 +29,9 @@ import { TeacherSubscriptionPage } from './pages/TeacherSubscriptionPage';
 import { AdminSubscriptionsPage } from './pages/AdminSubscriptionsPage';
 import { TeacherAccountingPage } from './pages/TeacherAccountingPage';
 import { ParentChildAccountingPage } from './pages/ParentChildAccountingPage';
+import { TeacherExportsPage } from './pages/TeacherExportsPage';
+import { ParentExportsPage } from './pages/ParentExportsPage';
+import { AdminExportsPage } from './pages/AdminExportsPage';
 
 function App() {
   return (
@@ -214,6 +217,30 @@ function App() {
               element={
                 <ProtectedRoute roles={['PARENT']}>
                   <ParentChildAccountingPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/teacher/exports"
+              element={
+                <ProtectedRoute roles={['TEACHER']}>
+                  <TeacherExportsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/parent/exports"
+              element={
+                <ProtectedRoute roles={['PARENT']}>
+                  <ParentExportsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/exports"
+              element={
+                <ProtectedRoute roles={['SUPER_ADMIN', 'ADMIN']}>
+                  <AdminExportsPage />
                 </ProtectedRoute>
               }
             />

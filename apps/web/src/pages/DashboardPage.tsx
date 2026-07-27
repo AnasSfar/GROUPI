@@ -12,6 +12,7 @@ import {
   IconUserPlus,
   IconCreditCard,
   IconWallet,
+  IconDownload,
 } from '../components/icons';
 
 interface DashCard {
@@ -56,6 +57,12 @@ export function DashboardPage() {
             title: 'Abonnements Professeur',
             description: 'Valider les paiements, suspendre ou réactiver un abonnement.',
           },
+          {
+            to: '/admin/exports',
+            icon: <IconDownload />,
+            title: 'Exports et RGPD',
+            description: 'Statistiques agrégées, journal des exports et demandes de portabilité RGPD.',
+          },
         ]
       : []),
     ...(isTeacher
@@ -96,6 +103,12 @@ export function DashboardPage() {
             title: 'Comptabilité',
             description: 'Chiffre d’affaires, comptes débiteurs/créditeurs et indicateurs financiers.',
           },
+          {
+            to: '/teacher/exports',
+            icon: <IconDownload />,
+            title: 'Exporter mes données',
+            description: 'Groupes, élèves, présences, comptabilité et statistiques en PDF, Excel ou CSV.',
+          },
         ]
       : []),
     ...(isParent
@@ -123,6 +136,12 @@ export function DashboardPage() {
             icon: <IconUserPlus />,
             title: 'Mes préinscriptions',
             description: 'Manifester votre intérêt pour la prochaine année académique.',
+          },
+          {
+            to: '/parent/exports',
+            icon: <IconDownload />,
+            title: 'Exporter les données de mes enfants',
+            description: 'Présences, commentaires pédagogiques, comptabilité et paiements en PDF.',
           },
         ]
       : []),

@@ -18,6 +18,7 @@ import { EnrollmentConversationsModule } from './enrollment-conversations/enroll
 import { GroupAnnouncementsModule } from './group-announcements/group-announcements.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { AccountingModule } from './accounting/accounting.module';
+import { ExportsModule } from './exports/exports.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { AccountingModule } from './accounting/accounting.module';
     GroupAnnouncementsModule,
     SubscriptionsModule,
     AccountingModule,
+    ExportsModule,
   ],
 })
 export class AppModule {}
