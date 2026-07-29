@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { Select } from './Select';
 import { ApiError } from '../api/client';
 import * as accountingApi from '../api/accountingApi';
 import type {
@@ -351,21 +352,21 @@ export function EnrollmentAccountingPanel({ enrollmentId, canWrite }: { enrollme
             <div className="comment-form">
               <label>
                 Séance concernée
-                <select value={adjSessionId} onChange={(e) => setAdjSessionId(e.target.value)}>
+                <Select value={adjSessionId} onChange={(e) => setAdjSessionId(e.target.value)}>
                   <option value="">Sélectionner...</option>
                   {sessions.map((s) => (
                     <option key={s.id} value={s.id}>
                       {formatDate(s.date)} — {s.startTime}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
               <label>
                 Sens
-                <select value={adjDirection} onChange={(e) => setAdjDirection(e.target.value as 'CREDIT' | 'DEBIT')}>
+                <Select value={adjDirection} onChange={(e) => setAdjDirection(e.target.value as 'CREDIT' | 'DEBIT')}>
                   <option value="CREDIT">Crédit (réduit la dette)</option>
                   <option value="DEBIT">Débit (augmente la dette)</option>
-                </select>
+                </Select>
               </label>
               <input
                 type="number"
@@ -377,13 +378,13 @@ export function EnrollmentAccountingPanel({ enrollmentId, canWrite }: { enrollme
               />
               <label>
                 Motif
-                <select value={adjReason} onChange={(e) => setAdjReason(e.target.value as AdjustmentReason)}>
+                <Select value={adjReason} onChange={(e) => setAdjReason(e.target.value as AdjustmentReason)}>
                   {(Object.keys(ADJUSTMENT_REASON_LABELS) as AdjustmentReason[]).map((reason) => (
                     <option key={reason} value={reason}>
                       {ADJUSTMENT_REASON_LABELS[reason]}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
               <textarea
                 placeholder="Justification (obligatoire)"

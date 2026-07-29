@@ -15,6 +15,7 @@ export interface AuthenticatedUser {
   roles: string[];
   status: string;
   administratorPermissions: string[] | null;
+  emailVerifiedAt: Date | null;
 }
 
 /**
@@ -55,6 +56,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       roles: user.roles,
       status: user.status,
       administratorPermissions: user.administrator?.permissions ?? null,
+      emailVerifiedAt: user.emailVerifiedAt,
     };
   }
 }

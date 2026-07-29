@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { Select } from '../components/Select';
 import { ApiError } from '../api/client';
 import * as referentialsApi from '../api/referentialsApi';
 import * as parentProfileApi from '../api/parentProfileApi';
@@ -178,10 +179,7 @@ export function ParentPreEnrollmentsPage() {
                         <div className="proposal-summary">
                           <div>{pe.proposedGroup.name}</div>
                           <div>Tarif : {pe.proposedGroup.publicPrice} TND</div>
-                          <div>
-                            Places restantes :{' '}
-                            {Math.max(0, pe.proposedGroup.capacity - pe.proposedGroup._count.enrollments)}
-                          </div>
+                          <div>{pe.proposedGroup.hasAvailableSpots ? 'Places disponibles' : 'Groupe complet'}</div>
                           {pe.expiresAt && (
                             <div>
                               Réponse avant le {new Date(pe.expiresAt).toLocaleDateString('fr-FR')}
@@ -243,61 +241,61 @@ export function ParentPreEnrollmentsPage() {
             <div className="field-row">
               <label>
                 Enfant
-                <select value={studentId} onChange={(e) => setStudentId(e.target.value)} required>
+                <Select value={studentId} onChange={(e) => setStudentId(e.target.value)}>
                   <option value="">Sélectionner...</option>
                   {students.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.firstName} {s.lastName}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
               <label>
                 Niveau scolaire prévu
-                <select value={schoolLevelId} onChange={(e) => setSchoolLevelId(e.target.value)} required>
+                <Select value={schoolLevelId} onChange={(e) => setSchoolLevelId(e.target.value)}>
                   <option value="">Sélectionner...</option>
                   {schoolLevels.map((l) => (
                     <option key={l.id} value={l.id}>
                       {l.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
             </div>
             <div className="field-row">
               <label>
                 Matière (optionnel)
-                <select value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
+                <Select value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
                   <option value="">Non précisée</option>
                   {subjects.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
               <label>
                 Année académique
-                <select value={academicYearId} onChange={(e) => setAcademicYearId(e.target.value)} required>
+                <Select value={academicYearId} onChange={(e) => setAcademicYearId(e.target.value)}>
                   <option value="">Sélectionner...</option>
                   {academicYears.map((y) => (
                     <option key={y.id} value={y.id}>
                       {y.label}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
             </div>
             <label>
               Professeur
-              <select value={teacherId} onChange={(e) => setTeacherId(e.target.value)} required>
+              <Select value={teacherId} onChange={(e) => setTeacherId(e.target.value)}>
                 <option value="">Sélectionner...</option>
                 {eligibleTeachers.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.firstName} {t.lastName} ({t.city})
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
             {eligibleTeachers.length === 0 && (
               <p>Aucun Professeur validé ne correspond encore à ces critères.</p>

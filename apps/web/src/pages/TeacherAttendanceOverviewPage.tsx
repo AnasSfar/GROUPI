@@ -5,6 +5,7 @@ import { ApiError } from '../api/client';
 import * as groupsApi from '../api/groupsApi';
 import * as attendanceApi from '../api/attendanceApi';
 import { AttendanceMeter } from '../components/AttendanceMeter';
+import { Select } from '../components/Select';
 import type { Group } from '../api/groupsApi';
 import type { AbandonmentAlert, AttendanceStatsPeriod, AttendanceStudentStats, RegisterEntry } from '../api/attendanceApi';
 
@@ -108,13 +109,13 @@ export function TeacherAttendanceOverviewPage() {
         <h2>Assiduité par élève</h2>
         <label>
           Période
-          <select value={period} onChange={(e) => setPeriod(e.target.value as AttendanceStatsPeriod)}>
+          <Select value={period} onChange={(e) => setPeriod(e.target.value as AttendanceStatsPeriod)}>
             {Object.entries(PERIOD_LABELS).map(([value, label]) => (
               <option key={value} value={value}>
                 {label}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
 
         {stats.length === 0 && <p>Aucun élève actif dans ce groupe.</p>}

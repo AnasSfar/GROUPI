@@ -3,6 +3,7 @@ import { AcademicYear } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { CreatePreEnrollmentDto } from './dto/create-pre-enrollment.dto';
 import { ProposePreEnrollmentDto } from './dto/propose-pre-enrollment.dto';
 import { EligibleTeachersQueryDto } from './dto/eligible-teachers-query.dto';
@@ -41,6 +42,7 @@ export class PreEnrollmentsService {
     private readonly prisma: PrismaService,
     private readonly email: EmailService,
     private readonly notifications: NotificationsService,
+    private readonly subscriptions: SubscriptionsService,
   ) {}
 
   /**
@@ -89,7 +91,21 @@ export class PreEnrollmentsService {
       include: INCLUDE_DETAILS,
       orderBy: { createdAt: 'desc' },
     });
-    return Promise.all(items.map((item) => this.expireIfNeeded(item)));
+    const expired = await Promise.all(items.map((item) => this.expireIfNeeded(item)));
+    return expired.map((item) => this.maskGroupCapacityForParent(item));
+  }
+
+  /** L'effectif/capacité d'un groupe est une donnée privée du Professeur, jamais exposée au Parent. */
+  private maskGroupCapacityForParent<T extends { proposedGroup: unknown }>(item: T): T {
+    const group = item.proposedGroup as
+      | ({ capacity: number; _count: { enrollments: number } } & Record<string, unknown>)
+      | null;
+    if (!group) return item;
+    const { capacity, _count, ...publicFields } = group;
+    return {
+      ...item,
+      proposedGroup: { ...publicFields, hasAvailableSpots: capacity - _count.enrollments > 0 },
+    };
   }
 
   /** Ch.11.5/11.6 : le Professeur consulte ses préinscriptions reçues, filtrables par année. */
@@ -292,6 +308,8 @@ export class PreEnrollmentsService {
         'Ce groupe n’est pas compatible avec cette préinscription (même année/niveau/matière requis, RM-PRE-008)',
       );
     }
+
+    await this.subscriptions.assertActiveEnrollmentCapacity(teacherId, 1, 'ERR-PRE-010');
 
     const expiresAt = new Date(dto.expiresAt);
     if (Number.isNaN(expiresAt.getTime()) || expiresAt <= new Date()) {

@@ -1,4 +1,14 @@
-import { IsEmail, IsIn, IsString, MinLength } from 'class-validator';
+import {
+  ArrayMinSize,
+  IsArray,
+  IsBoolean,
+  IsEmail,
+  IsIn,
+  IsString,
+  IsUUID,
+  MinLength,
+  ValidateIf,
+} from 'class-validator';
 
 export class RegisterDto {
   @IsEmail()
@@ -22,4 +32,22 @@ export class RegisterDto {
 
   @IsString()
   city!: string;
+
+  /** RM-TPR-001 : le profil minimum d'un Professeur inclut au moins une matière, dès la création du compte. */
+  @ValidateIf((o) => o.role === 'TEACHER')
+  @IsArray()
+  @ArrayMinSize(1, { message: 'Au moins une matière est requise pour un compte Professeur' })
+  @IsUUID('4', { each: true })
+  subjectIds!: string[];
+
+  /** RM-TPR-001 : le profil minimum d'un Professeur inclut au moins un niveau, dès la création du compte. */
+  @ValidateIf((o) => o.role === 'TEACHER')
+  @IsArray()
+  @ArrayMinSize(1, { message: 'Au moins un niveau scolaire est requis pour un compte Professeur' })
+  @IsUUID('4', { each: true })
+  schoolLevelIds!: string[];
+
+  /** Ch.9.5, ERR-SEC-013 : l'acceptation des conditions d'utilisation est obligatoire à l'inscription. */
+  @IsBoolean()
+  acceptTerms!: boolean;
 }

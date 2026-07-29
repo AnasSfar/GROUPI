@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { Select } from '../components/Select';
 import { ApiError } from '../api/client';
 import * as adminApi from '../api/adminApi';
 import type { AdminUser, UserStatus } from '../api/adminApi';
+
+type StatusFilterValue = UserStatus | 'ALL';
 
 const STATUS_LABELS: Record<UserStatus, string> = {
   PENDING_VALIDATION: 'En attente',
@@ -10,6 +13,11 @@ const STATUS_LABELS: Record<UserStatus, string> = {
   SUSPENDED: 'Suspendu',
   DISABLED: 'Désactivé',
   ARCHIVED: 'Archivé',
+};
+
+const STATUS_FILTER_LABELS: Record<StatusFilterValue, string> = {
+  ALL: 'Tous',
+  ...STATUS_LABELS,
 };
 
 const STATUS_BADGE: Record<UserStatus, string> = {
@@ -64,7 +72,7 @@ function ReasonPrompt({
 
 export function AdminUsersPage() {
   const { getAccessToken } = useAuth();
-  const [statusFilter, setStatusFilter] = useState<UserStatus>('PENDING_VALIDATION');
+  const [statusFilter, setStatusFilter] = useState<StatusFilterValue>('ALL');
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -79,7 +87,7 @@ export function AdminUsersPage() {
     setLoading(true);
     setError(null);
     try {
-      const result = await adminApi.listUsers(token, statusFilter);
+      const result = await adminApi.listUsers(token, statusFilter === 'ALL' ? undefined : statusFilter);
       setUsers(result);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Impossible de charger les comptes.');
@@ -137,13 +145,16 @@ export function AdminUsersPage() {
 
       <label className="status-filter">
         Statut :
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as UserStatus)}>
-          {Object.entries(STATUS_LABELS).map(([value, label]) => (
+        <Select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as StatusFilterValue)}
+        >
+          {Object.entries(STATUS_FILTER_LABELS).map(([value, label]) => (
             <option key={value} value={value}>
               {label}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
 
       {error && (

@@ -104,7 +104,7 @@ export class GroupAnnouncementsService {
     });
 
     // NOT-COM-003 : uniquement en cas de publication immédiate — une annonce programmée ne notifie
-    // qu'à sa parution effective (NOT-COM-006), explicitement différé (nécessite un scheduler, voir progress.md).
+    // qu'à sa parution effective (NOT-COM-006), prise en charge par `TemporalJobsService`.
     if (!dto.scheduled) {
       const parentIds = await this.activeParentUserIds(groupId);
       for (const parentId of parentIds) {

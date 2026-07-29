@@ -16,6 +16,7 @@ import { RefreshDto } from './dto/refresh.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { Roles } from './decorators/roles.decorator';
@@ -82,6 +83,26 @@ export class AuthController {
     return this.authService.resetPassword(dto);
   }
 
+  @Post('verify-email')
+  @HttpCode(204)
+  verifyEmail(@Body() dto: VerifyEmailDto) {
+    return this.authService.verifyEmail(dto);
+  }
+
+  @Post('resend-verification')
+  @HttpCode(204)
+  @UseGuards(JwtAuthGuard)
+  resendVerification(@CurrentUser() user: AuthenticatedUser) {
+    return this.authService.resendVerificationEmail(user.id);
+  }
+
+
+  @Post('me/deactivate')
+  @HttpCode(204)
+  @UseGuards(JwtAuthGuard)
+  deactivateMe(@CurrentUser() user: AuthenticatedUser) {
+    return this.authService.deactivateMe(user.id);
+  }
   @Post('users/:id/force-logout')
   @HttpCode(204)
   @UseGuards(JwtAuthGuard, RolesGuard)

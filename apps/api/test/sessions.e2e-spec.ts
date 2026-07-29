@@ -82,6 +82,9 @@ describe('Sessions (e2e)', () => {
         lastName: 'Séances',
         phone: '20000001',
         city: 'Tunis',
+        acceptTerms: true,
+        subjectIds: [subjectId],
+        schoolLevelIds: [schoolLevelId],
       })
       .expect(201);
 
@@ -165,15 +168,21 @@ describe('Sessions (e2e)', () => {
       await prisma.group.deleteMany({ where: { id: { in: groupIds } } });
     }
 
+    if (userIds.length > 0) {
+      await prisma.teacherSubject.deleteMany({ where: { teacherProfileId: { in: userIds } } });
+      await prisma.teacherSchoolLevel.deleteMany({ where: { teacherProfileId: { in: userIds } } });
+    }
     await prisma.subjectLevel.deleteMany({ where: { subjectId } });
     await prisma.subject.deleteMany({ where: { id: subjectId } });
     await prisma.schoolLevel.deleteMany({ where: { id: schoolLevelId } });
     await prisma.academicYear.deleteMany({ where: { id: academicYearId } });
 
     if (userIds.length > 0) {
+      await prisma.activity.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.loginHistory.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.userSession.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.passwordResetToken.deleteMany({ where: { userId: { in: userIds } } });
+      await prisma.emailVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.teacherProfile.deleteMany({ where: { id: { in: userIds } } });
       await prisma.user.deleteMany({ where: { id: { in: userIds } } });
     }
@@ -428,6 +437,52 @@ describe('Sessions (e2e)', () => {
           teachingMode: 'PRESENTIAL',
         })
         .expect(400);
+    });
+  });
+
+  describe("schedule conflict warning across the Professeur's own groups (ERR-SES-009)", () => {
+    it('warns (without blocking) when generated sessions overlap another of the Professeur\'s groups', async () => {
+      const groupA = await createGroup(`E2E-SES-${runId} Groupe Conflit A`, [
+        { dayOfWeek: scheduleDay1, startTime: '14:00', durationMinutes: 60 },
+      ]);
+      const groupB = await createGroup(`E2E-SES-${runId} Groupe Conflit B`, [
+        { dayOfWeek: scheduleDay1, startTime: '14:30', durationMinutes: 60 },
+      ]);
+
+      await api()
+        .post(`/api/v1/groups/${groupA.id}/sessions/generate`)
+        .set('Authorization', `Bearer ${teacherToken}`)
+        .expect(201);
+      // The second generate() call is the one whose overlap-check actually finds groupA's
+      // already-created sessions — createGroup()/generate() never touch other groups.
+      await api()
+        .post(`/api/v1/groups/${groupB.id}/sessions/generate`)
+        .set('Authorization', `Bearer ${teacherToken}`)
+        .expect(201);
+
+      const teacher = await prisma.user.findUniqueOrThrow({ where: { email: teacherEmail } });
+      const conflictActivity = await prisma.activity.findFirst({
+        where: { userId: teacher.id, type: 'SES_SCHEDULE_CONFLICT', refId: groupB.id },
+      });
+      expect(conflictActivity).not.toBeNull();
+    });
+  });
+
+  // Doit rester le DERNIER describe du fichier : suspend le TeacherProfile partagé par toute la
+  // suite, ce qui bloquerait toute génération de séance dans les blocs suivants s'il y en avait.
+  describe('refuses generation for a suspended Professeur (ERR-SES-021/028)', () => {
+    it('blocks session generation once the TeacherProfile is suspended', async () => {
+      const group = await createGroup(`E2E-SES-${runId} Groupe Prof Suspendu`, [
+        { dayOfWeek: scheduleDay1, startTime: '16:00', durationMinutes: 60 },
+      ]);
+      const teacher = await prisma.user.findUniqueOrThrow({ where: { email: teacherEmail } });
+      await prisma.teacherProfile.update({ where: { id: teacher.id }, data: { status: 'SUSPENDED' } });
+
+      const res = await api()
+        .post(`/api/v1/groups/${group.id}/sessions/generate`)
+        .set('Authorization', `Bearer ${teacherToken}`)
+        .expect(400);
+      expect(res.body.message).toMatch(/ERR-SES-021|ERR-SES-028/);
     });
   });
 });

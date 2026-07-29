@@ -46,7 +46,17 @@ describe('Notifications (e2e)', () => {
     const email = `e2e-not-${role.toLowerCase()}-${label}-${runId}@example.com`;
     const res = await api()
       .post('/api/v1/auth/register')
-      .send({ email, password, role, firstName: 'Test', lastName: label, phone: '20000000', city: 'Tunis' })
+      .send({
+        email,
+        password,
+        role,
+        firstName: 'Test',
+        lastName: label,
+        phone: '20000000',
+        city: 'Tunis',
+        acceptTerms: true,
+        ...(role === 'TEACHER' ? { subjectIds: [subjectId], schoolLevelIds: [schoolLevelId] } : {}),
+      })
       .expect(201);
     const userId = res.body.id as string;
 
@@ -220,7 +230,10 @@ describe('Notifications (e2e)', () => {
     await prisma.loginHistory.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.userSession.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.passwordResetToken.deleteMany({ where: { userId: { in: userIds } } });
+    await prisma.emailVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.subscription.deleteMany({ where: { teacherId: { in: teacherIds } } });
+    await prisma.teacherSubject.deleteMany({ where: { teacherProfileId: { in: teacherIds } } });
+    await prisma.teacherSchoolLevel.deleteMany({ where: { teacherProfileId: { in: teacherIds } } });
     await prisma.teacherProfile.deleteMany({ where: { id: { in: teacherIds } } });
     await prisma.parentProfile.deleteMany({ where: { id: { in: parentIds } } });
     await prisma.user.deleteMany({ where: { id: { in: userIds } } });

@@ -59,6 +59,15 @@ export class EmailService implements OnModuleDestroy {
     );
   }
 
+  /** Ch.9.5, ERR-SEC-012 */
+  async sendEmailVerification(to: string, verificationToken: string): Promise<void> {
+    await this.send(
+      to,
+      'GROUPI — Vérifiez votre adresse e-mail',
+      `Voici votre lien de vérification : token=${verificationToken}`,
+    );
+  }
+
   /** NOT-INS-002 */
   async sendEnrollmentAccepted(to: string, studentName: string, groupName: string): Promise<void> {
     await this.send(
@@ -159,7 +168,7 @@ export class EmailService implements OnModuleDestroy {
     );
   }
 
-  /** NOT-CPT-007 (déclenchement manuel par le Professeur — pas de scheduler dans ce projet). */
+  /** NOT-CPT-007 : template reutilise par le rappel manuel et le rappel automatique quotidien. */
   async sendPaymentReminder(to: string, studentName: string, debtAmount: number): Promise<void> {
     await this.send(
       to,
@@ -213,6 +222,45 @@ export class EmailService implements OnModuleDestroy {
       `Le Parent de ${studentName} a signalé une absence prévisible à la séance du groupe "${groupName}" ` +
         `le ${date.toLocaleDateString('fr-FR')} à ${startTime}. Ce signalement est informatif : la présence ` +
         `définitive reste à votre charge lors de la séance.`,
+    );
+  }
+  async sendSessionAttendanceMissing(to: string, groupName: string, date: Date): Promise<void> {
+    await this.send(
+      to,
+      'GROUPI - Pr�sences non saisies',
+      `Les pr�sences de la s�ance du groupe "${groupName}" du ${date.toLocaleDateString('fr-FR')} n'ont pas encore �t� saisies.`,
+    );
+  }
+
+  async sendSubscriptionExpiryReminder(to: string, planName: string, expiresAt: Date, daysLeft: number): Promise<void> {
+    await this.send(
+      to,
+      `GROUPI - Abonnement bient�t expir� (J-${daysLeft})`,
+      `Votre abonnement "${planName}" expire le ${expiresAt.toLocaleDateString('fr-FR')}. Pensez � renouveler pour conserver vos droits.`,
+    );
+  }
+
+  async sendSubscriptionExpired(to: string, planName: string, expiresAt: Date): Promise<void> {
+    await this.send(
+      to,
+      'GROUPI - Abonnement expir�',
+      `Votre abonnement "${planName}" a expir� le ${expiresAt.toLocaleDateString('fr-FR')}. Vous disposez du d�lai de gr�ce pr�vu avant suspension automatique.`,
+    );
+  }
+
+  async sendSubscriptionGraceSuspended(to: string, planName: string): Promise<void> {
+    await this.send(
+      to,
+      'GROUPI - Compte Professeur suspendu',
+      `Le d�lai de gr�ce de votre abonnement "${planName}" est d�pass�. Votre compte Professeur est suspendu jusqu'� r�gularisation.`,
+    );
+  }
+
+  async sendAbsenceNoticeDeadline(to: string, studentName: string, groupName: string, date: Date, startTime: string): Promise<void> {
+    await this.send(
+      to,
+      'GROUPI - Dernier d�lai pour signaler une absence',
+      `La s�ance de ${studentName} dans le groupe "${groupName}" commence le ${date.toLocaleDateString('fr-FR')} � ${startTime}. C'est le dernier moment pour signaler une absence pr�visible.`,
     );
   }
 }

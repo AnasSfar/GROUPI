@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AccountingService } from '../accounting/accounting.service';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { CreateEnrollmentDto } from './dto/create-enrollment.dto';
 import { AcceptEnrollmentDto } from './dto/accept-enrollment.dto';
 import { RejectEnrollmentDto } from './dto/reject-enrollment.dto';
@@ -17,13 +18,14 @@ const INCLUDE_PARENT_VIEW = {
       id: true,
       name: true,
       status: true,
-      capacity: true,
       publicPrice: true,
       teachingMode: true,
       subject: true,
       schoolLevel: true,
       academicYear: true,
       teacher: { select: { firstName: true, lastName: true, city: true } },
+      // Ch.12/10.6 : jour/horaire du planning hebdomadaire — affichés au Parent, jamais la capacité (privée).
+      schedules: { select: { dayOfWeek: true, startTime: true, durationMinutes: true } },
     },
   },
 } satisfies Prisma.EnrollmentInclude;
@@ -50,7 +52,15 @@ const INCLUDE_TEACHER_VIEW = {
       },
     },
   },
-  group: { select: { id: true, name: true, capacity: true, status: true } },
+  group: {
+    select: {
+      id: true,
+      name: true,
+      capacity: true,
+      status: true,
+      schedules: { select: { dayOfWeek: true, startTime: true, durationMinutes: true } },
+    },
+  },
 } satisfies Prisma.EnrollmentInclude;
 
 type ParentViewEnrollment = Prisma.EnrollmentGetPayload<{ include: typeof INCLUDE_PARENT_VIEW }>;
@@ -65,6 +75,7 @@ export class EnrollmentsService {
     private readonly email: EmailService,
     private readonly notifications: NotificationsService,
     private readonly accounting: AccountingService,
+    private readonly subscriptions: SubscriptionsService,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -301,6 +312,7 @@ export class EnrollmentsService {
     }
 
     const activeCount = await this.prisma.enrollment.count({ where: { groupId, status: 'ACTIVE' } });
+    await this.subscriptions.assertActiveEnrollmentCapacity(teacherId, 1, 'ERR-INS-008/ERR-INS-013');
     if (activeCount >= group.capacity) {
       throw new BadRequestException(
         "La capacité du groupe n'est plus disponible au moment de l'acceptation (ERR-INS-030/039/056)",
@@ -432,6 +444,7 @@ export class EnrollmentsService {
     }
     const group = await this.prisma.group.findUniqueOrThrow({ where: { id: groupId } });
     const activeCount = await this.prisma.enrollment.count({ where: { groupId, status: 'ACTIVE' } });
+    await this.subscriptions.assertActiveEnrollmentCapacity(teacherId, 1, 'ERR-INS-008/ERR-INS-013');
     if (activeCount >= group.capacity) {
       throw new BadRequestException('La capacité du groupe est atteinte : réactivation impossible (ERR-INS-030)');
     }

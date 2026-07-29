@@ -46,7 +46,17 @@ describe('Group change (e2e)', () => {
     const email = `e2e-gch-${role.toLowerCase()}-${label}-${runId}@example.com`;
     const res = await api()
       .post('/api/v1/auth/register')
-      .send({ email, password, role, firstName: 'Test', lastName: label, phone: '20000000', city: 'Tunis' })
+      .send({
+        email,
+        password,
+        role,
+        firstName: 'Test',
+        lastName: label,
+        phone: '20000000',
+        city: 'Tunis',
+        acceptTerms: true,
+        ...(role === 'TEACHER' ? { subjectIds: [subjectId], schoolLevelIds: [schoolLevelId] } : {}),
+      })
       .expect(201);
     const userId = res.body.id as string;
 
@@ -183,7 +193,10 @@ describe('Group change (e2e)', () => {
     await prisma.loginHistory.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.userSession.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.passwordResetToken.deleteMany({ where: { userId: { in: userIds } } });
+    await prisma.emailVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.subscription.deleteMany({ where: { teacherId: { in: teacherIds } } });
+    await prisma.teacherSubject.deleteMany({ where: { teacherProfileId: { in: teacherIds } } });
+    await prisma.teacherSchoolLevel.deleteMany({ where: { teacherProfileId: { in: teacherIds } } });
     await prisma.teacherProfile.deleteMany({ where: { id: { in: teacherIds } } });
     await prisma.parentProfile.deleteMany({ where: { id: { in: parentIds } } });
     await prisma.user.deleteMany({ where: { id: { in: userIds } } });
@@ -194,21 +207,21 @@ describe('Group change (e2e)', () => {
   describe('happy path — changement immédiat', () => {
     it('accepts a change and immediately archives the original enrollment, activating the new one', async () => {
       const groupA = await createOpenGroup(teacherA.token, `E2E-GCH-${runId} Groupe A`, 10);
-      const groupB = await createOpenGroup(teacherB.token, `E2E-GCH-${runId} Groupe B happy`, 10);
+      const groupA2 = await createOpenGroup(teacherA.token, `E2E-GCH-${runId} Groupe A2 happy`, 10);
       const student = await createStudent(parent1.token, `Happy-${runId}`);
       const originalEnrollmentId = await enrollAndAccept(parent1.token, teacherA.token, student.id, groupA.id);
 
       const createRes = await api()
         .post('/api/v1/group-changes')
         .set('Authorization', `Bearer ${parent1.token}`)
-        .send({ enrollmentId: originalEnrollmentId, targetGroupId: groupB.id })
+        .send({ enrollmentId: originalEnrollmentId, targetGroupId: groupA2.id })
         .expect(201);
       expect(createRes.body.status).toBe('PENDING');
       const requestId = createRes.body.id as string;
 
       const acceptRes = await api()
         .post(`/api/v1/group-changes/${requestId}/accept`)
-        .set('Authorization', `Bearer ${teacherB.token}`)
+        .set('Authorization', `Bearer ${teacherA.token}`)
         .send({ effectiveDate: isoDate(today) })
         .expect(201);
       expect(acceptRes.body.status).toBe('ACCEPTED');
@@ -221,17 +234,30 @@ describe('Group change (e2e)', () => {
         where: { id: acceptRes.body.newEnrollment.id },
       });
       expect(newEnrollment.status).toBe('ACTIVE');
-      expect(newEnrollment.groupId).toBe(groupB.id);
+      expect(newEnrollment.groupId).toBe(groupA2.id);
     });
   });
 
   describe('refusals', () => {
+    it('refuses creation when the target group belongs to a different Professeur (RM-CHG-010/ERR-CHG-008)', async () => {
+      const groupA = await createOpenGroup(teacherA.token, `E2E-GCH-${runId} Groupe A crossteacher`, 10);
+      const groupB = await createOpenGroup(teacherB.token, `E2E-GCH-${runId} Groupe B crossteacher`, 10);
+      const student = await createStudent(parent1.token, `CrossTeacher-${runId}`);
+      const originalEnrollmentId = await enrollAndAccept(parent1.token, teacherA.token, student.id, groupA.id);
+
+      await api()
+        .post('/api/v1/group-changes')
+        .set('Authorization', `Bearer ${parent1.token}`)
+        .send({ enrollmentId: originalEnrollmentId, targetGroupId: groupB.id })
+        .expect(400);
+    });
+
     it('refuses acceptance when the target group is full (ERR-INS-012)', async () => {
       const groupA = await createOpenGroup(teacherA.token, `E2E-GCH-${runId} Groupe A full`, 10);
-      const groupBFull = await createOpenGroup(teacherB.token, `E2E-GCH-${runId} Groupe B full`, 1);
+      const groupAFull = await createOpenGroup(teacherA.token, `E2E-GCH-${runId} Groupe A2 full`, 1);
 
       const filler = await createStudent(parent2.token, `Filler-${runId}`);
-      await enrollAndAccept(parent2.token, teacherB.token, filler.id, groupBFull.id);
+      await enrollAndAccept(parent2.token, teacherA.token, filler.id, groupAFull.id);
 
       const student = await createStudent(parent1.token, `Blocked-${runId}`);
       const originalEnrollmentId = await enrollAndAccept(parent1.token, teacherA.token, student.id, groupA.id);
@@ -239,50 +265,69 @@ describe('Group change (e2e)', () => {
       const createRes = await api()
         .post('/api/v1/group-changes')
         .set('Authorization', `Bearer ${parent1.token}`)
-        .send({ enrollmentId: originalEnrollmentId, targetGroupId: groupBFull.id })
-        .expect(201);
-
-      await api()
-        .post(`/api/v1/group-changes/${createRes.body.id}/accept`)
-        .set('Authorization', `Bearer ${teacherB.token}`)
-        .send({ effectiveDate: isoDate(today) })
-        .expect(400);
-    });
-
-    it('refuses acceptance/rejection from a teacher who does not own the target group -> 403', async () => {
-      const groupA = await createOpenGroup(teacherA.token, `E2E-GCH-${runId} Groupe A outsider`, 10);
-      const groupB = await createOpenGroup(teacherB.token, `E2E-GCH-${runId} Groupe B outsider`, 10);
-      const student = await createStudent(parent1.token, `Outsider-${runId}`);
-      const originalEnrollmentId = await enrollAndAccept(parent1.token, teacherA.token, student.id, groupA.id);
-
-      const createRes = await api()
-        .post('/api/v1/group-changes')
-        .set('Authorization', `Bearer ${parent1.token}`)
-        .send({ enrollmentId: originalEnrollmentId, targetGroupId: groupB.id })
+        .send({ enrollmentId: originalEnrollmentId, targetGroupId: groupAFull.id })
         .expect(201);
 
       await api()
         .post(`/api/v1/group-changes/${createRes.body.id}/accept`)
         .set('Authorization', `Bearer ${teacherA.token}`)
         .send({ effectiveDate: isoDate(today) })
+        .expect(400);
+    });
+
+    it('refuses an effective date earlier than today (ERR-CHG-009)', async () => {
+      const groupA = await createOpenGroup(teacherA.token, `E2E-GCH-${runId} Groupe A pastdate`, 10);
+      const groupA2 = await createOpenGroup(teacherA.token, `E2E-GCH-${runId} Groupe A2 pastdate`, 10);
+      const student = await createStudent(parent1.token, `PastDate-${runId}`);
+      const originalEnrollmentId = await enrollAndAccept(parent1.token, teacherA.token, student.id, groupA.id);
+
+      const createRes = await api()
+        .post('/api/v1/group-changes')
+        .set('Authorization', `Bearer ${parent1.token}`)
+        .send({ enrollmentId: originalEnrollmentId, targetGroupId: groupA2.id })
+        .expect(201);
+
+      await api()
+        .post(`/api/v1/group-changes/${createRes.body.id}/accept`)
+        .set('Authorization', `Bearer ${teacherA.token}`)
+        .send({ effectiveDate: isoDate(addDays(today, -1)) })
+        .expect(400);
+    });
+
+    it('refuses acceptance/rejection from a teacher who does not own the target group -> 403', async () => {
+      const groupA = await createOpenGroup(teacherA.token, `E2E-GCH-${runId} Groupe A outsider`, 10);
+      const groupA2 = await createOpenGroup(teacherA.token, `E2E-GCH-${runId} Groupe A2 outsider`, 10);
+      const student = await createStudent(parent1.token, `Outsider-${runId}`);
+      const originalEnrollmentId = await enrollAndAccept(parent1.token, teacherA.token, student.id, groupA.id);
+
+      const createRes = await api()
+        .post('/api/v1/group-changes')
+        .set('Authorization', `Bearer ${parent1.token}`)
+        .send({ enrollmentId: originalEnrollmentId, targetGroupId: groupA2.id })
+        .expect(201);
+
+      await api()
+        .post(`/api/v1/group-changes/${createRes.body.id}/accept`)
+        .set('Authorization', `Bearer ${teacherB.token}`)
+        .send({ effectiveDate: isoDate(today) })
         .expect(403);
     });
 
     it('rejects a request, leaving the original enrollment untouched', async () => {
       const groupA = await createOpenGroup(teacherA.token, `E2E-GCH-${runId} Groupe A reject`, 10);
-      const groupB = await createOpenGroup(teacherB.token, `E2E-GCH-${runId} Groupe B reject`, 10);
+      const groupA2 = await createOpenGroup(teacherA.token, `E2E-GCH-${runId} Groupe A2 reject`, 10);
       const student = await createStudent(parent1.token, `Reject-${runId}`);
       const originalEnrollmentId = await enrollAndAccept(parent1.token, teacherA.token, student.id, groupA.id);
 
       const createRes = await api()
         .post('/api/v1/group-changes')
         .set('Authorization', `Bearer ${parent1.token}`)
-        .send({ enrollmentId: originalEnrollmentId, targetGroupId: groupB.id })
+        .send({ enrollmentId: originalEnrollmentId, targetGroupId: groupA2.id })
         .expect(201);
 
       const rejectRes = await api()
         .post(`/api/v1/group-changes/${createRes.body.id}/reject`)
-        .set('Authorization', `Bearer ${teacherB.token}`)
+        .set('Authorization', `Bearer ${teacherA.token}`)
         .send({ reason: 'Pas de place pédagogique' })
         .expect(201);
       expect(rejectRes.body.status).toBe('REJECTED');
@@ -294,14 +339,14 @@ describe('Group change (e2e)', () => {
 
     it('lets the parent cancel a pending request, blocking any later decision', async () => {
       const groupA = await createOpenGroup(teacherA.token, `E2E-GCH-${runId} Groupe A cancel`, 10);
-      const groupB = await createOpenGroup(teacherB.token, `E2E-GCH-${runId} Groupe B cancel`, 10);
+      const groupA2 = await createOpenGroup(teacherA.token, `E2E-GCH-${runId} Groupe A2 cancel`, 10);
       const student = await createStudent(parent1.token, `Cancel-${runId}`);
       const originalEnrollmentId = await enrollAndAccept(parent1.token, teacherA.token, student.id, groupA.id);
 
       const createRes = await api()
         .post('/api/v1/group-changes')
         .set('Authorization', `Bearer ${parent1.token}`)
-        .send({ enrollmentId: originalEnrollmentId, targetGroupId: groupB.id })
+        .send({ enrollmentId: originalEnrollmentId, targetGroupId: groupA2.id })
         .expect(201);
 
       await api()
@@ -311,8 +356,74 @@ describe('Group change (e2e)', () => {
 
       await api()
         .post(`/api/v1/group-changes/${createRes.body.id}/accept`)
-        .set('Authorization', `Bearer ${teacherB.token}`)
+        .set('Authorization', `Bearer ${teacherA.token}`)
         .send({ effectiveDate: isoDate(today) })
+        .expect(400);
+    });
+
+    it('lets the parent cancel an accepted-but-not-yet-effective change, freeing the seat it took (ERR-CHG-012)', async () => {
+      const groupA = await createOpenGroup(teacherA.token, `E2E-GCH-${runId} Groupe A delai`, 10);
+      const groupA2 = await createOpenGroup(teacherA.token, `E2E-GCH-${runId} Groupe A2 delai`, 1);
+      const student = await createStudent(parent1.token, `Delai-${runId}`);
+      const originalEnrollmentId = await enrollAndAccept(parent1.token, teacherA.token, student.id, groupA.id);
+
+      const createRes = await api()
+        .post('/api/v1/group-changes')
+        .set('Authorization', `Bearer ${parent1.token}`)
+        .send({ enrollmentId: originalEnrollmentId, targetGroupId: groupA2.id })
+        .expect(201);
+
+      const acceptRes = await api()
+        .post(`/api/v1/group-changes/${createRes.body.id}/accept`)
+        .set('Authorization', `Bearer ${teacherA.token}`)
+        .send({ effectiveDate: isoDate(addDays(today, 5)) })
+        .expect(201);
+      const newEnrollmentId = acceptRes.body.newEnrollment.id as string;
+
+      const groupAfterAccept = await prisma.group.findUniqueOrThrow({ where: { id: groupA2.id } });
+      expect(groupAfterAccept.status).toBe('FULL');
+
+      const cancelRes = await api()
+        .post(`/api/v1/group-changes/${createRes.body.id}/cancel`)
+        .set('Authorization', `Bearer ${parent1.token}`)
+        .expect(201);
+      expect(cancelRes.body.status).toBe('CANCELLED');
+
+      const cancelledEnrollment = await prisma.enrollment.findUniqueOrThrow({ where: { id: newEnrollmentId } });
+      expect(cancelledEnrollment.status).toBe('CANCELLED');
+
+      const account = await prisma.accountingAccount.findUnique({ where: { enrollmentId: newEnrollmentId } });
+      expect(account).toBeNull();
+
+      const groupAfterCancel = await prisma.group.findUniqueOrThrow({ where: { id: groupA2.id } });
+      expect(groupAfterCancel.status).toBe('ACTIVE');
+
+      // L'inscription d'origine n'a jamais été touchée puisque la date d'effet n'était pas atteinte.
+      const originalEnrollment = await prisma.enrollment.findUniqueOrThrow({ where: { id: originalEnrollmentId } });
+      expect(originalEnrollment.status).toBe('ACTIVE');
+    });
+
+    it('refuses cancellation once the change has already applied (ERR-CHG-012)', async () => {
+      const groupA = await createOpenGroup(teacherA.token, `E2E-GCH-${runId} Groupe A hors-delai`, 10);
+      const groupA2 = await createOpenGroup(teacherA.token, `E2E-GCH-${runId} Groupe A2 hors-delai`, 10);
+      const student = await createStudent(parent1.token, `HorsDelai-${runId}`);
+      const originalEnrollmentId = await enrollAndAccept(parent1.token, teacherA.token, student.id, groupA.id);
+
+      const createRes = await api()
+        .post('/api/v1/group-changes')
+        .set('Authorization', `Bearer ${parent1.token}`)
+        .send({ enrollmentId: originalEnrollmentId, targetGroupId: groupA2.id })
+        .expect(201);
+
+      await api()
+        .post(`/api/v1/group-changes/${createRes.body.id}/accept`)
+        .set('Authorization', `Bearer ${teacherA.token}`)
+        .send({ effectiveDate: isoDate(today) })
+        .expect(201);
+
+      await api()
+        .post(`/api/v1/group-changes/${createRes.body.id}/cancel`)
+        .set('Authorization', `Bearer ${parent1.token}`)
         .expect(400);
     });
   });
@@ -320,19 +431,19 @@ describe('Group change (e2e)', () => {
   describe('date effective future — application paresseuse', () => {
     it('keeps the original enrollment ACTIVE until the effective date, then archives it lazily on read', async () => {
       const groupA = await createOpenGroup(teacherA.token, `E2E-GCH-${runId} Groupe A lazy`, 10);
-      const groupB = await createOpenGroup(teacherB.token, `E2E-GCH-${runId} Groupe B lazy`, 10);
+      const groupA2 = await createOpenGroup(teacherA.token, `E2E-GCH-${runId} Groupe A2 lazy`, 10);
       const student = await createStudent(parent1.token, `Lazy-${runId}`);
       const originalEnrollmentId = await enrollAndAccept(parent1.token, teacherA.token, student.id, groupA.id);
 
       const createRes = await api()
         .post('/api/v1/group-changes')
         .set('Authorization', `Bearer ${parent1.token}`)
-        .send({ enrollmentId: originalEnrollmentId, targetGroupId: groupB.id })
+        .send({ enrollmentId: originalEnrollmentId, targetGroupId: groupA2.id })
         .expect(201);
 
       const acceptRes = await api()
         .post(`/api/v1/group-changes/${createRes.body.id}/accept`)
-        .set('Authorization', `Bearer ${teacherB.token}`)
+        .set('Authorization', `Bearer ${teacherA.token}`)
         .send({ effectiveDate: isoDate(addDays(today, 5)) })
         .expect(201);
       expect(acceptRes.body.status).toBe('ACCEPTED');

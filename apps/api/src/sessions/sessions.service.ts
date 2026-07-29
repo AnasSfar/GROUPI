@@ -182,6 +182,71 @@ export class SessionsService {
     }
   }
 
+  /** ERR-SES-021/028 : un Professeur suspendu ou pas encore validé ne peut pas générer de séance. */
+  private async assertTeacherActiveForSessions(teacherId: string) {
+    const teacher = await this.prisma.teacherProfile.findUnique({ where: { id: teacherId } });
+    if (!teacher || teacher.status !== 'VALIDATED') {
+      throw new BadRequestException(
+        'Professeur suspendu ou non validé : création de séance impossible (ERR-SES-021/ERR-SES-028)',
+      );
+    }
+  }
+
+  private timeToMinutes(t: string): number {
+    const [h, m] = t.split(':').map(Number);
+    return h * 60 + m;
+  }
+
+  /**
+   * ERR-SES-009 : conflit de planning avec une autre séance du même Professeur (groupe différent)
+   * — avertissement non bloquant, simple notification informative ; la création reste autorisée.
+   */
+  private async warnScheduleConflicts(
+    teacherId: string,
+    excludeGroupId: string,
+    candidates: { date: Date; startTime: string; durationMinutes: number }[],
+  ) {
+    if (candidates.length === 0) return;
+    const times = candidates.map((c) => dateOnly(c.date).getTime());
+    const minDate = new Date(Math.min(...times));
+    const maxDate = new Date(Math.max(...times));
+
+    const otherSessions = await this.prisma.session.findMany({
+      where: {
+        group: { teacherId, id: { not: excludeGroupId } },
+        date: { gte: minDate, lte: maxDate },
+        status: { in: ['PLANNED', 'POSTPONED'] },
+      },
+      select: { date: true, startTime: true, durationMinutes: true },
+    });
+    if (otherSessions.length === 0) return;
+
+    let conflictCount = 0;
+    for (const c of candidates) {
+      const cStart = this.timeToMinutes(c.startTime);
+      const cEnd = cStart + c.durationMinutes;
+      const cDay = dateOnly(c.date).getTime();
+      const conflict = otherSessions.some((o) => {
+        if (dateOnly(o.date).getTime() !== cDay) return false;
+        const oStart = this.timeToMinutes(o.startTime);
+        const oEnd = oStart + o.durationMinutes;
+        return cStart < oEnd && oStart < cEnd;
+      });
+      if (conflict) conflictCount++;
+    }
+    if (conflictCount === 0) return;
+
+    await this.notifications.notify({
+      recipientUserId: teacherId,
+      type: 'SES_SCHEDULE_CONFLICT',
+      priority: 'INFORMATION',
+      title: 'Conflit de planning',
+      body: `${conflictCount} séance(s) chevauchent une séance planifiée dans un de vos autres groupes (ERR-SES-009). La création reste autorisée — vérifiez votre planning.`,
+      refType: 'Group',
+      refId: excludeGroupId,
+    });
+  }
+
   private toResponse<T extends LockableSession>(session: T) {
     return { ...session, lockDeadline: computeLockDeadline(session) };
   }
@@ -195,6 +260,7 @@ export class SessionsService {
   async generate(teacherId: string, groupId: string) {
     const group = await this.loadOwnedGroup(teacherId, groupId);
     this.assertGroupOpenForSessions(group);
+    await this.assertTeacherActiveForSessions(teacherId);
     if (group.schedules.length === 0) {
       throw new BadRequestException('Groupe sans planning : génération impossible (ERR-SES-024)');
     }
@@ -251,6 +317,17 @@ export class SessionsService {
       ),
     );
 
+    // NOT-SES : hors transaction — un échec de notification ne doit jamais annuler la génération.
+    await this.warnScheduleConflicts(
+      teacherId,
+      groupId,
+      plan.map(({ date, schedule }) => ({
+        date,
+        startTime: schedule.startTime,
+        durationMinutes: schedule.durationMinutes,
+      })),
+    );
+
     return { count: sessions.length, sessions: sessions.map((s) => this.toResponse(s)) };
   }
 
@@ -258,6 +335,7 @@ export class SessionsService {
   async createExceptional(teacherId: string, groupId: string, dto: CreateSessionDto) {
     const group = await this.loadOwnedGroup(teacherId, groupId);
     this.assertGroupOpenForSessions(group);
+    await this.assertTeacherActiveForSessions(teacherId);
 
     const date = dateOnly(new Date(dto.date));
 
@@ -290,6 +368,11 @@ export class SessionsService {
         status: 'PLANNED',
       },
     });
+
+    // NOT-SES : hors transaction — un échec de notification ne doit jamais annuler la création.
+    await this.warnScheduleConflicts(teacherId, groupId, [
+      { date, startTime: dto.startTime, durationMinutes: dto.durationMinutes },
+    ]);
 
     // NOT-SES-001 : hors chemin critique — un échec de notification ne doit jamais annuler la création.
     await this.notifyGroupParents(groupId, (groupName, parentEmail) => ({

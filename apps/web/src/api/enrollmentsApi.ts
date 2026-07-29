@@ -1,5 +1,13 @@
 import { apiRequest } from './client';
 import type { Subject, SchoolLevel, AcademicYear } from './referentialsApi';
+import type { DayOfWeek } from './groupsApi';
+
+/** Ch.12/13 : jour + horaire d'un créneau du planning hebdomadaire du groupe. */
+export interface EnrollmentGroupSchedule {
+  dayOfWeek: DayOfWeek;
+  startTime: string;
+  durationMinutes: number;
+}
 
 /** Ch.12.11/12.16 : les 7 états du cycle de vie d'une inscription. */
 export type EnrollmentStatus =
@@ -30,13 +38,13 @@ export interface ParentEnrollment {
     id: string;
     name: string;
     status: string;
-    capacity: number;
     publicPrice: string;
     teachingMode: string;
     subject: Subject;
     schoolLevel: SchoolLevel;
     academicYear: AcademicYear;
     teacher: { firstName: string; lastName: string; city: string };
+    schedules: EnrollmentGroupSchedule[];
   };
 }
 
@@ -65,6 +73,7 @@ export interface TeacherEnrollment {
     name: string;
     capacity: number;
     status: string;
+    schedules: EnrollmentGroupSchedule[];
   };
 }
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { Select } from '../components/Select';
 import { ApiError } from '../api/client';
 import * as exportsApi from '../api/exportsApi';
 import type { ExportFormat, ExportJob } from '../api/exportsApi';
@@ -155,11 +156,11 @@ export function AdminExportsPage() {
         <div className="field-row">
           <label>
             Format
-            <select value={format} onChange={(e) => setFormat(e.target.value as ExportFormat)}>
+            <Select value={format} onChange={(e) => setFormat(e.target.value as ExportFormat)}>
               <option value="CSV">{FORMAT_LABELS.CSV}</option>
               <option value="EXCEL">{FORMAT_LABELS.EXCEL}</option>
               <option value="PDF">{FORMAT_LABELS.PDF}</option>
-            </select>
+            </Select>
           </label>
           <button type="button" disabled={submitting} onClick={handleCreate}>
             {submitting ? 'Génération...' : 'Générer l’export'}

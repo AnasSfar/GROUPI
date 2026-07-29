@@ -21,10 +21,10 @@ const INCLUDE_VIEW = {
 type SubscriptionView = Prisma.SubscriptionGetPayload<{ include: typeof INCLUDE_VIEW }>;
 
 /**
- * Ch.21 : abonnements Professeur — offres seedées (Découverte/Intermédiaire/Pro), souscription,
- * validation manuelle du paiement (espèces, V1), suspension/réactivation par un Admin. Le contrôle
- * des droits liés à l'offre active (Ch.22) et les rappels d'échéance temporels (NOT-ABO-001/002/003,
- * pas de scheduler dans ce projet) sont hors scope — voir progress.md.
+ * Ch.21 : abonnements Professeur - offres seed, souscription, validation manuelle du paiement,
+ * suspension/reactivation par un Admin. Les droits lies a l'offre active (Ch.22) sont geres
+ * par `SubscriptionGuard`; les rappels NOT-ABO-001/002/003/004 et RM-CYC-020 passent par
+ * `TemporalJobsService`.
  */
 @Injectable()
 export class SubscriptionsService {
@@ -335,5 +335,21 @@ export class SubscriptionsService {
       }
     }
     return null;
+  }
+  async assertActiveEnrollmentCapacity(teacherId: string, additionalSeats: number, errorCode: string): Promise<void> {
+    if (additionalSeats <= 0) return;
+    const plan = await this.getActivePlan(teacherId);
+    if (!plan) {
+      throw new ForbiddenException("Aucun abonnement exploitable pour verifier la capacite d'inscription (ERR-PERM-001)");
+    }
+    if (plan.maxActiveEnrollments === null) return;
+    const activeEnrollments = await this.prisma.enrollment.count({
+      where: { status: 'ACTIVE', group: { teacherId } },
+    });
+    if (activeEnrollments + additionalSeats > plan.maxActiveEnrollments) {
+      throw new ForbiddenException(
+        `Capacite maximale de l'abonnement atteinte (${plan.maxActiveEnrollments} inscription(s) active(s), ${errorCode})`,
+      );
+    }
   }
 }

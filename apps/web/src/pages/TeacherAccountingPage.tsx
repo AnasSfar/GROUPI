@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { Select } from '../components/Select';
 import { ApiError } from '../api/client';
 import * as groupsApi from '../api/groupsApi';
 import * as accountingApi from '../api/accountingApi';
@@ -134,14 +135,14 @@ export function TeacherAccountingPage() {
       <section className="card-section">
         <label>
           Groupe
-          <select value={selectedGroupId} onChange={(e) => setSelectedGroupId(e.target.value)}>
+          <Select value={selectedGroupId} onChange={(e) => setSelectedGroupId(e.target.value)}>
             {groups.length === 0 && <option value="">Aucun groupe</option>}
             {groups.map((g) => (
               <option key={g.id} value={g.id}>
                 {g.name} — {g.subject.name} ({g.schoolLevel.name})
               </option>
             ))}
-          </select>
+          </Select>
         </label>
 
         {loadingGroup && <p>Chargement...</p>}

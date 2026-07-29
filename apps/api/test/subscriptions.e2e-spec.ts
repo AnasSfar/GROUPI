@@ -31,7 +31,17 @@ describe('Subscriptions (e2e)', () => {
     const email = `e2e-abo-${role.toLowerCase()}-${label}-${runId}@example.com`;
     const res = await api()
       .post('/api/v1/auth/register')
-      .send({ email, password, role, firstName: 'Test', lastName: label, phone: '20000000', city: 'Tunis' })
+      .send({
+        email,
+        password,
+        role,
+        firstName: 'Test',
+        lastName: label,
+        phone: '20000000',
+        city: 'Tunis',
+        acceptTerms: true,
+        ...(role === 'TEACHER' ? { subjectIds: [subjectId], schoolLevelIds: [schoolLevelId] } : {}),
+      })
       .expect(201);
     const userId = res.body.id as string;
 
@@ -135,16 +145,16 @@ describe('Subscriptions (e2e)', () => {
     });
     closedYearId = closedYear.id;
 
+    const subjectLevel = await prisma.subjectLevel.findFirst({ where: { isAllowed: true, isActive: true } });
+    if (!subjectLevel) throw new Error('Aucune combinaison matière/niveau — lancez `npx prisma db seed`.');
+    subjectId = subjectLevel.subjectId;
+    schoolLevelId = subjectLevel.schoolLevelId;
+
     teacherPaid = await registerAndActivate('TEACHER', `paid-${runId}`);
     teacherTrial = await registerAndActivate('TEACHER', `trial-${runId}`);
     teacherClosedYear = await registerAndActivate('TEACHER', `closed-${runId}`);
     teacherGuard = await registerAndActivate('TEACHER', `guard-${runId}`);
     parent1 = await registerAndActivate('PARENT', `p1-${runId}`);
-
-    const subjectLevel = await prisma.subjectLevel.findFirst({ where: { isAllowed: true, isActive: true } });
-    if (!subjectLevel) throw new Error('Aucune combinaison matière/niveau — lancez `npx prisma db seed`.');
-    subjectId = subjectLevel.subjectId;
-    schoolLevelId = subjectLevel.schoolLevelId;
   });
 
   afterAll(async () => {
@@ -160,6 +170,9 @@ describe('Subscriptions (e2e)', () => {
     await prisma.loginHistory.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.userSession.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.passwordResetToken.deleteMany({ where: { userId: { in: userIds } } });
+    await prisma.emailVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
+    await prisma.teacherSubject.deleteMany({ where: { teacherProfileId: { in: teacherIds } } });
+    await prisma.teacherSchoolLevel.deleteMany({ where: { teacherProfileId: { in: teacherIds } } });
     await prisma.teacherProfile.deleteMany({ where: { id: { in: teacherIds } } });
     await prisma.parentProfile.deleteMany({ where: { id: { in: parentIds } } });
     await prisma.user.deleteMany({ where: { id: { in: userIds } } });

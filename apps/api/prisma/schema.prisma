@@ -300,12 +300,19 @@ model User {
   status          UserStatus
   roles           Role[]
   emailVerifiedAt DateTime?  @map("email_verified_at")
+  /// Ch.9.5, ERR-SEC-013 : acceptation obligatoire à l'inscription — jamais nul pour un compte créé
+  /// après l'introduction de ce champ ; peut être nul pour un compte plus ancien (non rétroactif).
+  acceptedTermsAt DateTime?  @map("accepted_terms_at")
   lastLoginAt     DateTime?  @map("last_login_at")
   deletedAt       DateTime?  @map("deleted_at")
 
   /// Verrouillage temporaire après échecs d'authentification (RM-SEC-016/037) — distinct de `status`.
   failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
   lockedUntil         DateTime? @map("locked_until")
+  /// ERR-SEC-008 : throttle des changements de mot de passe volontaires (attaque par fatigue) —
+  /// fenêtre glissante distincte de `failedLoginAttempts`, qui ne couvre que les échecs de connexion.
+  passwordChangeCount       Int       @default(0) @map("password_change_count")
+  passwordChangeWindowStart DateTime? @map("password_change_window_start")
   /// Incrémenté à chaque invalidation globale de session (RM-SEC-017/019/030) pour permettre
   /// la révocation immédiate d'un JWT déjà émis (vérifié dans JwtStrategy à chaque requête).
   tokenVersion        Int       @default(0) @map("token_version")
@@ -323,10 +330,12 @@ model User {
   attendanceHistoryEntries         AttendanceHistory[]      @relation("AttendanceHistoryChangedBy")
   sessions                         UserSession[]
   passwordResetTokens              PasswordResetToken[]
+  emailVerificationTokens          EmailVerificationToken[]
   loginHistory                     LoginHistory[]
   auditLogs                        AuditLog[]
   /// Ch.18 : centre d'activités personnel (une ligne par activité reçue, tous rôles confondus).
   activities                       Activity[]
+  schoolAdditionReviews            SchoolAdditionRequest[] @relation("SchoolAdditionReviewedBy")
   enrollmentCommentsAuthored       EnrollmentComment[]      @relation("EnrollmentCommentAuthor")
   groupAnnouncementsCreated        GroupAnnouncement[]      @relation("GroupAnnouncementAuthor")
   subscriptionsValidated           Subscription[]           @relation("SubscriptionValidatedBy")
@@ -390,6 +399,20 @@ model PasswordResetToken {
   @@map("password_reset_token")
 }
 
+/// Lien de vérification d'adresse e-mail, usage unique (Ch.9.5, ERR-SEC-012) — même forme que
+/// `PasswordResetToken`, table distincte car sémantique différente (aucune connexion à un mot de passe).
+model EmailVerificationToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  user      User      @relation(fields: [userId], references: [id])
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@map("email_verification_token")
+}
+
 /// Journal des connexions, non modifiable (§9.10, RM-SEC-026/027/028)
 model LoginHistory {
   id        String   @id @default(uuid()) @db.Uuid
@@ -446,6 +469,8 @@ model ParentProfile {
   groupAnnouncementReads GroupAnnouncementRead[]
   /// Ch.16.4 : signalements d'absence prévisible faits par ce Parent.
   absenceNotices         AbsenceNotice[]
+  /// Ch.6.7 : demandes Parent d'ajout d'un etablissement absent du referentiel officiel.
+  schoolAdditionRequests SchoolAdditionRequest[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -545,12 +570,38 @@ model City {
   isActive Boolean @default(true) @map("is_active")
 
   schools School[]
+  schoolAdditionRequests SchoolAdditionRequest[]
 
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("city")
 }
 
+
+/// Ch.6.7 : demande d'ajout d'un établissement scolaire par un Parent, validée/refusée par un Admin.
+model SchoolAdditionRequest {
+  id              String        @id @default(uuid()) @db.Uuid
+  parentId        String        @map("parent_id") @db.Uuid
+  parent          ParentProfile @relation(fields: [parentId], references: [id])
+  name            String
+  type            SchoolType
+  cityId          String        @map("city_id") @db.Uuid
+  city            City          @relation(fields: [cityId], references: [id])
+  address         String?
+  comment         String?
+  status          String        @default("PENDING")
+  reviewedById    String?       @map("reviewed_by_id") @db.Uuid
+  reviewedBy      User?         @relation("SchoolAdditionReviewedBy", fields: [reviewedById], references: [id])
+  reviewedAt      DateTime?     @map("reviewed_at")
+  rejectionReason String?       @map("rejection_reason")
+  createdSchoolId String?       @map("created_school_id") @db.Uuid
+  createdSchool   School?       @relation(fields: [createdSchoolId], references: [id])
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  @@index([status, createdAt])
+  @@map("school_addition_request")
+}
 model School {
   id                    String     @id @default(uuid()) @db.Uuid
   sourceKey             String?    @unique @map("source_key")
@@ -573,6 +624,7 @@ model School {
   isActive              Boolean    @default(true) @map("is_active")
 
   studentSchoolSituations StudentSchoolSituation[]
+  additionRequests         SchoolAdditionRequest[]
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -932,6 +984,19 @@ model Activity {
   @@index([userId, createdAt])
   @@index([userId, readAt])
   @@map("activity")
+}
+/// D�duplication des jobs temporels : une cl� m�tier = un �v�nement pouss� une seule fois, m�me si
+/// le cron repasse sur la m�me fen�tre (NOT-SES-009, NOT-ABO-002, etc.).
+model ScheduledNotificationMarker {
+  id        String   @id @default(uuid()) @db.Uuid
+  key       String   @unique
+  type      String
+  refType   String?  @map("ref_type")
+  refId     String?  @map("ref_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([type, createdAt])
+  @@map("scheduled_notification_marker")
 }
 
 /// Ch.19.3 : fil de commentaires d'une inscription. Pas de table "conversation" séparée — le fil

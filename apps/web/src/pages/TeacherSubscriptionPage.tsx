@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { Select } from '../components/Select';
 import { ApiError } from '../api/client';
 import * as subscriptionsApi from '../api/subscriptionsApi';
 import type { Subscription, SubscriptionPlan } from '../api/subscriptionsApi';
@@ -139,25 +140,25 @@ export function TeacherSubscriptionPage() {
           <div className="field-row">
             <label>
               Offre
-              <select value={selectedPlanId} onChange={(e) => setSelectedPlanId(e.target.value)}>
+              <Select value={selectedPlanId} onChange={(e) => setSelectedPlanId(e.target.value)}>
                 <option value="">Choisir une offre</option>
                 {plans.map((plan) => (
                   <option key={plan.id} value={plan.id}>
                     {plan.name} {plan.price === 0 ? '(gratuit)' : `(${plan.price} TND)`}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
             <label>
               Année académique
-              <select value={selectedYearId} onChange={(e) => setSelectedYearId(e.target.value)}>
+              <Select value={selectedYearId} onChange={(e) => setSelectedYearId(e.target.value)}>
                 <option value="">Choisir une année</option>
                 {availableYears.map((year) => (
                   <option key={year.id} value={year.id}>
                     {year.label}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
             <button type="button" disabled={!selectedPlanId || !selectedYearId} onClick={handleSubscribe}>
               Souscrire

@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { Select } from '../components/Select';
 import { ApiError } from '../api/client';
 import * as referentialsApi from '../api/referentialsApi';
 import * as groupsApi from '../api/groupsApi';
 import * as parentProfileApi from '../api/parentProfileApi';
 import * as enrollmentsApi from '../api/enrollmentsApi';
 import * as groupChangeApi from '../api/groupChangeApi';
-import type { Subject, SchoolLevel } from '../api/referentialsApi';
+import type { Subject, SchoolLevel, SubjectLevelPair } from '../api/referentialsApi';
+import { formatDuration } from '../api/groupsApi';
 import type { PublicGroup, DayOfWeek } from '../api/groupsApi';
 import type { Student } from '../api/parentProfileApi';
 
@@ -23,7 +25,7 @@ const DAY_LABELS: Record<DayOfWeek, string> = {
 
 function formatSchedule(group: PublicGroup): string {
   return group.schedules
-    .map((s) => `${DAY_LABELS[s.dayOfWeek]} ${s.startTime} (${s.durationMinutes} min)`)
+    .map((s) => `${DAY_LABELS[s.dayOfWeek]} ${s.startTime} (${formatDuration(s.durationMinutes)})`)
     .join(', ');
 }
 
@@ -32,7 +34,7 @@ export function ParentGroupSearchPage() {
   const [searchParams] = useSearchParams();
   const changeFromEnrollmentId = searchParams.get('changeFromEnrollment');
   const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [schoolLevels, setSchoolLevels] = useState<SchoolLevel[]>([]);
+  const [subjectLevels, setSubjectLevels] = useState<SubjectLevelPair[]>([]);
   const [subjectId, setSubjectId] = useState('');
   const [schoolLevelId, setSchoolLevelId] = useState('');
   const [city, setCity] = useState('');
@@ -68,11 +70,11 @@ export function ParentGroupSearchPage() {
     if (!token) return;
     Promise.all([
       referentialsApi.listSubjects(token),
-      referentialsApi.listSchoolLevels(token),
+      referentialsApi.listSubjectLevels(token),
       parentProfileApi.listStudents(token),
-    ]).then(([s, l, myStudents]) => {
+    ]).then(([s, sl, myStudents]) => {
       setSubjects(s);
-      setSchoolLevels(l);
+      setSubjectLevels(sl);
       setStudents(myStudents.filter((st) => st.status === 'ACTIVE'));
     });
   }, [getAccessToken]);
@@ -80,6 +82,33 @@ export function ParentGroupSearchPage() {
   useEffect(() => {
     search();
   }, [search]);
+
+  /** RM-PAR : un Parent ne recherche que dans les niveaux réellement suivis par ses enfants —
+   * jamais la liste complète du référentiel (qui couvre tous les niveaux, primaire à lycée). */
+  const childrenLevels = useMemo(() => {
+    const byId = new Map<string, SchoolLevel>();
+    for (const student of students) {
+      const level = student.currentSchoolSituation?.schoolLevel;
+      if (level) byId.set(level.id, level);
+    }
+    return [...byId.values()];
+  }, [students]);
+
+  /** Ne propose que les niveaux (parmi ceux des enfants) compatibles avec la matière choisie
+   * (ERR-GRP-001) — sans matière sélectionnée, tous les niveaux des enfants restent proposés. */
+  const availableLevels = useMemo(() => {
+    if (!subjectId) return childrenLevels;
+    const compatibleIds = new Set(
+      subjectLevels.filter((sl) => sl.subjectId === subjectId).map((sl) => sl.schoolLevelId),
+    );
+    return childrenLevels.filter((l) => compatibleIds.has(l.id));
+  }, [subjectId, subjectLevels, childrenLevels]);
+
+  useEffect(() => {
+    if (schoolLevelId && !availableLevels.some((l) => l.id === schoolLevelId)) {
+      setSchoolLevelId('');
+    }
+  }, [availableLevels, schoolLevelId]);
 
   async function handleRequestEnrollment(groupId: string) {
     const token = getAccessToken();
@@ -147,25 +176,25 @@ export function ParentGroupSearchPage() {
         <div className="field-row">
           <label>
             Matière
-            <select value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
+            <Select value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
               <option value="">Toutes</option>
               {subjects.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <label>
             Niveau scolaire
-            <select value={schoolLevelId} onChange={(e) => setSchoolLevelId(e.target.value)}>
+            <Select value={schoolLevelId} onChange={(e) => setSchoolLevelId(e.target.value)}>
               <option value="">Tous</option>
-              {schoolLevels.map((l) => (
+              {availableLevels.map((l) => (
                 <option key={l.id} value={l.id}>
                   {l.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <label>
             Ville du professeur
@@ -205,12 +234,10 @@ export function ParentGroupSearchPage() {
                   <td>{formatSchedule(group)}</td>
                   <td>{group.publicPrice} TND</td>
                   <td>
-                    {group.status === 'FULL' ? (
+                    {group.status === 'FULL' || !group.hasAvailableSpots ? (
                       <span className="badge badge-warning">Complet</span>
                     ) : (
-                      <span className="badge badge-success">
-                        {group.spotsAvailable} / {group.capacity}
-                      </span>
+                      <span className="badge badge-success">Places disponibles</span>
                     )}
                   </td>
                   <td className="admin-actions">
@@ -239,14 +266,14 @@ export function ParentGroupSearchPage() {
                       )
                     ) : requestingGroupId === group.id ? (
                       <div className="reason-prompt">
-                        <select value={studentToEnroll} onChange={(e) => setStudentToEnroll(e.target.value)}>
+                        <Select value={studentToEnroll} onChange={(e) => setStudentToEnroll(e.target.value)}>
                           <option value="">Choisir l'enfant...</option>
                           {students.map((s) => (
                             <option key={s.id} value={s.id}>
                               {s.firstName} {s.lastName}
                             </option>
                           ))}
-                        </select>
+                        </Select>
                         <button
                           type="button"
                           disabled={!studentToEnroll}

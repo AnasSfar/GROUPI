@@ -130,6 +130,9 @@ describe('Pre-enrollments (e2e)', () => {
         lastName: 'Teacher',
         phone: '20000010',
         city: city.name,
+        acceptTerms: true,
+        subjectIds: [subjectId],
+        schoolLevelIds: [schoolLevelId],
       })
       .expect(201);
     teacherId = teacherRegister.body.id;
@@ -149,6 +152,7 @@ describe('Pre-enrollments (e2e)', () => {
         lastName: 'Parent',
         phone: '20000011',
         city: city.name,
+        acceptTerms: true,
       })
       .expect(201);
     parentId = parentRegister.body.id;
@@ -163,6 +167,7 @@ describe('Pre-enrollments (e2e)', () => {
         lastName: 'Parent',
         phone: '20000012',
         city: city.name,
+        acceptTerms: true,
       })
       .expect(201);
     otherParentId = otherParentRegister.body.id;
@@ -256,6 +261,8 @@ describe('Pre-enrollments (e2e)', () => {
     await prisma.academicYear.deleteMany({
       where: { id: { in: [pastYearId, currentYearId, futureYearId] } },
     });
+    await prisma.teacherSubject.deleteMany({ where: { teacherProfileId: { in: userIds } } });
+    await prisma.teacherSchoolLevel.deleteMany({ where: { teacherProfileId: { in: userIds } } });
     await prisma.school.deleteMany({ where: { id: schoolId } });
     await prisma.city.deleteMany({ where: { id: cityId } });
     await prisma.subject.deleteMany({ where: { id: subjectId } });
@@ -265,6 +272,7 @@ describe('Pre-enrollments (e2e)', () => {
     await prisma.loginHistory.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.userSession.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.passwordResetToken.deleteMany({ where: { userId: { in: userIds } } });
+    await prisma.emailVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.teacherProfile.deleteMany({ where: { id: { in: userIds } } });
     await prisma.parentProfile.deleteMany({ where: { id: { in: userIds } } });
     await prisma.user.deleteMany({ where: { id: { in: userIds } } });

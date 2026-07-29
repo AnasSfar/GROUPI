@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { Select } from '../components/Select';
 import { ApiError } from '../api/client';
 import * as subscriptionsApi from '../api/subscriptionsApi';
 import type { Subscription, SubscriptionStatus } from '../api/subscriptionsApi';
@@ -113,13 +114,13 @@ export function AdminSubscriptionsPage() {
       <div className="field-row">
         <label>
           Filtrer par statut
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as SubscriptionStatus | '')}>
+          <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as SubscriptionStatus | '')}>
             <option value="">Tous</option>
             <option value="PENDING_PAYMENT">En attente de paiement</option>
             <option value="ACTIVE">Actif</option>
             <option value="SUSPENDED">Suspendu</option>
             <option value="EXPIRED">Expiré</option>
-          </select>
+          </Select>
         </label>
       </div>
 

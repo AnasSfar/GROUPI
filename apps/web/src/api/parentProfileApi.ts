@@ -51,6 +51,30 @@ export interface UpdateStudentPayload {
   dateOfBirth?: string;
 }
 
+export type SchoolAdditionRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+export interface SchoolAdditionRequest {
+  id: string;
+  name: string;
+  type: string;
+  cityId: string;
+  city: { id: string; name: string };
+  address: string | null;
+  comment: string | null;
+  status: SchoolAdditionRequestStatus;
+  rejectionReason: string | null;
+  createdSchool: { id: string; name: string } | null;
+  createdAt: string;
+}
+
+export interface CreateSchoolAdditionRequestPayload {
+  name: string;
+  type: string;
+  cityId: string;
+  address?: string;
+  comment?: string;
+}
+
 export function getMyProfile(accessToken: string): Promise<ParentProfile> {
   return apiRequest<ParentProfile>('/parent-profile/me', { accessToken });
 }
@@ -104,5 +128,21 @@ export function reactivateStudent(accessToken: string, studentId: string): Promi
   return apiRequest<Student>(`/parent-profile/me/students/${studentId}/reactivate`, {
     method: 'POST',
     accessToken,
+  });
+}
+
+/** Ch.6.7 — un Parent peut demander l'ajout d'un établissement absent du référentiel. */
+export function listSchoolAdditionRequests(accessToken: string): Promise<SchoolAdditionRequest[]> {
+  return apiRequest<SchoolAdditionRequest[]>('/parent-profile/me/school-requests', { accessToken });
+}
+
+export function createSchoolAdditionRequest(
+  accessToken: string,
+  payload: CreateSchoolAdditionRequestPayload,
+): Promise<SchoolAdditionRequest> {
+  return apiRequest<SchoolAdditionRequest>('/parent-profile/me/school-requests', {
+    method: 'POST',
+    accessToken,
+    body: payload,
   });
 }

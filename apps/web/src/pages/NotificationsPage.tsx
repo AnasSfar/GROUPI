@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { Select } from '../components/Select';
 import { ApiError } from '../api/client';
 import * as notificationsApi from '../api/notificationsApi';
 import type { Activity, ActivityPriority } from '../api/notificationsApi';
@@ -90,10 +91,10 @@ export function NotificationsPage() {
 
       <label className="status-filter">
         Afficher :
-        <select value={filter} onChange={(e) => setFilter(e.target.value as 'all' | 'unread')}>
+        <Select value={filter} onChange={(e) => setFilter(e.target.value as 'all' | 'unread')}>
           <option value="all">Toutes</option>
           <option value="unread">Non lues uniquement</option>
-        </select>
+        </Select>
       </label>
 
       {error && (

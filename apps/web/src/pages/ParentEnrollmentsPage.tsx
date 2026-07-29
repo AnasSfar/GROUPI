@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { ApiError } from '../api/client';
 import * as enrollmentsApi from '../api/enrollmentsApi';
 import * as groupChangeApi from '../api/groupChangeApi';
+import { ScheduleList } from '../components/ScheduleList';
 import type { ParentEnrollment, EnrollmentStatus } from '../api/enrollmentsApi';
 import type { GroupChangeRequestView, GroupChangeStatus } from '../api/groupChangeApi';
 import { EnrollmentCommentThread } from '../components/EnrollmentCommentThread';
@@ -131,8 +132,8 @@ export function ParentEnrollmentsPage() {
                 <tr>
                   <th>Enfant</th>
                   <th>Groupe</th>
-                  <th>Matière / Niveau</th>
                   <th>Professeur</th>
+                  <th>Jour / Horaire</th>
                   <th>Demandée le</th>
                   <th>Statut</th>
                   <th>Actions</th>
@@ -148,12 +149,17 @@ export function ParentEnrollmentsPage() {
                     <td>
                       {enrollment.student.firstName} {enrollment.student.lastName}
                     </td>
-                    <td>{enrollment.group.name}</td>
                     <td>
-                      {enrollment.group.subject.name} — {enrollment.group.schoolLevel.name}
+                      {enrollment.group.name}
+                      <div className="cell-secondary">
+                        {enrollment.group.subject.name} — {enrollment.group.schoolLevel.name}
+                      </div>
                     </td>
                     <td>
                       {enrollment.group.teacher.firstName} {enrollment.group.teacher.lastName}
+                    </td>
+                    <td>
+                      <ScheduleList schedules={enrollment.group.schedules} />
                     </td>
                     <td>{new Date(enrollment.requestedAt).toLocaleDateString('fr-FR')}</td>
                     <td>
@@ -214,21 +220,21 @@ export function ParentEnrollmentsPage() {
                   </tr>
                   {expandedComments === enrollment.id && (
                     <tr>
-                      <td colSpan={9}>
+                      <td colSpan={10}>
                         <EnrollmentCommentThread enrollmentId={enrollment.id} />
                       </td>
                     </tr>
                   )}
                   {expandedAnnouncements === enrollment.group.id && (
                     <tr>
-                      <td colSpan={9}>
+                      <td colSpan={10}>
                         <GroupAnnouncementsFeed groupId={enrollment.group.id} />
                       </td>
                     </tr>
                   )}
                   {expandedAccounting === enrollment.id && (
                     <tr>
-                      <td colSpan={9}>
+                      <td colSpan={10}>
                         <EnrollmentAccountingPanel enrollmentId={enrollment.id} canWrite={false} />
                       </td>
                     </tr>
@@ -278,7 +284,8 @@ export function ParentEnrollmentsPage() {
                       )}
                     </td>
                     <td className="admin-actions">
-                      {change.status === 'PENDING' && (
+                      {(change.status === 'PENDING' ||
+                        (change.status === 'ACCEPTED' && !change.appliedAt)) && (
                         <button type="button" className="danger" onClick={() => handleCancelGroupChange(change.id)}>
                           Annuler
                         </button>

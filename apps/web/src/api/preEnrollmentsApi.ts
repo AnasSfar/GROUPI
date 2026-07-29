@@ -41,11 +41,15 @@ export interface PreEnrollmentTeacher {
   city: string;
 }
 
-/** Ch.11.8 : détails du groupe proposé — horaires, lieu, tarif, places disponibles. */
+/**
+ * Ch.11.8 : détails du groupe proposé — horaires, lieu, tarif, places disponibles.
+ * Ch.10.6/RM-TPR-014 : `capacity`/`_count` ne sont renvoyés que côté Professeur (vue propriétaire) ;
+ * côté Parent, l'API masque ces champs privés et renvoie `hasAvailableSpots` à la place.
+ */
 export interface ProposedGroup {
   id: string;
   name: string;
-  capacity: number;
+  capacity?: number;
   publicPrice: string;
   teachingMode: TeachingMode;
   absenceBillingPolicy: AbsenceBillingPolicy;
@@ -54,7 +58,8 @@ export interface ProposedGroup {
   endDate: string | null;
   status: GroupStatus;
   schedules: GroupSchedule[];
-  _count: { enrollments: number };
+  _count?: { enrollments: number };
+  hasAvailableSpots?: boolean;
 }
 
 export interface PreEnrollment {

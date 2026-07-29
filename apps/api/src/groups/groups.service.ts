@@ -1,9 +1,11 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { GroupStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateGroupDto } from './dto/create-group.dto';
 import { UpdateGroupDto } from './dto/update-group.dto';
 import { SearchGroupsQueryDto } from './dto/search-groups-query.dto';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 
 const INCLUDE_DETAILS = {
   subject: true,
@@ -25,7 +27,11 @@ const ALLOWED_TRANSITIONS: Record<GroupStatus, GroupStatus[]> = {
 
 @Injectable()
 export class GroupsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly subscriptions: SubscriptionsService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   private async loadOwned(teacherId: string, groupId: string) {
     const group = await this.prisma.group.findUnique({
@@ -82,6 +88,8 @@ export class GroupsService {
       throw new BadRequestException('Date de fin antérieure à la date de début (ERR-GRP-021)');
     }
 
+
+    await this.subscriptions.assertActiveEnrollmentCapacity(teacherId, dto.capacity, 'ERR-GRP-013');
     const duplicateName = await this.prisma.group.findFirst({
       where: { teacherId, name: dto.name },
     });
@@ -158,6 +166,31 @@ export class GroupsService {
       await this.assertLocationsOwned(teacherId, dto.schedules);
     }
 
+    // ERR-GRP-016/017 : une modification de planning ne doit jamais faire disparaître ou dériver
+    // silencieusement des séances futures déjà planifiées. On identifie d'abord ces séances ;
+    // si l'appelant n'a pas explicitement choisi quoi en faire, l'opération est refusée.
+    let futureSessionIds: string[] = [];
+    if (dto.schedules) {
+      const now = new Date();
+      const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+      const futureSessions = await this.prisma.session.findMany({
+        where: {
+          groupId,
+          date: { gte: today },
+          status: { in: ['PLANNED', 'POSTPONED'] },
+        },
+        select: { id: true },
+      });
+      futureSessionIds = futureSessions.map((s) => s.id);
+
+      if (futureSessionIds.length > 0 && dto.keepFutureSessions === undefined) {
+        throw new BadRequestException(
+          `${futureSessionIds.length} séance(s) future(s) déjà planifiée(s) pour ce groupe : ` +
+            'précisez keepFutureSessions (true = conserver, false = supprimer et régénérer) avant de modifier le planning (ERR-GRP-016/ERR-GRP-017)',
+        );
+      }
+    }
+
     return this.prisma.$transaction(async (tx) => {
       await tx.group.update({
         where: { id: groupId },
@@ -192,6 +225,13 @@ export class GroupsService {
             teachingLocationId: s.teachingLocationId,
           })),
         });
+
+        // ERR-GRP-017 : "supprimer" = purge des séances futures obsolètes pour qu'elles soient
+        // régénérées depuis le nouveau planning (voir SessionsService.generate) — on ne
+        // régénère jamais nous-mêmes ici, on se contente de ne pas laisser de séances périmées.
+        if (dto.keepFutureSessions === false && futureSessionIds.length > 0) {
+          await tx.session.deleteMany({ where: { id: { in: futureSessionIds } } });
+        }
       }
 
       return tx.group.findUniqueOrThrow({
@@ -222,8 +262,54 @@ export class GroupsService {
     return this.transition(teacherId, groupId, 'CLOSED');
   }
 
-  archive(teacherId: string, groupId: string) {
-    return this.transition(teacherId, groupId, 'ARCHIVED');
+  /**
+   * ERR-INS-029/031 : un groupe archivé ne peut plus recevoir de décision — toute demande encore
+   * PENDING_VALIDATION est automatiquement clôturée (REJECTED, sans décideur) et le Parent en est
+   * informé. Cascade appliquée dans la même transaction que le changement de statut du groupe.
+   */
+  async archive(teacherId: string, groupId: string) {
+    const group = await this.loadOwned(teacherId, groupId);
+    const allowed = ALLOWED_TRANSITIONS[group.status] ?? [];
+    if (!allowed.includes('ARCHIVED')) {
+      throw new BadRequestException(`Transition interdite : ${group.status} -> ARCHIVED`);
+    }
+
+    const { updatedGroup, autoClosed } = await this.prisma.$transaction(async (tx) => {
+      const updatedGroup = await tx.group.update({
+        where: { id: groupId },
+        data: { status: 'ARCHIVED' },
+        include: { ...INCLUDE_DETAILS, _count: { select: { enrollments: true } } },
+      });
+
+      const pending = await tx.enrollment.findMany({
+        where: { groupId, status: 'PENDING_VALIDATION' },
+        include: { student: true },
+      });
+
+      for (const enrollment of pending) {
+        await tx.enrollment.update({
+          where: { id: enrollment.id },
+          data: { status: 'REJECTED', decidedAt: new Date(), decidedById: null },
+        });
+      }
+
+      return { updatedGroup, autoClosed: pending };
+    });
+
+    // NOT-INS : hors transaction — un échec d'envoi ne doit jamais annuler l'archivage.
+    for (const enrollment of autoClosed) {
+      await this.notifications.notify({
+        recipientUserId: enrollment.student.parentId,
+        type: 'INS_AUTO_CLOSED_GROUP_ARCHIVED',
+        priority: 'IMPORTANT',
+        title: 'Demande d’inscription automatiquement clôturée',
+        body: `Le groupe "${updatedGroup.name}" a été archivé par le Professeur : la demande d'inscription de ${enrollment.student.firstName} ${enrollment.student.lastName} a été automatiquement clôturée (ERR-INS-029/031).`,
+        refType: 'Enrollment',
+        refId: enrollment.id,
+      });
+    }
+
+    return updatedGroup;
   }
 
   /** ERR-GRP-020 : jamais de suppression physique dès qu'un historique existe. */
@@ -264,8 +350,7 @@ export class GroupsService {
         publicPrice: g.publicPrice,
         teachingMode: g.teachingMode,
         absenceBillingPolicy: g.absenceBillingPolicy,
-        capacity: g.capacity,
-        spotsAvailable: Math.max(0, g.capacity - g._count.enrollments),
+        hasAvailableSpots: g._count.enrollments < g.capacity,
         status: g.status,
         schedules: g.schedules,
         startDate: g.startDate,

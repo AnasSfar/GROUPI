@@ -12,6 +12,7 @@ import type {
   GroupOccupancyView,
 } from '../api/dashboardApi';
 import { AlertList } from '../components/AlertList';
+import { EmptyState, LoadingState } from '../components/UiState';
 import {
   IconUsers,
   IconBookOpen,
@@ -105,7 +106,7 @@ function TeacherDashboardView({ data, onRefresh }: { data: TeacherDashboard; onR
         />
         {data.activity.upcomingSessions.length > 0 && (
           <>
-            <p className="table-hint" style={{ marginTop: 12 }}>
+            <p className="table-hint section-spacer">
               Prochaines séances
             </p>
             <ul className="activity-list">
@@ -157,7 +158,7 @@ function TeacherDashboardView({ data, onRefresh }: { data: TeacherDashboard; onR
             { label: 'Comptes créditeurs', value: String(data.accounting.creditorAccountCount) },
           ]}
         />
-        <p className="table-hint" style={{ marginTop: 8 }}>
+        <p className="section-link">
           <Link to="/teacher/accounting">Voir tous les indicateurs financiers →</Link>
         </p>
       </section>
@@ -165,7 +166,7 @@ function TeacherDashboardView({ data, onRefresh }: { data: TeacherDashboard; onR
       <section className="card-section">
         <h2>Paiements</h2>
         {data.payments.debtorAccounts.length === 0 ? (
-          <p className="table-hint">Aucun compte en solde négatif.</p>
+          <EmptyState title="Aucun compte en solde négatif">Les comptes suivis sont équilibrés ou créditeurs.</EmptyState>
         ) : (
           <div className="table-wrap">
             <table className="admin-table">
@@ -194,7 +195,7 @@ function TeacherDashboardView({ data, onRefresh }: { data: TeacherDashboard; onR
         )}
         {data.payments.recentPayments.length > 0 && (
           <>
-            <p className="table-hint" style={{ marginTop: 12 }}>
+            <p className="table-hint section-spacer">
               Derniers paiements enregistrés
             </p>
             <ul className="activity-list">
@@ -287,7 +288,7 @@ function TeacherDashboardView({ data, onRefresh }: { data: TeacherDashboard; onR
             Niveaux les plus demandés : {data.preEnrollments.mostRequestedLevels.map((s) => `${s.label} (${s.count})`).join(', ')}
           </p>
         )}
-        <p className="table-hint" style={{ marginTop: 8 }}>
+        <p className="section-link">
           <Link to="/teacher/pre-enrollments">Consulter les préinscriptions →</Link>
         </p>
       </section>
@@ -389,7 +390,7 @@ function ChildDashboardCard({
         ]}
       />
 
-      <p className="table-hint" style={{ marginTop: 12 }}>
+      <p className="table-hint section-spacer">
         Groupes suivis
       </p>
       <ul className="tag-list">
@@ -402,7 +403,7 @@ function ChildDashboardCard({
 
       {child.upcomingSessions.length > 0 && (
         <>
-          <p className="table-hint" style={{ marginTop: 12 }}>
+          <p className="table-hint section-spacer">
             Prochaines séances
           </p>
           <ul className="activity-list">
@@ -443,7 +444,7 @@ function ChildDashboardCard({
 
       {child.recentComments.length > 0 && (
         <>
-          <p className="table-hint" style={{ marginTop: 12 }}>
+          <p className="table-hint section-spacer">
             Derniers commentaires pédagogiques
           </p>
           <ul className="activity-list">
@@ -460,7 +461,7 @@ function ChildDashboardCard({
         </>
       )}
 
-      <p className="table-hint" style={{ marginTop: 12 }}>
+      <p className="table-hint section-spacer">
         <Link to={`/parent/children/${child.student.id}/attendance`}>Présences détaillées</Link>
         {' · '}
         <Link to={`/parent/children/${child.student.id}/accounting`}>Comptabilité détaillée</Link>
@@ -478,7 +479,9 @@ function ParentDashboardView({ data, onRefresh }: { data: ParentDashboard; onRef
           <AlertList alerts={data.alerts} />
         </section>
       )}
-      {data.children.length === 0 && <p>Aucun enfant actif déclaré pour le moment.</p>}
+      {data.children.length === 0 && (
+        <EmptyState title="Aucun enfant actif déclaré">Ajoutez un enfant pour suivre ses inscriptions, présences et comptes.</EmptyState>
+      )}
       {data.children.map((child) => (
         <ChildDashboardCard key={child.student.id} child={child} showName={data.multipleChildren} onRefresh={onRefresh} />
       ))}
@@ -525,7 +528,7 @@ function AdminDashboardView({ data }: { data: AdminDashboard }) {
         <section className="card-section">
           <h2>Comptes en attente de validation</h2>
           {data.pendingAccountValidations.length === 0 ? (
-            <p className="table-hint">Aucun compte en attente.</p>
+            <EmptyState title="Aucun compte en attente">La file de validation est vide.</EmptyState>
           ) : (
             <ul className="activity-list">
               {data.pendingAccountValidations.map((u) => (
@@ -537,7 +540,7 @@ function AdminDashboardView({ data }: { data: AdminDashboard }) {
               ))}
             </ul>
           )}
-          <p className="table-hint" style={{ marginTop: 8 }}>
+          <p className="section-link">
             <Link to="/admin/users">Gérer les comptes →</Link>
           </p>
         </section>
@@ -547,7 +550,7 @@ function AdminDashboardView({ data }: { data: AdminDashboard }) {
         <section className="card-section">
           <h2>Situations scolaires en attente</h2>
           <StatGrid tiles={[{ label: 'En attente', value: String(data.pendingSchoolSituations.length) }]} />
-          <p className="table-hint" style={{ marginTop: 8 }}>
+          <p className="section-link">
             <Link to="/admin/school-situations">Traiter les demandes →</Link>
           </p>
         </section>
@@ -564,7 +567,7 @@ function AdminDashboardView({ data }: { data: AdminDashboard }) {
               { label: 'Expirés', value: String(data.subscriptions.expiredCount) },
             ]}
           />
-          <p className="table-hint" style={{ marginTop: 8 }}>
+          <p className="section-link">
             <Link to="/admin/subscriptions">Gérer les abonnements →</Link>
           </p>
         </section>
@@ -769,7 +772,7 @@ export function DashboardPage() {
         </p>
       )}
 
-      {loadingDashboard && <p>Chargement du tableau de bord...</p>}
+      {loadingDashboard && <LoadingState label="Chargement du tableau de bord..." />}
 
       {!loadingDashboard && isTeacher && teacherDashboard && (
         <TeacherDashboardView data={teacherDashboard} onRefresh={loadDashboard} />
@@ -792,7 +795,7 @@ export function DashboardPage() {
             ))}
           </div>
         ) : (
-          <p>Aucune action disponible pour le moment.</p>
+          <EmptyState title="Aucune action disponible">Votre rôle actuel ne donne accès à aucun raccourci.</EmptyState>
         )}
       </section>
 

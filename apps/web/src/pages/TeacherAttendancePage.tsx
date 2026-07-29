@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { Select } from '../components/Select';
 import { ApiError } from '../api/client';
 import * as groupsApi from '../api/groupsApi';
 import * as attendanceApi from '../api/attendanceApi';
@@ -68,13 +69,13 @@ function AttendanceRow({
         {entry.student.firstName} {entry.student.lastName}
       </td>
       <td>
-        <select value={status} onChange={(e) => setStatus(e.target.value as AttendanceStatus)} disabled={locked}>
+        <Select value={status} onChange={(e) => setStatus(e.target.value as AttendanceStatus)} disabled={locked}>
           {STATUS_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>
               {opt.label}
             </option>
           ))}
-        </select>
+        </Select>
       </td>
       <td>
         {status === 'LATE' && (

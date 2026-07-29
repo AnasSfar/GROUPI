@@ -81,8 +81,8 @@ export class AccountingService {
   ) {}
 
   // ---------------------------------------------------------------------------------------------
-  // Période comptable — créée paresseusement, verrouillée paresseusement (même principe que
-  // l'expiration des Enrollment / le verrouillage des Session : pas de cron dans ce projet).
+  // l'expiration des Enrollment / le verrouillage des Session : transition silencieuse lazy).
+  // l'expiration des Enrollment / le verrouillage des Session : transition silencieuse lazy).
   // ---------------------------------------------------------------------------------------------
 
   async getOrCreatePeriod(academicYearId: string, tx: Tx | PrismaService = this.prisma): Promise<AccountingPeriod> {
@@ -526,7 +526,7 @@ export class AccountingService {
     return this.toEntryView(reversal);
   }
 
-  /** PERM-ABO/NOT-CPT-007 (variante manuelle : pas de scheduler dans ce projet, déclenchement à l'initiative du Professeur). */
+  /** PERM-ABO/NOT-CPT-007 : variante manuelle, le rappel automatique quotidien passe par `TemporalJobsService`. */
   async sendPaymentReminder(teacherId: string, enrollmentId: string) {
     const account = await this.loadAccountForEnrollment(enrollmentId);
     this.assertTeacherOwnsAccount(teacherId, account);

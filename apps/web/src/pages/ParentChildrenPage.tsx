@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { Select } from '../components/Select';
 import { ApiError } from '../api/client';
 import * as referentialsApi from '../api/referentialsApi';
 import * as parentProfileApi from '../api/parentProfileApi';
-import type { School, SchoolLevel } from '../api/referentialsApi';
+import type { City, School, SchoolLevel } from '../api/referentialsApi';
 import type { ParentProfile, Student } from '../api/parentProfileApi';
 
 function formatSchoolOption(school: School) {
@@ -18,6 +19,8 @@ export function ParentChildrenPage() {
   const [students, setStudents] = useState<Student[]>([]);
   const [schoolLevels, setSchoolLevels] = useState<SchoolLevel[]>([]);
   const [schools, setSchools] = useState<School[]>([]);
+  const [cities, setCities] = useState<City[]>([]);
+  const [schoolCityId, setSchoolCityId] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,16 +40,18 @@ export function ParentChildrenPage() {
     setLoading(true);
     setError(null);
     try {
-      const [me, myStudents, levels, allSchools] = await Promise.all([
+      const [me, myStudents, levels, allSchools, allCities] = await Promise.all([
         parentProfileApi.getMyProfile(token),
         parentProfileApi.listStudents(token),
         referentialsApi.listSchoolLevels(token),
         referentialsApi.listSchools(token),
+        referentialsApi.listCities(token),
       ]);
       setProfile(me);
       setStudents(myStudents);
       setSchoolLevels(levels);
       setSchools(allSchools);
+      setCities(allCities);
       setPhone(me.phone);
       setCity(me.city);
     } catch (err) {
@@ -59,6 +64,19 @@ export function ParentChildrenPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  /** Le référentiel compte plus de 6000 établissements nationaux — sans filtre par ville, le
+   * sélecteur est inutilisable. On restreint donc aux établissements de la ville choisie. */
+  const schoolsInCity = useMemo(
+    () => (schoolCityId ? schools.filter((s) => s.cityId === schoolCityId) : []),
+    [schoolCityId, schools],
+  );
+
+  useEffect(() => {
+    if (schoolId && !schoolsInCity.some((s) => s.id === schoolId)) {
+      setSchoolId('');
+    }
+  }, [schoolsInCity, schoolId]);
 
   async function handleSaveProfile() {
     const token = getAccessToken();
@@ -91,6 +109,7 @@ export function ParentChildrenPage() {
       setLastName('');
       setDateOfBirth('');
       setSchoolLevelId('');
+      setSchoolCityId('');
       setSchoolId('');
       setSchoolClass('');
     } catch (err) {
@@ -252,25 +271,48 @@ export function ParentChildrenPage() {
           </label>
           <label>
             Niveau scolaire
-            <select value={schoolLevelId} onChange={(e) => setSchoolLevelId(e.target.value)} required>
+            <Select value={schoolLevelId} onChange={(e) => setSchoolLevelId(e.target.value)}>
               <option value="">Sélectionner...</option>
               {schoolLevels.map((level) => (
                 <option key={level.id} value={level.id}>
                   {level.name}
                 </option>
               ))}
-            </select>
+            </Select>
+          </label>
+          <label>
+            Ville de l'établissement
+            <Select value={schoolCityId} onChange={(e) => setSchoolCityId(e.target.value)}>
+              <option value="">Sélectionner...</option>
+              {cities.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
           </label>
           <label>
             Établissement
-            <select value={schoolId} onChange={(e) => setSchoolId(e.target.value)} required>
-              <option value="">Sélectionner...</option>
-              {schools.map((school) => (
+            <Select
+              value={schoolId}
+              onChange={(e) => setSchoolId(e.target.value)}
+              disabled={!schoolCityId}
+            >
+              <option value="">
+                {schoolCityId ? 'Sélectionner...' : "Choisissez d'abord une ville"}
+              </option>
+              {schoolsInCity.map((school) => (
                 <option key={school.id} value={school.id}>
                   {formatSchoolOption(school)}
                 </option>
               ))}
-            </select>
+            </Select>
+            {schoolCityId && schoolsInCity.length === 0 && (
+              <span className="table-hint">
+                Aucun établissement référencé dans cette ville — vous pouvez en demander l'ajout
+                depuis « Établissements ».
+              </span>
+            )}
           </label>
           <label>
             Classe (indicatif)

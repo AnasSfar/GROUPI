@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AccountingService } from '../accounting/accounting.service';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { CreateGroupChangeRequestDto } from './dto/create-group-change-request.dto';
 import { AcceptGroupChangeRequestDto } from './dto/accept-group-change-request.dto';
 import { RejectGroupChangeRequestDto } from './dto/reject-group-change-request.dto';
@@ -60,6 +61,7 @@ export class GroupChangeService {
     private readonly email: EmailService,
     private readonly notifications: NotificationsService,
     private readonly accounting: AccountingService,
+    private readonly subscriptions: SubscriptionsService,
   ) {}
 
   /**
@@ -158,6 +160,11 @@ export class GroupChangeService {
     if (targetGroup.academicYear.status !== 'OPEN') {
       throw new BadRequestException('Année académique du groupe cible clôturée (ERR-INS-006)');
     }
+    if (targetGroup.teacherId !== original.group.teacherId) {
+      throw new BadRequestException(
+        'Le changement de groupe ne concerne que deux groupes du même Professeur (RM-CHG-010) : pour changer de Professeur, effectuez une nouvelle demande d’inscription (ERR-CHG-008)',
+      );
+    }
 
     const existingInTarget = await this.prisma.enrollment.findFirst({
       where: { studentId: original.studentId, groupId: targetGroup.id, status: { in: ['PENDING_VALIDATION', 'ACTIVE'] } },
@@ -189,13 +196,40 @@ export class GroupChangeService {
     return this.applyIfDue(request);
   }
 
+  /**
+   * ERR-CHG-012 : au-delà de PENDING, l'annulation reste possible tant que le changement n'a pas
+   * encore pris effet (`appliedAt` nul, cf. `applyIfDue`) — la nouvelle inscription créée à
+   * l'acceptation est alors annulée et la place qu'elle occupait est restituée au groupe cible.
+   * Une fois la date d'effet atteinte, l'ancienne inscription est déjà clôturée : trop tard.
+   */
   async cancel(parentId: string, id: string): Promise<GroupChangeView> {
     const request = await this.loadOwnedByParent(parentId, id);
-    if (request.status !== 'PENDING') {
-      throw new BadRequestException('Cette demande a déjà été traitée : annulation impossible');
+    if (request.status === 'PENDING') {
+      await this.prisma.groupChangeRequest.update({ where: { id }, data: { status: 'CANCELLED' } });
+      return this.prisma.groupChangeRequest.findUniqueOrThrow({ where: { id }, include: INCLUDE_VIEW });
     }
-    await this.prisma.groupChangeRequest.update({ where: { id }, data: { status: 'CANCELLED' } });
-    return this.prisma.groupChangeRequest.findUniqueOrThrow({ where: { id }, include: INCLUDE_VIEW });
+    if (request.status === 'ACCEPTED' && !request.appliedAt && request.newEnrollment) {
+      const newEnrollmentId = request.newEnrollment.id;
+      await this.prisma.$transaction(async (tx) => {
+        await tx.enrollment.update({ where: { id: newEnrollmentId }, data: { status: 'CANCELLED' } });
+        // Jamais facturé (aucune séance ne peut lui être rattachée avant la date d'effet, encore
+        // future ici) : le compte de suivi comptable créé à l'acceptation peut être retiré sans
+        // violer le principe d'immutabilité (Ch.15.5), qui ne protège que les écritures postées.
+        await tx.accountingAccount.deleteMany({ where: { enrollmentId: newEnrollmentId } });
+        const targetGroup = await tx.group.findUniqueOrThrow({ where: { id: request.targetGroup.id } });
+        if (targetGroup.status === 'FULL') {
+          const activeCount = await tx.enrollment.count({
+            where: { groupId: targetGroup.id, status: 'ACTIVE' },
+          });
+          if (activeCount < targetGroup.capacity) {
+            await tx.group.update({ where: { id: targetGroup.id }, data: { status: 'ACTIVE' } });
+          }
+        }
+        await tx.groupChangeRequest.update({ where: { id }, data: { status: 'CANCELLED' } });
+      });
+      return this.prisma.groupChangeRequest.findUniqueOrThrow({ where: { id }, include: INCLUDE_VIEW });
+    }
+    throw new BadRequestException('Ce changement a déjà pris effet : annulation hors délai (ERR-CHG-012)');
   }
 
   // --- Vue Professeur (du groupe cible) ----------------------------------------------------
@@ -241,6 +275,9 @@ export class GroupChangeService {
     }
 
     const effectiveDate = dateOnly(new Date(dto.effectiveDate));
+    if (effectiveDate < todayDateOnly()) {
+      throw new BadRequestException("Date d'effet antérieure à aujourd'hui (ERR-CHG-009)");
+    }
 
     const targetGroup = await this.prisma.group.findUniqueOrThrow({ where: { id: request.targetGroup.id } });
     if (targetGroup.status === 'ARCHIVED' || targetGroup.status === 'CLOSED' || targetGroup.status === 'SUSPENDED') {
@@ -253,6 +290,7 @@ export class GroupChangeService {
       throw new BadRequestException('Changement de groupe impossible : nouveau groupe complet (ERR-INS-012)');
     }
 
+    await this.subscriptions.assertActiveEnrollmentCapacity(teacherId, 1, 'ERR-INS-013');
     const immediate = effectiveDate <= todayDateOnly();
 
     await this.prisma.$transaction(async (tx) => {
@@ -304,6 +342,10 @@ export class GroupChangeService {
       where: { id: request.id },
       include: INCLUDE_VIEW,
     });
+
+    await this.warnIfDebtor(teacherId, request);
+    await this.warnIfFrequentChanges(teacherId, request);
+
     // NOT-INS-007 : hors transaction — un échec d'envoi ne doit jamais annuler la décision.
     await this.notifications.notify({
       recipientUserId: request.originalEnrollment.student.parentId,
@@ -322,6 +364,72 @@ export class GroupChangeService {
         ),
     });
     return updated;
+  }
+
+  /**
+   * ERR-CHG-007/010 : le changement reste autorisé même si l'élève est débiteur sur l'ancienne
+   * inscription — simple avertissement au Professeur, même seuil que l'alerte de compte débiteur
+   * du Ch.15 (`AccountingService.checkBalanceAlerts`).
+   */
+  private async warnIfDebtor(teacherId: string, request: GroupChangeView): Promise<void> {
+    const originAccount = await this.prisma.accountingAccount.findUnique({
+      where: { enrollmentId: request.originalEnrollment.id },
+    });
+    if (!originAccount) return;
+    const balance = await this.accounting.computeBalance(originAccount.id);
+    if (balance >= 0) return;
+
+    const origin = await this.prisma.enrollment.findUniqueOrThrow({
+      where: { id: request.originalEnrollment.id },
+      select: {
+        customPrice: true,
+        group: { select: { publicPrice: true, debtAlertThresholdSessions: true } },
+      },
+    });
+    const rate = Number(origin.customPrice ?? origin.group.publicPrice);
+    const threshold = rate * origin.group.debtAlertThresholdSessions;
+    const important = -balance > threshold;
+    const studentName = `${request.originalEnrollment.student.firstName} ${request.originalEnrollment.student.lastName}`;
+
+    await this.notifications.notify({
+      recipientUserId: teacherId,
+      type: important ? 'GROUP_CHANGE_DEBT_IMPORTANT' : 'GROUP_CHANGE_DEBT_WARNING',
+      priority: important ? 'IMPORTANT' : 'INFORMATION',
+      title: 'Changement de groupe : solde débiteur',
+      body: `${studentName} change de groupe avec un solde débiteur de ${Math.abs(balance).toFixed(3)} TND sur son ancienne inscription (${
+        important ? 'ERR-CHG-010' : 'ERR-CHG-007'
+      }).`,
+      refType: 'AccountingAccount',
+      refId: originAccount.id,
+    });
+  }
+
+  /**
+   * ERR-CHG-011/RM-CHG-018 : GROUPI ne limite pas le nombre de changements par élève, mais plus de
+   * 3 changements acceptés sur la même année académique déclenchent une alerte au Professeur.
+   */
+  private async warnIfFrequentChanges(teacherId: string, request: GroupChangeView): Promise<void> {
+    const changeCount = await this.prisma.groupChangeRequest.count({
+      where: {
+        status: 'ACCEPTED',
+        originalEnrollment: {
+          studentId: request.originalEnrollment.student.id,
+          group: { academicYearId: request.originalEnrollment.group.academicYearId },
+        },
+      },
+    });
+    if (changeCount <= 3) return;
+
+    const studentName = `${request.originalEnrollment.student.firstName} ${request.originalEnrollment.student.lastName}`;
+    await this.notifications.notify({
+      recipientUserId: teacherId,
+      type: 'GROUP_CHANGE_FREQUENT_ALERT',
+      priority: 'INFORMATION',
+      title: 'Changements de groupe fréquents',
+      body: `${studentName} a déjà changé de groupe ${changeCount} fois cette année académique (ERR-CHG-011).`,
+      refType: 'Student',
+      refId: request.originalEnrollment.student.id,
+    });
   }
 
   async reject(teacherId: string, id: string, dto: RejectGroupChangeRequestDto): Promise<GroupChangeView> {

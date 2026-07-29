@@ -4,21 +4,32 @@
   --brand-navy-hover: #0a2c46;
   --brand-navy-soft: #e8eef3;
   --brand-slate: #6b7880;
+  /* Fond de la nav latérale : chrome de marque volontairement constant entre les deux thèmes —
+     contrairement à --brand-navy (éclairci en sombre pour rester lisible en tant qu'accent de
+     texte/icône), un grand aplat de fond doit rester sombre dans les deux cas. Ne jamais réutiliser
+     --brand-navy pour un fond de grande surface. */
+  --sidebar-bg: #0e3a5c;
 
   --text: #47535e;
   --text-muted: #6b7880;
   --text-h: #0f2438;
   --bg: #ffffff;
-  --bg-shell: #f4f6f8;
+  --bg-shell: #f6f7f9;
   --surface: #ffffff;
-  --border: #e2e6ea;
-  --border-strong: #ccd3d9;
+  --border: #e3e7eb;
+  --border-strong: #cfd6dc;
   --code-bg: #f1f3f5;
 
   --accent: var(--brand-navy);
   --accent-hover: var(--brand-navy-hover);
   --accent-bg: var(--brand-navy-soft);
   --accent-border: #b9cbda;
+
+  /* DA "Atelier Clair" (skill groupi-design) : accent secondaire pour les éléments
+     interactifs/informatifs (icônes de tuile, liens "Voir tout") — jamais les CTA primaires,
+     qui restent en --accent (navy) pour ne garder qu'une seule couleur de marque à la fois. */
+  --link: #0f7a8c;
+  --link-bg: #e3f2f4;
 
   --success: #1a7d4a;
   --success-bg: #e5f5ec;
@@ -29,12 +40,17 @@
   --info: #1f5f8b;
   --info-bg: #e7eef3;
 
-  --shadow-sm: 0 1px 2px rgba(15, 36, 56, 0.07);
+  --shadow-sm: 0 1px 2px rgba(15, 36, 56, 0.04);
   --shadow-md: 0 8px 24px rgba(15, 36, 56, 0.08), 0 2px 6px rgba(15, 36, 56, 0.05);
 
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 16px;
+
+  /* Chevron des <select> personnalisés — encodé en couleur --text-muted du thème clair ;
+     redéfini pour le sombre ci-dessous. Une seule source de vérité (contrairement à une image
+     de fond dupliquée par média-requête). */
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%236b7880' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 
   --sans:
     'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
@@ -58,6 +74,10 @@
     --brand-navy-hover: #8fbde3;
     --brand-navy-soft: rgba(111, 168, 214, 0.14);
     --brand-slate: #93a1ab;
+    --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238b98a3' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+
+    --link: #3fb6c4;
+    --link-bg: rgba(63, 182, 196, 0.14);
 
     --text: #c2cbd3;
     --text-muted: #8b98a3;
@@ -148,97 +168,274 @@ code {
   color: var(--text-h);
 }
 
-/* --- Mise en page applicative -------------------------------------- */
+/* --- Mise en page applicative : nav latérale (DA "Atelier Clair", skill groupi-design) ----- */
 
-.app-nav {
+.app-shell {
+  flex: 1;
   width: 100%;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: stretch;
+  min-height: 100svh;
+}
+
+.app-sidebar {
+  --sidebar-width: 232px;
+  flex: none;
+  width: var(--sidebar-width);
+  background: var(--sidebar-bg);
+  color: #cfe0ec;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 18px 14px;
   position: sticky;
   top: 0;
-  z-index: 10;
+  height: 100svh;
+  overflow-y: auto;
 }
 
-.app-nav-inner {
-  max-width: 1180px;
-  margin: 0 auto;
-  padding: 12px 24px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.app-nav-brand {
+.app-sidebar-brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  color: var(--text-h);
+  padding: 0 8px;
+  color: #fff;
   font-weight: 700;
   font-size: 16px;
   letter-spacing: -0.01em;
 }
 
-.app-nav-brand:hover {
+.app-sidebar-brand:hover {
   text-decoration: none;
-  opacity: 0.85;
+  opacity: 0.9;
 }
 
-.app-nav-brand img {
-  width: 28px;
-  height: 28px;
+.app-sidebar-brand img {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
 }
 
-.app-nav-user {
+.app-sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
+}
+
+.app-sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.app-sidebar-section-title {
+  margin: 0 0 4px;
+  padding: 0 10px;
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.app-sidebar-link {
   display: flex;
   align-items: center;
-  gap: 14px;
-  font-size: 13px;
-  color: var(--text-muted);
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: var(--radius-sm);
+  color: #b9cddb;
+  font-size: 13.5px;
+  font-weight: 500;
+  transition: background 0.15s ease, color 0.15s ease;
+  position: relative;
 }
 
-.app-nav-user strong {
-  color: var(--text-h);
-  font-weight: 600;
+.app-sidebar-link:hover {
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
 }
 
-.app-nav-user button,
-.app-nav-user a.nav-bell {
+.app-sidebar-link.active {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+.app-sidebar-link svg {
+  width: 17px;
+  height: 17px;
+  flex: none;
+}
+
+.app-sidebar-link span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-sidebar-link-badge {
+  margin-left: auto;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 17px;
+  text-align: center;
+}
+
+.app-sidebar-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.app-sidebar-user {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  flex: 1;
+}
+
+.app-sidebar-avatar {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.app-sidebar-email {
+  font-size: 12.5px;
+  color: #dce6ee;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-sidebar-footer button {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
   border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--text-muted);
+  background: transparent;
+  color: #b9cddb;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
-.app-nav-user button:hover {
-  color: var(--danger);
-  border-color: var(--danger);
-  background: var(--danger-bg);
+.app-sidebar-footer button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
 }
 
-.app-nav-user a.nav-bell:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-  text-decoration: none;
+@media (max-width: 880px) {
+  .app-sidebar {
+    --sidebar-width: 60px;
+  }
+  .app-sidebar-brand span,
+  .app-sidebar-section-title,
+  .app-sidebar-link span,
+  .app-sidebar-link-badge,
+  .app-sidebar-email {
+    display: none;
+  }
+  .app-sidebar-link {
+    justify-content: center;
+  }
+  .app-sidebar-user {
+    justify-content: center;
+  }
 }
 
 .app-main {
   flex: 1;
+  min-width: 0;
   width: 100%;
   background: var(--bg-shell);
+}
+
+.workspace-bar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 28px;
+  background: color-mix(in srgb, var(--bg-shell) 92%, transparent);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(14px);
+}
+
+.workspace-eyebrow {
+  display: block;
+  color: var(--text-h);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.workspace-email {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.workspace-notifications {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}
+
+.workspace-notifications:hover {
+  text-decoration: none;
+  color: var(--link);
+  border-color: var(--accent-border);
+}
+
+@media (max-width: 640px) {
+  .workspace-bar {
+    padding: 10px 16px;
+  }
+  .workspace-email,
+  .workspace-notifications span {
+    display: none;
+  }
 }
 
 .app-main-inner {
   max-width: 1180px;
   margin: 0 auto;
-  padding: 32px 24px 64px;
+  padding: 32px 28px 64px;
   width: 100%;
   text-align: left;
 }
@@ -279,7 +476,7 @@ code {
 }
 
 .page-actions a:hover {
-  color: var(--accent);
+  color: var(--link);
 }
 
 .table-hint {
@@ -349,6 +546,37 @@ code {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+.auth-card input[type='checkbox'] {
+  width: auto;
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+.auth-card .checkbox-grid,
+.auth-card .level-section-picker {
+  gap: 6px 16px;
+}
+
+.auth-card .checkbox-option,
+.auth-card .level-option {
+  flex-direction: row;
+  align-items: center;
+  font-weight: 400;
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-group-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-h);
 }
 
 .auth-card button[type='submit'] {
@@ -431,11 +659,19 @@ code {
   font-size: 13px;
 }
 
+.form-hint {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin: -6px 0 10px;
+}
+
 /* --- Cartes / grille du tableau de bord ------------------------------- */
 
 .card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  /* auto-fit (pas auto-fill) : les tuiles existantes s'étirent pour occuper toute la largeur au
+     lieu de laisser des colonnes vides réservées sur la droite quand il y en a peu. */
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 16px;
   margin-top: 24px;
 }
@@ -464,8 +700,8 @@ a.dash-card:hover {
   width: 38px;
   height: 38px;
   border-radius: var(--radius-sm);
-  background: var(--accent-bg);
-  color: var(--accent);
+  background: var(--link-bg);
+  color: var(--link);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -541,25 +777,282 @@ a.dash-card:hover {
   margin-bottom: 12px;
 }
 
+.card-section .level-option,
+.card-section .checkbox-option {
+  flex-direction: row;
+  align-items: center;
+  margin-bottom: 0;
+  font-weight: 400;
+}
+
 .card-section input,
-.card-section select,
 .card-section textarea {
   font: inherit;
   padding: 8px 10px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
-  background: var(--bg);
+  background-color: var(--bg);
   color: var(--text-h);
   resize: vertical;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .card-section input:focus-visible,
-.card-section select:focus-visible,
 .card-section textarea:focus-visible {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+.card-section input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border: none;
+  background: none;
+  accent-color: var(--accent);
+}
+
+/* --- Profil professeur : en-tête façon réseau social (Ch.5) -------------- */
+
+.profile-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  margin-top: 20px;
+}
+
+.profile-cover {
+  height: 108px;
+  /* Grand aplat de fond : reste sombre dans les deux thèmes comme --sidebar-bg (voir sa note),
+     plutôt que --brand-navy/--link qui s'éclaircissent en sombre et rendraient le bandeau
+     illisible (badge de statut notamment). */
+  background: linear-gradient(135deg, var(--sidebar-bg), #0f7a8c);
+}
+
+/* Avatar en position absolue, indépendant du bloc identité : coupler leur position (ex. via
+   align-items: flex-end sur une ligne flex) fait entrer en conflit deux contraintes qui ne
+   peuvent pas être satisfaites en même temps — un chevauchement d'avatar assez marqué pour
+   l'effet "profil" ET assez de place blanche sous la bannière pour 2 lignes de texte (nom +
+   sous-titre) sans qu'elles ne mordent sur la bannière. Ici l'avatar peut chevaucher autant que
+   voulu sans jamais pousser le texte dans la bannière, puisque le texte ne dépend plus de sa
+   position. */
+.profile-card-body {
+  position: relative;
+  padding: 14px 24px 20px 130px;
+  min-height: 44px;
+}
+
+.profile-avatar {
+  position: absolute;
+  top: -44px;
+  left: 24px;
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  border: 4px solid var(--surface);
+  background: var(--accent-bg);
+  box-shadow: var(--shadow-sm);
+  object-fit: cover;
+}
+
+.profile-avatar-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+}
+
+.profile-identity {
+  min-width: 0;
+}
+
+.profile-identity-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.profile-name {
+  font-size: 22px;
+  margin: 0;
+  text-transform: none;
+  letter-spacing: -0.01em;
+}
+
+.profile-subtitle {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 13.5px;
+}
+
+.profile-stats {
+  display: flex;
+  gap: 28px;
+  flex-wrap: wrap;
+  padding: 18px 24px 22px;
+  margin-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.profile-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 120px;
+}
+
+.profile-stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-h);
+  font-variant-numeric: tabular-nums;
+}
+
+.profile-stat-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.profile-stat-completeness {
+  flex: 1;
+  min-width: 180px;
+}
+
+.profile-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 20px;
+  align-items: start;
+  margin-top: 20px;
+}
+
+.profile-main .card-section:first-child,
+.profile-side .card-section {
+  margin-top: 0;
+}
+
+.profile-bio-text {
+  font-size: 13.5px;
+  color: var(--text);
+  line-height: 155%;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 860px) {
+  .profile-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-card-body {
+    padding: 54px 20px 20px;
+  }
+
+  .profile-avatar {
+    left: 20px;
+  }
+}
+
+/* --- Composant Select (components/Select.tsx) --------------------------- */
+/* Remplace le <select> natif : la popup de la liste n'est pas stylable en CSS
+   (rendu OS, pas navigateur) — ce combobox maison (bouton + liste custom)
+   reconstruit un rendu cohérent avec les inputs, y compris pour la liste elle-même. */
+
+.select {
+  position: relative;
+  display: inline-block;
+}
+
+.select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 30px 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg);
+  background-image: var(--select-chevron);
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  background-size: 10px 6px;
+  color: var(--text-h);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.select-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select-trigger:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+.select-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.select-list {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  width: max-content;
+  max-width: min(360px, 90vw);
+  max-height: 260px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+}
+
+.select-option {
+  padding: 7px 10px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--text-h);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.select-option.is-active {
+  background: var(--bg-shell);
+}
+
+.select-option[aria-selected='true'] {
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.select-option.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .debug-panel {
@@ -581,13 +1074,9 @@ a.dash-card:hover {
   color: var(--text-muted);
 }
 
-.status-filter select {
-  font: inherit;
-  padding: 6px 8px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--text-h);
+.status-filter .select-trigger {
+  padding: 6px 28px 6px 8px;
+  background-color: var(--surface);
 }
 
 /* --- Tableaux ---------------------------------------------------------- */
@@ -643,24 +1132,35 @@ a.dash-card:hover {
   align-items: center;
 }
 
+/* Un créneau récurrent par ligne, plutôt qu'une seule phrase concaténée (tableaux Séances/Inscriptions). */
+.schedule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Info secondaire dans une cellule de tableau (ex. Matière/Niveau à côté du nom du Groupe) : évite
+   de répéter en pleine intensité une information déjà lisible ailleurs sur la même ligne. */
+.cell-secondary {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
 .admin-actions a {
   font-size: 13px;
   font-weight: 500;
-  color: var(--accent);
+  color: var(--link);
   padding: 7px 4px;
 }
 
 /* --- Boutons ------------------------------------------------------------ */
 
+/* Base par défaut pour TOUT <button> de l'appli, quel que soit son conteneur —
+   les contextes spécifiques (nav latérale, tags, role-toggle...) ont une spécificité
+   plus élevée et continuent de l'emporter. Évite les boutons "nus" (style navigateur)
+   qui apparaissent dès qu'un bouton sort des conteneurs historiquement stylés. */
 button {
-  font-family: inherit;
-}
-
-.admin-actions button,
-.add-row button,
-.card-section form > button,
-.page-actions button,
-.reason-prompt button {
   font: inherit;
   font-size: 13px;
   font-weight: 500;
@@ -674,19 +1174,12 @@ button {
   transition: all 0.15s ease;
 }
 
-.admin-actions button:hover:not(:disabled),
-.add-row button:hover:not(:disabled),
-.card-section > button:hover:not(:disabled),
-.card-section form > button:hover:not(:disabled),
-.page-actions button:hover:not(:disabled),
-.reason-prompt button:hover:not(:disabled) {
+button:hover:not(:disabled) {
   border-color: var(--accent);
   color: var(--accent);
 }
 
-.admin-actions button:disabled,
-.add-row button:disabled,
-.card-section button:disabled {
+button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -722,24 +1215,23 @@ button {
   transition: all 0.15s ease;
 }
 
-.admin-actions button.danger,
-.page-actions .danger {
+button.danger {
   border-color: var(--danger);
   color: var(--danger);
   background: var(--surface);
 }
 
-.admin-actions button.danger:hover:not(:disabled) {
+button.danger:hover:not(:disabled) {
   background: var(--danger-bg);
 }
 
-.admin-actions button.ghost {
+button.ghost {
   border-color: transparent;
   background: transparent;
   color: var(--text-muted);
 }
 
-.admin-actions button.ghost:hover:not(:disabled) {
+button.ghost:hover:not(:disabled) {
   color: var(--text-h);
   border-color: var(--border-strong);
 }
@@ -847,14 +1339,110 @@ button {
   flex-wrap: wrap;
 }
 
-.add-row input,
-.add-row select {
+.add-row input {
   font: inherit;
   padding: 7px 10px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
-  background: var(--bg);
+  background-color: var(--bg);
   color: var(--text-h);
+}
+
+/* --- Sélecteur de niveaux scolaires par section (Ch.5.4, RM-TPR-001/002) -- */
+
+.level-section-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.level-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-shell);
+  overflow: hidden;
+}
+
+.level-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-h);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.level-section-header:hover {
+  border-color: transparent;
+  color: var(--text-h);
+  background: var(--border);
+}
+
+.level-section-chevron {
+  flex: none;
+  display: inline-flex;
+  font-size: 15px;
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+}
+
+.level-section-chevron.is-open {
+  transform: rotate(90deg);
+}
+
+.level-section-title {
+  flex: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 12px;
+}
+
+.level-section-count {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--link);
+}
+
+.level-section-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px 20px;
+  padding: 0 18px 16px;
+}
+
+.checkbox-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+
+.level-option,
+.checkbox-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.level-option input,
+.checkbox-option input {
+  margin: 0;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
 }
 
 /* --- Ch.11 Préinscriptions --- */
@@ -879,8 +1467,10 @@ button {
 .stat-tile {
   padding: 12px 14px;
   border: 1px solid var(--border);
+  border-left: 3px solid var(--link);
   border-radius: var(--radius-md);
-  background: var(--bg);
+  background: var(--bg-shell);
+  box-shadow: none;
 }
 
 .stat-tile-value {
@@ -888,6 +1478,7 @@ button {
   font-weight: 700;
   color: var(--text-h);
   line-height: 1.2;
+  font-variant-numeric: tabular-nums;
 }
 
 .stat-tile-label {
@@ -995,12 +1586,12 @@ button {
   padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: var(--surface);
+  background: var(--bg-shell);
 }
 
 .activity-item-unread {
   border-color: var(--accent);
-  background: var(--bg-shell);
+  background: var(--accent-bg);
 }
 
 .activity-item-header {
@@ -1093,7 +1684,7 @@ button {
 
 .stat-grid {
   margin-top: 12px;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
 .stat-tile {
@@ -1103,6 +1694,9 @@ button {
 
 .stat-tile .table-hint {
   margin: 0 0 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-weight: 600;
 }
 
 .stat-value {
@@ -1110,13 +1704,14 @@ button {
   font-weight: 600;
   color: var(--text-h);
   margin: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .announcement-item {
   padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: var(--surface);
+  background: var(--bg-shell);
   margin-bottom: 10px;
 }
 
@@ -1131,4 +1726,97 @@ button {
   font-size: 12px;
   color: var(--text-muted);
   margin-top: 4px;
+}
+
+/* --- Etats transversaux --------------------------------------------------- */
+
+.loading-state,
+.empty-state {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text-muted);
+  box-shadow: var(--shadow-sm);
+}
+
+.loading-spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--link);
+  animation: groupi-spin 0.8s linear infinite;
+  flex: none;
+}
+
+@keyframes groupi-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.empty-state {
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.empty-state-title {
+  color: var(--text-h);
+  font-weight: 700;
+  margin: 0;
+}
+
+.empty-state-copy {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin-top: 3px;
+}
+
+.empty-state-action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-link {
+  margin-top: 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.section-link a {
+  color: var(--link);
+}
+
+.section-spacer {
+  margin-top: 12px;
+}
+
+.inline-badge-offset {
+  margin-left: 6px;
+}
+
+.input-short {
+  width: 80px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-spinner {
+    animation: none;
+  }
+
+  .dash-card,
+  .app-sidebar-link,
+  button,
+  input,
+  select,
+  .select-trigger,
+  textarea {
+    transition: none;
+  }
 }

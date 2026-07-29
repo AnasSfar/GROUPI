@@ -29,6 +29,8 @@ describe('Academic year creation (e2e)', () => {
 
   let superAdminToken: string;
   let teacherToken: string;
+  let subjectId: string;
+  let schoolLevelId: string;
   const createdAcademicYearIds: string[] = [];
 
   beforeAll(async () => {
@@ -51,6 +53,16 @@ describe('Academic year creation (e2e)', () => {
       .expect(200);
     superAdminToken = superAdminLogin.body.accessToken as string;
 
+    const subject = await prisma.subject.create({
+      data: { name: `E2E YEAR Subject ${runId}`, code: `E2EYEAR${runId}`, isActive: true },
+    });
+    subjectId = subject.id;
+
+    const schoolLevel = await prisma.schoolLevel.create({
+      data: { name: `E2E YEAR Level ${runId}`, code: `E2EYEARLVL${runId}`, order: 999, isActive: true },
+    });
+    schoolLevelId = schoolLevel.id;
+
     const teacherEmail = `e2e-year-teacher-${runId}@example.com`;
     const registerRes = await api()
       .post('/api/v1/auth/register')
@@ -62,6 +74,9 @@ describe('Academic year creation (e2e)', () => {
         lastName: 'AnnÉe',
         phone: '20000002',
         city: 'Tunis',
+        acceptTerms: true,
+        subjectIds: [subjectId],
+        schoolLevelIds: [schoolLevelId],
       })
       .expect(201);
     await prisma.user.update({ where: { id: registerRes.body.id }, data: { status: 'ACTIVE' } });
@@ -77,9 +92,15 @@ describe('Academic year creation (e2e)', () => {
     if (userIds.length > 0) {
       await prisma.loginHistory.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.userSession.deleteMany({ where: { userId: { in: userIds } } });
+      await prisma.emailVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
+      await prisma.teacherSubject.deleteMany({ where: { teacherProfileId: { in: userIds } } });
+      await prisma.teacherSchoolLevel.deleteMany({ where: { teacherProfileId: { in: userIds } } });
       await prisma.teacherProfile.deleteMany({ where: { id: { in: userIds } } });
       await prisma.user.deleteMany({ where: { id: { in: userIds } } });
     }
+
+    await prisma.subject.deleteMany({ where: { id: subjectId } });
+    await prisma.schoolLevel.deleteMany({ where: { id: schoolLevelId } });
 
     await app.close();
   });

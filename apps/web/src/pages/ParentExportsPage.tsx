@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { Select } from '../components/Select';
 import { ApiError } from '../api/client';
 import * as exportsApi from '../api/exportsApi';
 import type { ExportJob, ExportType } from '../api/exportsApi';
@@ -149,31 +150,31 @@ export function ParentExportsPage() {
         <div className="field-row">
           <label>
             Type de données
-            <select value={type} onChange={(e) => setType(e.target.value as ExportType)}>
+            <Select value={type} onChange={(e) => setType(e.target.value as ExportType)}>
               {PARENT_TYPES.map((t) => (
                 <option key={t.value} value={t.value}>
                   {t.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <label>
             Enfant
-            <select value={studentId} onChange={(e) => setStudentId(e.target.value)}>
+            <Select value={studentId} onChange={(e) => setStudentId(e.target.value)}>
               <option value="">Tous mes enfants</option>
               {students.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.firstName} {s.lastName}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <label>
             Période
-            <select value={period} onChange={(e) => setPeriod(e.target.value as 'CURRENT_YEAR' | 'ALL')}>
+            <Select value={period} onChange={(e) => setPeriod(e.target.value as 'CURRENT_YEAR' | 'ALL')}>
               <option value="CURRENT_YEAR">Année académique en cours</option>
               <option value="ALL">Historique complet</option>
-            </select>
+            </Select>
           </label>
           <button type="button" disabled={submitting} onClick={handleCreate}>
             {submitting ? 'Génération...' : 'Générer l’export PDF'}

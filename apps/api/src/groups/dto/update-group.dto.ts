@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
+  IsBoolean,
   IsDateString,
   IsEnum,
   IsInt,
@@ -60,4 +61,13 @@ export class UpdateGroupDto {
   @Type(() => GroupScheduleDto)
   @ArrayMinSize(1, { message: 'Le planning ne peut pas être vide (ERR-GRP-007)' })
   schedules?: GroupScheduleDto[];
+
+  /**
+   * ERR-GRP-016/017 : requis dès lors que la modification du planning touche des séances futures
+   * déjà planifiées (statut PLANIFIEE/REPORTEE). `true` = conserver ces séances telles quelles,
+   * `false` = les supprimer pour qu'elles soient régénérées depuis le nouveau planning.
+   */
+  @IsOptional()
+  @IsBoolean()
+  keepFutureSessions?: boolean;
 }

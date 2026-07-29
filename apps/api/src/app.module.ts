@@ -20,6 +20,7 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { AccountingModule } from './accounting/accounting.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { ExportsModule } from './exports/exports.module';
+import { TemporalJobsModule } from './temporal-jobs/temporal-jobs.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { ExportsModule } from './exports/exports.module';
     AccountingModule,
     DashboardModule,
     ExportsModule,
+    TemporalJobsModule,
   ],
 })
 export class AppModule {}

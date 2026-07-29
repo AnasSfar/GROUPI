@@ -20,6 +20,9 @@ describe('Auth (e2e)', () => {
   const teacherEmail = `e2e-teacher-${runId}@example.com`;
   const teacherPassword = 'CorrectHorse123';
 
+  let subjectId: string;
+  let schoolLevelId: string;
+
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -33,6 +36,16 @@ describe('Auth (e2e)', () => {
     await app.init();
 
     prisma = moduleFixture.get(PrismaService);
+
+    // RM-TPR-001 : le profil minimum d'un Professeur exige au moins une matière/un niveau.
+    const subject = await prisma.subject.create({
+      data: { name: `E2E Auth Subject ${runId}`, code: `E2EAUTH${runId}`, isActive: true },
+    });
+    subjectId = subject.id;
+    const schoolLevel = await prisma.schoolLevel.create({
+      data: { name: `E2E Auth Level ${runId}`, code: `E2EAUTHLVL${runId}`, order: 999, isActive: true },
+    });
+    schoolLevelId = schoolLevel.id;
   });
 
   afterAll(async () => {
@@ -44,7 +57,11 @@ describe('Auth (e2e)', () => {
     // rows (e.g. a TeacherProfile with an active Group) and fail on a foreign key constraint.
     const users = await prisma.user.findMany({
       where: {
-        OR: [{ email: { startsWith: 'e2e-teacher-' } }, { email: { startsWith: 'e2e-lockout-' } }],
+        OR: [
+          { email: { startsWith: 'e2e-teacher-' } },
+          { email: { startsWith: 'e2e-lockout-' } },
+          { email: { startsWith: 'e2e-pwdthrottle-' } },
+        ],
       },
       select: { id: true },
     });
@@ -53,10 +70,15 @@ describe('Auth (e2e)', () => {
       await prisma.loginHistory.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.userSession.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.passwordResetToken.deleteMany({ where: { userId: { in: userIds } } });
+      await prisma.emailVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
+      await prisma.teacherSubject.deleteMany({ where: { teacherProfileId: { in: userIds } } });
+      await prisma.teacherSchoolLevel.deleteMany({ where: { teacherProfileId: { in: userIds } } });
       await prisma.teacherProfile.deleteMany({ where: { id: { in: userIds } } });
       await prisma.parentProfile.deleteMany({ where: { id: { in: userIds } } });
       await prisma.user.deleteMany({ where: { id: { in: userIds } } });
     }
+    await prisma.subject.deleteMany({ where: { id: subjectId } });
+    await prisma.schoolLevel.deleteMany({ where: { id: schoolLevelId } });
     await app.close();
   });
 
@@ -73,6 +95,9 @@ describe('Auth (e2e)', () => {
         lastName: 'Doe',
         phone: '20000000',
         city: 'Tunis',
+        acceptTerms: true,
+        subjectIds: [subjectId],
+        schoolLevelIds: [schoolLevelId],
       })
       .expect(201);
 
@@ -94,6 +119,9 @@ describe('Auth (e2e)', () => {
         lastName: 'Doe',
         phone: '20000000',
         city: 'Tunis',
+        acceptTerms: true,
+        subjectIds: [subjectId],
+        schoolLevelIds: [schoolLevelId],
       })
       .expect(409);
   });
@@ -245,6 +273,9 @@ describe('Auth (e2e)', () => {
           lastName: 'Out',
           phone: '20000002',
           city: 'Tunis',
+          acceptTerms: true,
+          subjectIds: [subjectId],
+          schoolLevelIds: [schoolLevelId],
         })
         .expect(201);
     });
@@ -264,6 +295,58 @@ describe('Auth (e2e)', () => {
         .expect(401);
 
       expect(res.body.message).toMatch(/verrouill/i);
+    });
+  });
+
+  describe('password change throttle (ERR-SEC-008)', () => {
+    const throttleEmail = `e2e-pwdthrottle-${runId}@example.com`;
+
+    beforeAll(async () => {
+      await api()
+        .post('/api/v1/auth/register')
+        .send({
+          email: throttleEmail,
+          password: 'CorrectHorse123',
+          role: 'TEACHER',
+          firstName: 'Pwd',
+          lastName: 'Throttle',
+          phone: '20000003',
+          city: 'Tunis',
+          acceptTerms: true,
+          subjectIds: [subjectId],
+          schoolLevelIds: [schoolLevelId],
+        })
+        .expect(201);
+    });
+
+    it('blocks the 4th voluntary password change within the same window (default max 3)', async () => {
+      let currentPassword = 'CorrectHorse123';
+
+      for (let i = 0; i < 3; i++) {
+        const loginRes = await api()
+          .post('/api/v1/auth/login')
+          .send({ email: throttleEmail, password: currentPassword })
+          .expect(200);
+        const newPassword = `NewPassword${i}23`;
+        await api()
+          .post('/api/v1/auth/change-password')
+          .set('Authorization', `Bearer ${loginRes.body.accessToken}`)
+          .send({ currentPassword, newPassword })
+          .expect(204);
+        currentPassword = newPassword;
+      }
+
+      const loginRes = await api()
+        .post('/api/v1/auth/login')
+        .send({ email: throttleEmail, password: currentPassword })
+        .expect(200);
+      const res = await api()
+        .post('/api/v1/auth/change-password')
+        .set('Authorization', `Bearer ${loginRes.body.accessToken}`)
+        .send({ currentPassword, newPassword: 'OneMoreTime123' })
+        .expect(400);
+
+      expect(res.body.message).toMatch(/ERR-SEC-008/);
     });
   });
 });

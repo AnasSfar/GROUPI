@@ -511,9 +511,9 @@ export class DashboardService {
           message: `${c.cancelledOrPostponedSessions.length} séance(s) annulée(s)/reportée(s) à venir${suffix(childName)}.`,
         });
       }
-      // NOT-DSH-006 (dernier délai pour signaler une absence) nécessite un déclenchement à un
-      // instant précis (aucun scheduler dans ce projet, voir progress.md) — équivalent calculé ici
-      // "à la demande" : sessions dont le créneau de signalement se referme dans moins de 2h.
+      // NOT-DSH-006 existe aussi en notification poussee via `TemporalJobsService`; cette alerte
+      // reste l'equivalent visible a la demande dans le tableau de bord Parent.
+
       const closingSoon = c.upcomingSessions.filter((s) => {
         if (!s.canReportAbsence || s.absenceReported) return false;
         const start = theoreticalStart(s);

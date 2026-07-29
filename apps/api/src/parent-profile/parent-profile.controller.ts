@@ -5,6 +5,7 @@ import { StudentService } from './student.service';
 import { UpdateParentProfileDto } from './dto/update-parent-profile.dto';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
+import { CreateSchoolAdditionRequestDto } from './dto/create-school-addition-request.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -30,6 +31,16 @@ export class ParentProfileController {
     return this.parentProfile.updateProfile(user.id, dto);
   }
 
+
+  @Get('me/school-requests')
+  listSchoolAdditionRequests(@CurrentUser() user: AuthenticatedUser) {
+    return this.parentProfile.listSchoolAdditionRequests(user.id);
+  }
+
+  @Post('me/school-requests')
+  createSchoolAdditionRequest(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateSchoolAdditionRequestDto) {
+    return this.parentProfile.createSchoolAdditionRequest(user.id, dto);
+  }
   @Get('me/students')
   listStudents(@CurrentUser() user: AuthenticatedUser) {
     return this.students.listMine(user.id);

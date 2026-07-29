@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { Select } from '../components/Select';
 import { ApiError } from '../api/client';
 import * as referentialsApi from '../api/referentialsApi';
 import * as teacherProfileApi from '../api/teacherProfileApi';
 import * as groupsApi from '../api/groupsApi';
-import type { Subject, SchoolLevel, AcademicYear } from '../api/referentialsApi';
+import { formatDuration } from '../api/groupsApi';
+import type { Subject, SchoolLevel, AcademicYear, SubjectLevelPair } from '../api/referentialsApi';
 import type { TeachingLocation } from '../api/teacherProfileApi';
 import type {
   Group,
@@ -49,6 +51,7 @@ export function TeacherGroupsPage() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [schoolLevels, setSchoolLevels] = useState<SchoolLevel[]>([]);
+  const [subjectLevels, setSubjectLevels] = useState<SubjectLevelPair[]>([]);
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
   const [locations, setLocations] = useState<TeachingLocation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,22 +78,36 @@ export function TeacherGroupsPage() {
   const [locationLabel, setLocationLabel] = useState('');
   const [locationAddress, setLocationAddress] = useState('');
 
+  // Ch.10.11/ERR-GRP-016/017 : édition du planning d'un groupe existant.
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [editSchedules, setEditSchedules] = useState<GroupScheduleInput[]>([]);
+  const [editDayOfWeek, setEditDayOfWeek] = useState<DayOfWeek>('MONDAY');
+  const [editStartTime, setEditStartTime] = useState('18:00');
+  const [editDurationMinutes, setEditDurationMinutes] = useState('120');
+  const [editTeachingLocationId, setEditTeachingLocationId] = useState('');
+  const [scheduleConflict, setScheduleConflict] = useState<{ groupId: string; message: string } | null>(
+    null,
+  );
+  const [savingSchedule, setSavingSchedule] = useState(false);
+
   const load = useCallback(async () => {
     const token = getAccessToken();
     if (!token) return;
     setLoading(true);
     setError(null);
     try {
-      const [myGroups, allSubjects, allLevels, allYears, allLocations] = await Promise.all([
+      const [myGroups, allSubjects, allLevels, allSubjectLevels, allYears, allLocations] = await Promise.all([
         groupsApi.listMine(token),
         referentialsApi.listSubjects(token),
         referentialsApi.listSchoolLevels(token),
+        referentialsApi.listSubjectLevels(token),
         referentialsApi.listAcademicYears(token),
         teacherProfileApi.listLocations(token),
       ]);
       setGroups(myGroups);
       setSubjects(allSubjects);
       setSchoolLevels(allLevels);
+      setSubjectLevels(allSubjectLevels);
       setAcademicYears(allYears.filter((y) => y.status === 'OPEN'));
       setLocations(allLocations);
     } catch (err) {
@@ -103,6 +120,22 @@ export function TeacherGroupsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  /** ERR-GRP-001 : n'offrir que les niveaux compatibles avec la matière choisie, plutôt que de
+   * laisser composer une combinaison interdite et de l'apprendre seulement à la soumission. */
+  const availableLevels = useMemo(() => {
+    if (!subjectId) return [];
+    const compatibleIds = new Set(
+      subjectLevels.filter((sl) => sl.subjectId === subjectId).map((sl) => sl.schoolLevelId),
+    );
+    return schoolLevels.filter((l) => compatibleIds.has(l.id));
+  }, [subjectId, subjectLevels, schoolLevels]);
+
+  useEffect(() => {
+    if (schoolLevelId && !availableLevels.some((l) => l.id === schoolLevelId)) {
+      setSchoolLevelId('');
+    }
+  }, [availableLevels, schoolLevelId]);
 
   function addSchedule() {
     setSchedules((prev) => [
@@ -191,6 +224,75 @@ export function TeacherGroupsPage() {
     }
   }
 
+  function startEditSchedules(group: Group) {
+    setEditingGroupId(group.id);
+    setEditSchedules(
+      group.schedules.map((s) => ({
+        dayOfWeek: s.dayOfWeek,
+        startTime: s.startTime,
+        durationMinutes: s.durationMinutes,
+        teachingLocationId: s.teachingLocationId,
+      })),
+    );
+    setScheduleConflict(null);
+    setError(null);
+  }
+
+  function cancelEditSchedules() {
+    setEditingGroupId(null);
+    setEditSchedules([]);
+    setScheduleConflict(null);
+  }
+
+  function addEditSchedule() {
+    setEditSchedules((prev) => [
+      ...prev,
+      {
+        dayOfWeek: editDayOfWeek,
+        startTime: editStartTime,
+        durationMinutes: Number(editDurationMinutes),
+        teachingLocationId: editTeachingLocationId || undefined,
+      },
+    ]);
+  }
+
+  function removeEditSchedule(index: number) {
+    setEditSchedules((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  /**
+   * ERR-GRP-016/017 : un premier essai sans `keepFutureSessions` peut échouer si des séances
+   * futures sont déjà planifiées sur l'ancien planning — dans ce cas on affiche le choix renvoyé
+   * par l'API (conserver / supprimer) et on ne resoumet qu'une fois l'un des deux choisi.
+   */
+  async function submitScheduleUpdate(groupId: string, keepFutureSessions?: boolean) {
+    const token = getAccessToken();
+    if (!token || editSchedules.length === 0) return;
+    setSavingSchedule(true);
+    setError(null);
+    try {
+      const updated = await groupsApi.updateGroup(token, groupId, {
+        schedules: editSchedules,
+        ...(keepFutureSessions !== undefined ? { keepFutureSessions } : {}),
+      });
+      setGroups((prev) => prev.map((g) => (g.id === updated.id ? updated : g)));
+      setEditingGroupId(null);
+      setEditSchedules([]);
+      setScheduleConflict(null);
+    } catch (err) {
+      if (
+        err instanceof ApiError &&
+        (err.message.includes('ERR-GRP-016') || err.message.includes('ERR-GRP-017'))
+      ) {
+        setScheduleConflict({ groupId, message: err.message });
+      } else {
+        setError(err instanceof ApiError ? err.message : 'Impossible de modifier le planning.');
+      }
+    } finally {
+      setSavingSchedule(false);
+    }
+  }
+
   if (loading) {
     return <p>Chargement...</p>;
   }
@@ -228,7 +330,8 @@ export function TeacherGroupsPage() {
             </thead>
             <tbody>
               {groups.map((group) => (
-                <tr key={group.id}>
+                <Fragment key={group.id}>
+                <tr>
                   <td>{group.name}</td>
                   <td>
                     {group.subject.name} — {group.schoolLevel.name}
@@ -245,6 +348,11 @@ export function TeacherGroupsPage() {
                   <td className="admin-actions">
                     <Link to={`/teacher/groups/${group.id}/sessions`}>Séances</Link>
                     <Link to={`/teacher/groups/${group.id}/announcements`}>Annonces</Link>
+                    {group.status !== 'ARCHIVED' && editingGroupId !== group.id && (
+                      <button type="button" onClick={() => startEditSchedules(group)}>
+                        Modifier planning
+                      </button>
+                    )}
                     {group.status === 'DRAFT' && (
                       <>
                         <button
@@ -276,6 +384,126 @@ export function TeacherGroupsPage() {
                     )}
                   </td>
                 </tr>
+                {editingGroupId === group.id && (
+                  <tr>
+                    <td colSpan={6}>
+                      <div style={{ padding: '12px 0' }}>
+                        <h3>Planning de « {group.name} »</h3>
+                        <ul className="tag-list">
+                          {editSchedules.map((s, i) => (
+                            <li key={i} className="tag">
+                              {DAY_LABELS[s.dayOfWeek]} {s.startTime} ({formatDuration(s.durationMinutes)})
+                              <button type="button" onClick={() => removeEditSchedule(i)}>
+                                ×
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                        <div className="field-row">
+                          <label>
+                            Jour
+                            <Select
+                              value={editDayOfWeek}
+                              onChange={(e) => setEditDayOfWeek(e.target.value as DayOfWeek)}
+                            >
+                              {Object.entries(DAY_LABELS).map(([value, label]) => (
+                                <option key={value} value={value}>
+                                  {label}
+                                </option>
+                              ))}
+                            </Select>
+                          </label>
+                          <label>
+                            Heure de début
+                            <input
+                              type="time"
+                              value={editStartTime}
+                              onChange={(e) => setEditStartTime(e.target.value)}
+                            />
+                          </label>
+                          <label>
+                            Durée (min)
+                            <input
+                              type="number"
+                              min={1}
+                              value={editDurationMinutes}
+                              onChange={(e) => setEditDurationMinutes(e.target.value)}
+                            />
+                          </label>
+                          <label>
+                            Lieu (optionnel)
+                            <Select
+                              value={editTeachingLocationId}
+                              onChange={(e) => setEditTeachingLocationId(e.target.value)}
+                            >
+                              <option value="">—</option>
+                              {locations.map((loc) => (
+                                <option key={loc.id} value={loc.id}>
+                                  {loc.label}
+                                </option>
+                              ))}
+                            </Select>
+                          </label>
+                        </div>
+                        <button type="button" onClick={addEditSchedule}>
+                          Ajouter ce créneau
+                        </button>
+
+                        {scheduleConflict?.groupId === group.id ? (
+                          <>
+                            <p className="form-notice" role="alert">
+                              {scheduleConflict.message}
+                            </p>
+                            <div className="page-actions" style={{ marginTop: 12 }}>
+                              <button
+                                type="button"
+                                onClick={() => submitScheduleUpdate(group.id, true)}
+                                disabled={savingSchedule}
+                              >
+                                Conserver les séances existantes
+                              </button>
+                              <button
+                                type="button"
+                                className="danger"
+                                onClick={() => submitScheduleUpdate(group.id, false)}
+                                disabled={savingSchedule}
+                              >
+                                Supprimer et laisser le planning se régénérer
+                              </button>
+                              <button
+                                type="button"
+                                className="ghost"
+                                onClick={() => setScheduleConflict(null)}
+                                disabled={savingSchedule}
+                              >
+                                Annuler
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="page-actions" style={{ marginTop: 12 }}>
+                            <button
+                              type="button"
+                              onClick={() => submitScheduleUpdate(group.id)}
+                              disabled={editSchedules.length === 0 || savingSchedule}
+                            >
+                              {savingSchedule ? 'Enregistrement...' : 'Enregistrer le planning'}
+                            </button>
+                            <button
+                              type="button"
+                              className="ghost"
+                              onClick={cancelEditSchedules}
+                              disabled={savingSchedule}
+                            >
+                              Annuler
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -321,37 +549,41 @@ export function TeacherGroupsPage() {
           <div className="field-row">
             <label>
               Matière
-              <select value={subjectId} onChange={(e) => setSubjectId(e.target.value)} required>
+              <Select value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
                 <option value="">Sélectionner...</option>
                 {subjects.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
             <label>
               Niveau scolaire
-              <select value={schoolLevelId} onChange={(e) => setSchoolLevelId(e.target.value)} required>
-                <option value="">Sélectionner...</option>
-                {schoolLevels.map((l) => (
+              <Select
+                value={schoolLevelId}
+                onChange={(e) => setSchoolLevelId(e.target.value)}
+                disabled={!subjectId}
+              >
+                <option value="">{subjectId ? 'Sélectionner...' : "Choisissez d'abord une matière"}</option>
+                {availableLevels.map((l) => (
                   <option key={l.id} value={l.id}>
                     {l.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
           </div>
           <label>
             Année académique
-            <select value={academicYearId} onChange={(e) => setAcademicYearId(e.target.value)} required>
+            <Select value={academicYearId} onChange={(e) => setAcademicYearId(e.target.value)}>
               <option value="">Sélectionner...</option>
               {academicYears.map((y) => (
                 <option key={y.id} value={y.id}>
                   {y.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <div className="field-row">
             <label>
@@ -379,32 +611,32 @@ export function TeacherGroupsPage() {
           <div className="field-row">
             <label>
               Mode d'enseignement
-              <select value={teachingMode} onChange={(e) => setTeachingMode(e.target.value as TeachingMode)}>
+              <Select value={teachingMode} onChange={(e) => setTeachingMode(e.target.value as TeachingMode)}>
                 <option value="PRESENTIAL">Présentiel</option>
                 <option value="ONLINE">En ligne</option>
-              </select>
+              </Select>
             </label>
             <label>
               Visibilité si complet
-              <select
+              <Select
                 value={visibilityWhenFull}
                 onChange={(e) => setVisibilityWhenFull(e.target.value as VisibilityWhenFull)}
               >
                 <option value="VISIBLE">Visible</option>
                 <option value="HIDDEN">Masqué</option>
-              </select>
+              </Select>
             </label>
           </div>
           <label>
             Facturation des absences
-            <select
+            <Select
               value={absenceBillingPolicy}
               onChange={(e) => setAbsenceBillingPolicy(e.target.value as AbsenceBillingPolicy)}
             >
               <option value="ALL_BILLED">Toutes facturées</option>
               <option value="EXCUSED_NOT_BILLED">Absences excusées non facturées</option>
               <option value="NONE_BILLED">Aucune absence facturée</option>
-            </select>
+            </Select>
           </label>
           <div className="field-row">
             <label>
@@ -426,7 +658,7 @@ export function TeacherGroupsPage() {
           <ul className="tag-list">
             {schedules.map((s, i) => (
               <li key={i} className="tag">
-                {DAY_LABELS[s.dayOfWeek]} {s.startTime} ({s.durationMinutes} min)
+                {DAY_LABELS[s.dayOfWeek]} {s.startTime} ({formatDuration(s.durationMinutes)})
                 <button type="button" onClick={() => removeSchedule(i)}>
                   ×
                 </button>
@@ -436,13 +668,13 @@ export function TeacherGroupsPage() {
           <div className="field-row">
             <label>
               Jour
-              <select value={dayOfWeek} onChange={(e) => setDayOfWeek(e.target.value as DayOfWeek)}>
+              <Select value={dayOfWeek} onChange={(e) => setDayOfWeek(e.target.value as DayOfWeek)}>
                 {Object.entries(DAY_LABELS).map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
             <label>
               Heure de début
@@ -459,14 +691,14 @@ export function TeacherGroupsPage() {
             </label>
             <label>
               Lieu (optionnel)
-              <select value={teachingLocationId} onChange={(e) => setTeachingLocationId(e.target.value)}>
+              <Select value={teachingLocationId} onChange={(e) => setTeachingLocationId(e.target.value)}>
                 <option value="">—</option>
                 {locations.map((loc) => (
                   <option key={loc.id} value={loc.id}>
                     {loc.label}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
           </div>
           <button type="button" onClick={addSchedule}>

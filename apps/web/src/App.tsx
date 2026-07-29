@@ -32,6 +32,10 @@ import { ParentChildAccountingPage } from './pages/ParentChildAccountingPage';
 import { TeacherExportsPage } from './pages/TeacherExportsPage';
 import { ParentExportsPage } from './pages/ParentExportsPage';
 import { AdminExportsPage } from './pages/AdminExportsPage';
+import { ParentSchoolRequestsPage } from './pages/ParentSchoolRequestsPage';
+import { AdminSchoolRequestsPage } from './pages/AdminSchoolRequestsPage';
+import { AccountSettingsPage } from './pages/AccountSettingsPage';
+import { VerifyEmailPage } from './pages/VerifyEmailPage';
 
 function App() {
   return (
@@ -42,6 +46,7 @@ function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
 
           <Route
             element={
@@ -244,6 +249,23 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/parent/school-requests"
+              element={
+                <ProtectedRoute roles={['PARENT']}>
+                  <ParentSchoolRequestsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/school-requests"
+              element={
+                <ProtectedRoute roles={['SUPER_ADMIN', 'ADMIN']}>
+                  <AdminSchoolRequestsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route path="/account" element={<AccountSettingsPage />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/login" replace />} />

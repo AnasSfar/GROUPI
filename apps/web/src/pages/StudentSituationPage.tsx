@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { Select } from '../components/Select';
 import { ApiError } from '../api/client';
 import * as referentialsApi from '../api/referentialsApi';
 import * as parentProfileApi from '../api/parentProfileApi';
@@ -182,36 +183,36 @@ export function StudentSituationPage() {
         <form onSubmit={handleSubmit}>
           <label>
             Année académique
-            <select value={academicYearId} onChange={(e) => setAcademicYearId(e.target.value)} required>
+            <Select value={academicYearId} onChange={(e) => setAcademicYearId(e.target.value)}>
               <option value="">Sélectionner...</option>
               {academicYears.map((year) => (
                 <option key={year.id} value={year.id}>
                   {year.label} {year.status === 'OPEN' ? '' : '(clôturée)'}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <label>
             Niveau scolaire
-            <select value={schoolLevelId} onChange={(e) => setSchoolLevelId(e.target.value)} required>
+            <Select value={schoolLevelId} onChange={(e) => setSchoolLevelId(e.target.value)}>
               <option value="">Sélectionner...</option>
               {schoolLevels.map((level) => (
                 <option key={level.id} value={level.id}>
                   {level.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <label>
             Établissement
-            <select value={schoolId} onChange={(e) => setSchoolId(e.target.value)} required>
+            <Select value={schoolId} onChange={(e) => setSchoolId(e.target.value)}>
               <option value="">Sélectionner...</option>
               {schools.map((school) => (
                 <option key={school.id} value={school.id}>
                   {formatSchoolOption(school)}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <label>
             Classe (indicatif)

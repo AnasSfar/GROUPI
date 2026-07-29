@@ -1,6 +1,9 @@
 import { apiRequest } from './client';
 import type { Subject, SchoolLevel } from './referentialsApi';
 
+/** Ch.5.7/8 : cycle de vie du profil professionnel — distinct du statut du Compte (User.status). */
+export type TeacherProfileStatus = 'DRAFT' | 'PENDING_VALIDATION' | 'VALIDATED';
+
 export interface TeacherProfile {
   id: string;
   firstName: string;
@@ -11,7 +14,7 @@ export interface TeacherProfile {
   photo: string | null;
   experience: string | null;
   completenessScore: number;
-  status: string;
+  status: TeacherProfileStatus;
   subjects: { subject: Subject }[];
   schoolLevels: { schoolLevel: SchoolLevel }[];
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { Select } from '../components/Select';
 import { ApiError } from '../api/client';
 import * as referentialsApi from '../api/referentialsApi';
 import * as groupsApi from '../api/groupsApi';
@@ -56,14 +57,14 @@ function ProposeForm({
 
   return (
     <div className="reason-prompt">
-      <select value={groupId} onChange={(e) => setGroupId(e.target.value)}>
+      <Select value={groupId} onChange={(e) => setGroupId(e.target.value)}>
         <option value="">Groupe...</option>
         {compatibleGroups.map((g) => (
           <option key={g.id} value={g.id}>
             {g.name} ({g._count.enrollments}/{g.capacity})
           </option>
         ))}
-      </select>
+      </Select>
       <input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
       <button
         type="button"
@@ -159,14 +160,14 @@ export function TeacherPreEnrollmentsPage() {
 
       <label className="status-filter">
         Année académique :
-        <select value={academicYearFilter} onChange={(e) => setAcademicYearFilter(e.target.value)}>
+        <Select value={academicYearFilter} onChange={(e) => setAcademicYearFilter(e.target.value)}>
           <option value="">Toutes</option>
           {academicYears.map((y) => (
             <option key={y.id} value={y.id}>
               {y.label}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
 
       {error && (

@@ -1,9 +1,11 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { Select } from '../components/Select';
 import { ApiError } from '../api/client';
 import * as groupsApi from '../api/groupsApi';
 import * as enrollmentsApi from '../api/enrollmentsApi';
 import * as groupChangeApi from '../api/groupChangeApi';
+import { formatSchedules } from '../api/groupsApi';
 import type { Group } from '../api/groupsApi';
 import type { TeacherEnrollment, EnrollmentStatus } from '../api/enrollmentsApi';
 import type { GroupChangeRequestView, GroupChangeStatus } from '../api/groupChangeApi';
@@ -220,6 +222,8 @@ export function TeacherEnrollmentsPage() {
     return <p>Chargement...</p>;
   }
 
+  const selectedGroup = groups.find((g) => g.id === selectedGroupId) ?? null;
+
   return (
     <>
       <div className="page-header">
@@ -238,15 +242,18 @@ export function TeacherEnrollmentsPage() {
       <section className="card-section">
         <label>
           Groupe
-          <select value={selectedGroupId} onChange={(e) => setSelectedGroupId(e.target.value)}>
+          <Select value={selectedGroupId} onChange={(e) => setSelectedGroupId(e.target.value)}>
             {groups.length === 0 && <option value="">Aucun groupe</option>}
             {groups.map((g) => (
               <option key={g.id} value={g.id}>
                 {g.name} — {g.subject.name} ({g.schoolLevel.name})
               </option>
             ))}
-          </select>
+          </Select>
         </label>
+        {selectedGroup && (
+          <p className="form-hint">Jour / Horaire : {formatSchedules(selectedGroup.schedules)}</p>
+        )}
       </section>
 
       <section className="card-section">

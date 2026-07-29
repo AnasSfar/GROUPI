@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { Select } from '../components/Select';
 import { ApiError } from '../api/client';
 import * as exportsApi from '../api/exportsApi';
 import type { ExportFormat, ExportJob, ExportType } from '../api/exportsApi';
@@ -151,32 +152,32 @@ export function TeacherExportsPage() {
         <div className="field-row">
           <label>
             Type de données
-            <select value={type} onChange={(e) => setType(e.target.value as ExportType)}>
+            <Select value={type} onChange={(e) => setType(e.target.value as ExportType)}>
               {TEACHER_TYPES.map((t) => (
                 <option key={t.value} value={t.value}>
                   {t.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <label>
             Format
-            <select value={format} onChange={(e) => setFormat(e.target.value as ExportFormat)}>
+            <Select value={format} onChange={(e) => setFormat(e.target.value as ExportFormat)}>
               <option value="PDF">{FORMAT_LABELS.PDF}</option>
               <option value="EXCEL">{FORMAT_LABELS.EXCEL}</option>
               <option value="CSV">{FORMAT_LABELS.CSV}</option>
-            </select>
+            </Select>
           </label>
           <label>
             Groupe (optionnel)
-            <select value={groupId} onChange={(e) => setGroupId(e.target.value)}>
+            <Select value={groupId} onChange={(e) => setGroupId(e.target.value)}>
               <option value="">Tous mes groupes</option>
               {groups.map((g) => (
                 <option key={g.id} value={g.id}>
                   {g.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <button type="button" disabled={submitting} onClick={handleCreate}>
             {submitting ? 'Génération...' : 'Générer l’export'}

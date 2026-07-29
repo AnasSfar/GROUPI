@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { Select } from '../components/Select';
 import { ApiError } from '../api/client';
 import * as groupsApi from '../api/groupsApi';
+import { formatDuration } from '../api/groupsApi';
 import * as sessionsApi from '../api/sessionsApi';
 import * as teacherProfileApi from '../api/teacherProfileApi';
 import type { Group, TeachingMode } from '../api/groupsApi';
@@ -245,7 +247,7 @@ export function TeacherSessionsPage() {
           </button>
           <label>
             Filtrer par statut
-            <select
+            <Select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as SessionStatus | '')}
             >
@@ -255,7 +257,7 @@ export function TeacherSessionsPage() {
                   {label}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
         </div>
 
@@ -277,9 +279,16 @@ export function TeacherSessionsPage() {
               <tbody>
                 {sessions.map((session) => (
                   <tr key={session.id}>
-                    <td>{new Date(session.date).toLocaleDateString('fr-FR')}</td>
+                    <td>
+                      {new Date(session.date).toLocaleDateString('fr-FR', {
+                        weekday: 'long',
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                      })}
+                    </td>
                     <td>{session.startTime}</td>
-                    <td>{session.durationMinutes} min</td>
+                    <td>{formatDuration(session.durationMinutes)}</td>
                     <td>{MODE_LABELS[session.teachingMode]}</td>
                     <td>{session.teachingLocation?.label ?? '—'}</td>
                     <td>
@@ -360,24 +369,24 @@ export function TeacherSessionsPage() {
           <div className="field-row">
             <label>
               Mode d'enseignement
-              <select
+              <Select
                 value={teachingMode}
                 onChange={(e) => setTeachingMode(e.target.value as TeachingMode)}
               >
                 <option value="PRESENTIAL">Présentiel</option>
                 <option value="ONLINE">En ligne</option>
-              </select>
+              </Select>
             </label>
             <label>
               Lieu (optionnel)
-              <select value={teachingLocationId} onChange={(e) => setTeachingLocationId(e.target.value)}>
+              <Select value={teachingLocationId} onChange={(e) => setTeachingLocationId(e.target.value)}>
                 <option value="">—</option>
                 {locations.map((loc) => (
                   <option key={loc.id} value={loc.id}>
                     {loc.label}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
           </div>
           <button type="submit" disabled={!date || !startTime}>
