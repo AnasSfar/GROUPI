@@ -84,8 +84,11 @@ describe('Pre-enrollments (e2e)', () => {
     });
     subjectId = subject.id;
 
+    // Code préfixé "COL" : doit matcher le type COLLEGE de `school` ci-dessus
+    // (voir expectedSchoolTypeForLevelCode dans auth.service.ts), requis depuis que
+    // l'inscription Parent exige un `initialStudent` cohérent avec l'établissement choisi.
     const schoolLevel = await prisma.schoolLevel.create({
-      data: { name: `E2E Pre Level ${runId}`, code: `EPRELVL${runId}`, order: 1, isActive: true },
+      data: { name: `E2E Pre Level ${runId}`, code: `COL${runId}`, order: 1, isActive: true },
     });
     schoolLevelId = schoolLevel.id;
 
@@ -153,6 +156,7 @@ describe('Pre-enrollments (e2e)', () => {
         phone: '20000011',
         city: city.name,
         acceptTerms: true,
+        initialStudent: { firstName: 'Kid', lastName: 'Parent', schoolLevelId, schoolId },
       })
       .expect(201);
     parentId = parentRegister.body.id;
@@ -168,6 +172,7 @@ describe('Pre-enrollments (e2e)', () => {
         phone: '20000012',
         city: city.name,
         acceptTerms: true,
+        initialStudent: { firstName: 'Kid', lastName: 'Other', schoolLevelId, schoolId },
       })
       .expect(201);
     otherParentId = otherParentRegister.body.id;

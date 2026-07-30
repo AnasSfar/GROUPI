@@ -44,6 +44,17 @@ describe('Group announcements (e2e)', () => {
 
   async function registerAndActivate(role: 'TEACHER' | 'PARENT', label: string): Promise<Actor> {
     const email = `e2e-ann-${role.toLowerCase()}-${label}-${runId}@example.com`;
+    const initialStudent =
+      role === 'PARENT'
+        ? {
+            firstName: 'Kid',
+            lastName: label,
+            schoolLevelId: (
+              await prisma.schoolLevel.findFirstOrThrow({ where: { isActive: true, code: { startsWith: 'PRIM' } } })
+            ).id,
+            schoolId: (await prisma.school.findFirstOrThrow({ where: { isActive: true, type: 'PRIMARY' } })).id,
+          }
+        : undefined;
     const res = await api()
       .post('/api/v1/auth/register')
       .send({
@@ -56,6 +67,7 @@ describe('Group announcements (e2e)', () => {
         city: 'Tunis',
         acceptTerms: true,
         ...(role === 'TEACHER' ? { subjectIds: [subjectId], schoolLevelIds: [schoolLevelId] } : {}),
+        ...(role === 'PARENT' ? { initialStudent } : {}),
       })
       .expect(201);
     const userId = res.body.id as string;

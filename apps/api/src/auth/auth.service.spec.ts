@@ -31,6 +31,36 @@ function makePrismaMock() {
     parentProfile: {
       create: jest.fn(),
     },
+    subject: {
+      findMany: jest.fn(),
+    },
+    schoolLevel: {
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+    },
+    school: {
+      findUnique: jest.fn(),
+    },
+    academicYear: {
+      findFirst: jest.fn(),
+    },
+    teacherSubject: {
+      createMany: jest.fn(),
+    },
+    teacherSchoolLevel: {
+      createMany: jest.fn(),
+    },
+    student: {
+      create: jest.fn(),
+      update: jest.fn(),
+    },
+    studentSchoolSituation: {
+      create: jest.fn(),
+    },
+    emailVerificationToken: {
+      updateMany: jest.fn(),
+      create: jest.fn(),
+    },
     userSession: {
       create: jest.fn(),
       update: jest.fn(),
@@ -56,7 +86,7 @@ describe('AuthService', () => {
   let jwt: { signAsync: jest.Mock };
   let config: { get: jest.Mock; getOrThrow: jest.Mock };
   let password: { hash: jest.Mock; verify: jest.Mock };
-  let email: { sendPasswordResetEmail: jest.Mock };
+  let email: { sendPasswordResetEmail: jest.Mock; sendEmailVerification: jest.Mock };
 
   const configDefaults: Record<string, unknown> = {
     LOGIN_MAX_ATTEMPTS: 5,
@@ -82,7 +112,10 @@ describe('AuthService', () => {
       getOrThrow: jest.fn((key: string) => configDefaults[key]),
     };
     password = { hash: jest.fn(), verify: jest.fn() };
-    email = { sendPasswordResetEmail: jest.fn().mockResolvedValue(undefined) };
+    email = {
+      sendPasswordResetEmail: jest.fn().mockResolvedValue(undefined),
+      sendEmailVerification: jest.fn().mockResolvedValue(undefined),
+    };
 
     service = new AuthService(
       prisma as unknown as PrismaService,
@@ -108,6 +141,8 @@ describe('AuthService', () => {
         status: 'PENDING_VALIDATION',
       });
       prisma.teacherProfile.create.mockResolvedValue({ id: 'user-1' });
+      prisma.subject.findMany.mockResolvedValue([{ id: 'subject-1' }]);
+      prisma.schoolLevel.findMany.mockResolvedValue([{ id: 'level-1' }]);
 
       const result = await service.register({
         email: 'teacher@example.com',
@@ -117,6 +152,9 @@ describe('AuthService', () => {
         lastName: 'Doe',
         phone: '20000000',
         city: 'Tunis',
+        acceptTerms: true,
+        subjectIds: ['subject-1'],
+        schoolLevelIds: ['level-1'],
       } as any);
 
       expect(prisma.user.create).toHaveBeenCalledWith(
@@ -151,6 +189,15 @@ describe('AuthService', () => {
         status: 'PENDING_VALIDATION',
       });
       prisma.parentProfile.create.mockResolvedValue({ id: 'user-2' });
+      prisma.schoolLevel.findUnique.mockResolvedValue({
+        id: 'level-1',
+        isActive: true,
+        code: 'PRIM1',
+      });
+      prisma.school.findUnique.mockResolvedValue({ id: 'school-1', isActive: true, type: 'PRIMARY' });
+      prisma.academicYear.findFirst.mockResolvedValue({ id: 'year-1', status: 'OPEN' });
+      prisma.student.create.mockResolvedValue({ id: 'student-1' });
+      prisma.studentSchoolSituation.create.mockResolvedValue({ id: 'situation-1' });
 
       await service.register({
         email: 'parent@example.com',
@@ -160,6 +207,13 @@ describe('AuthService', () => {
         lastName: 'Smith',
         phone: '20000001',
         city: 'Sfax',
+        acceptTerms: true,
+        initialStudent: {
+          firstName: 'Kid',
+          lastName: 'Smith',
+          schoolLevelId: 'level-1',
+          schoolId: 'school-1',
+        },
       } as any);
 
       expect(prisma.parentProfile.create).toHaveBeenCalledWith(
@@ -450,7 +504,12 @@ describe('AuthService', () => {
     });
 
     it('bumps tokenVersion and revokes all sessions on success', async () => {
-      prisma.user.findUniqueOrThrow.mockResolvedValue({ id: 'user-1', passwordHash: 'hashed' });
+      prisma.user.findUniqueOrThrow.mockResolvedValue({
+        id: 'user-1',
+        passwordHash: 'hashed',
+        passwordChangeCount: 0,
+        passwordChangeWindowStart: null,
+      });
       password.verify.mockResolvedValue(true);
       password.hash.mockResolvedValue('new-hashed');
 
@@ -461,7 +520,12 @@ describe('AuthService', () => {
 
       expect(prisma.user.update).toHaveBeenCalledWith({
         where: { id: 'user-1' },
-        data: { passwordHash: 'new-hashed', tokenVersion: { increment: 1 } },
+        data: {
+          passwordHash: 'new-hashed',
+          tokenVersion: { increment: 1 },
+          passwordChangeCount: 1,
+          passwordChangeWindowStart: expect.any(Date),
+        },
       });
       expect(prisma.userSession.updateMany).toHaveBeenCalledWith({
         where: { userId: 'user-1', revokedAt: null },

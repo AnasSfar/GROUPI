@@ -80,9 +80,28 @@ describe('Exports (e2e)', () => {
 
   async function registerParent(label: string): Promise<Actor> {
     const email = `e2e-exp-parent-${label}-${runId}@example.com`;
+    const initialStudentSchoolLevel = await prisma.schoolLevel.findFirstOrThrow({
+      where: { isActive: true, code: { startsWith: 'PRIM' } },
+    });
+    const initialStudentSchool = await prisma.school.findFirstOrThrow({ where: { isActive: true, type: 'PRIMARY' } });
     const res = await api()
       .post('/api/v1/auth/register')
-      .send({ email, password, role: 'PARENT', firstName: 'Test', lastName: label, phone: '20000000', city: 'Tunis', acceptTerms: true })
+      .send({
+        email,
+        password,
+        role: 'PARENT',
+        firstName: 'Test',
+        lastName: label,
+        phone: '20000000',
+        city: 'Tunis',
+        acceptTerms: true,
+        initialStudent: {
+          firstName: 'Kid',
+          lastName: label,
+          schoolLevelId: initialStudentSchoolLevel.id,
+          schoolId: initialStudentSchool.id,
+        },
+      })
       .expect(201);
     const userId = res.body.id as string;
     await prisma.user.update({ where: { id: userId }, data: { status: 'ACTIVE' } });
