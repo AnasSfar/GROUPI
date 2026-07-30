@@ -48,6 +48,7 @@ export class ReferentialsController {
   }
 
   @Get('cities')
+  @Public()
   cities() {
     return this.prisma.city.findMany({
       where: { isActive: true },
@@ -57,6 +58,7 @@ export class ReferentialsController {
   }
 
   @Get('schools')
+  @Public()
   schools() {
     return this.prisma.school.findMany({
       where: { isActive: true },

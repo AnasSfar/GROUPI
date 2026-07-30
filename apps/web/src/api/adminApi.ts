@@ -49,3 +49,52 @@ export function disableUser(accessToken: string, userId: string, payload: Accoun
     body: payload,
   });
 }
+
+/** Codes réellement vérifiés par le backend (@RequirePermissions) — pas de catalogue centralisé côté API. */
+export const ADMIN_PERMISSIONS: { code: string; label: string }[] = [
+  { code: 'ACC_VALIDATE', label: 'Valider / suspendre / réactiver les comptes Professeur et Parent' },
+  { code: 'REF_CREATE', label: 'Gérer les référentiels (matières, niveaux, établissements)' },
+  { code: 'SCH_VALIDATE', label: 'Valider les situations scolaires' },
+  { code: 'ABO_VALIDATE', label: 'Valider les abonnements Professeur' },
+  { code: 'ABO_SUSPEND', label: 'Suspendre un abonnement' },
+  { code: 'ABO_REACTIVATE', label: 'Réactiver un abonnement' },
+  { code: 'CPT_ADMIN_ADJUST', label: 'Effectuer des ajustements comptables' },
+  { code: 'EXP_EXPORT_DATA', label: 'Générer des exports de données' },
+  { code: 'EXP_VIEW_JOURNAL', label: 'Consulter le journal des exports' },
+];
+
+export interface InviteAdministratorPayload {
+  email: string;
+  permissions: string[];
+}
+
+export function inviteAdministrator(accessToken: string, payload: InviteAdministratorPayload) {
+  return apiRequest(`/admin/administrators/invite`, {
+    method: 'POST',
+    accessToken,
+    body: payload,
+  });
+}
+
+export function promoteToAdmin(accessToken: string, userId: string, permissions: string[]) {
+  return apiRequest(`/admin/administrators/${userId}/promote`, {
+    method: 'POST',
+    accessToken,
+    body: { permissions },
+  });
+}
+
+export interface AcceptAdministratorInvitationPayload {
+  token: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  phone: string;
+}
+
+export function acceptAdministratorInvitation(payload: AcceptAdministratorInvitationPayload) {
+  return apiRequest(`/admin/administrators/accept-invitation`, {
+    method: 'POST',
+    body: payload,
+  });
+}

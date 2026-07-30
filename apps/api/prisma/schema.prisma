@@ -2,12 +2,21 @@
 // Source de vérité fonctionnelle : docs/referentiel/ (Ch. 2, 3, 9, 10-14, Annexe P)
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "native" pour le dev local (Windows/Mac) — "rhel-openssl-3.0.x" pour le runtime Node des
+  // fonctions serverless Vercel (Amazon Linux). Les deux moteurs sont packagés ensemble.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  // Neon : URL "-pooler" (PgBouncer, transaction mode) — nécessaire en serverless car chaque
+  // invocation de fonction ouvre sa propre connexion ; sans pooling, le pool Postgres serait
+  // épuisé en quelques requêtes concurrentes.
+  url       = env("DATABASE_URL")
+  // Neon : URL directe (sans pooler) — `prisma migrate deploy` a besoin d'un vrai verrou de
+  // session, incompatible avec PgBouncer en mode transaction.
+  directUrl = env("DIRECT_URL")
 }
 
 // ---------------------------------------------------------------------------
@@ -331,6 +340,7 @@ model User {
   sessions                         UserSession[]
   passwordResetTokens              PasswordResetToken[]
   emailVerificationTokens          EmailVerificationToken[]
+  adminInvitationTokens            AdminInvitationToken[]
   loginHistory                     LoginHistory[]
   auditLogs                        AuditLog[]
   /// Ch.18 : centre d'activités personnel (une ligne par activité reçue, tous rôles confondus).
@@ -413,6 +423,21 @@ model EmailVerificationToken {
   @@map("email_verification_token")
 }
 
+/// RM-CYC-022 : lien d'invitation envoyé à un Administrateur créé par le Super Administrateur —
+/// même forme que `PasswordResetToken`/`EmailVerificationToken`, table distincte car sémantique
+/// propre (fixe le mot de passe ET les informations personnelles à l'acceptation).
+model AdminInvitationToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  user      User      @relation(fields: [userId], references: [id])
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@map("admin_invitation_token")
+}
+
 /// Journal des connexions, non modifiable (§9.10, RM-SEC-026/027/028)
 model LoginHistory {
   id        String   @id @default(uuid()) @db.Uuid
@@ -487,6 +512,11 @@ model Administrator {
   createdById String    @map("created_by_id") @db.Uuid
   createdBy   User      @relation("AdministratorCreatedBy", fields: [createdById], references: [id])
   disabledAt  DateTime? @map("disabled_at")
+  /// Renseignés soit à la promotion d'un compte existant (copiés du profil), soit par l'Administrateur
+  /// lui-même à l'acceptation de son invitation par e-mail — jamais par le Super Administrateur.
+  firstName   String?   @map("first_name")
+  lastName    String?   @map("last_name")
+  phone       String?
   createdAt   DateTime  @default(now()) @map("created_at")
 
   @@map("administrator")

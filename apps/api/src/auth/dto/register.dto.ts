@@ -1,14 +1,43 @@
+import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
   IsBoolean,
+  IsDateString,
   IsEmail,
   IsIn,
+  IsObject,
+  IsOptional,
   IsString,
   IsUUID,
   MinLength,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
+
+class InitialStudentDto {
+  @IsString()
+  @MinLength(1)
+  firstName!: string;
+
+  @IsString()
+  @MinLength(1)
+  lastName!: string;
+
+  @IsOptional()
+  @IsDateString()
+  dateOfBirth?: string;
+
+  @IsUUID()
+  schoolLevelId!: string;
+
+  @IsUUID()
+  schoolId!: string;
+
+  @IsOptional()
+  @IsString()
+  schoolClass?: string;
+}
 
 export class RegisterDto {
   @IsEmail()
@@ -46,6 +75,13 @@ export class RegisterDto {
   @ArrayMinSize(1, { message: 'Au moins un niveau scolaire est requis pour un compte Professeur' })
   @IsUUID('4', { each: true })
   schoolLevelIds!: string[];
+
+  /** Ch.6.5 : un Parent déclare au moins un enfant et sa situation scolaire initiale à l'inscription. */
+  @ValidateIf((o) => o.role === 'PARENT')
+  @IsObject()
+  @ValidateNested()
+  @Type(() => InitialStudentDto)
+  initialStudent!: InitialStudentDto;
 
   /** Ch.9.5, ERR-SEC-013 : l'acceptation des conditions d'utilisation est obligatoire à l'inscription. */
   @IsBoolean()

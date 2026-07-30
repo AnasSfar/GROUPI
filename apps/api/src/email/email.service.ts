@@ -59,6 +59,16 @@ export class EmailService implements OnModuleDestroy {
     );
   }
 
+  /** RM-CYC-022 : invitation envoyée à un Administrateur créé par le Super Administrateur. */
+  async sendAdminInvitation(to: string, invitationToken: string): Promise<void> {
+    await this.send(
+      to,
+      'GROUPI — Invitation à administrer GROUPI',
+      `Un compte Administrateur GROUPI a été créé pour vous. Voici votre lien pour définir votre ` +
+        `mot de passe et vos informations : token=${invitationToken}`,
+    );
+  }
+
   /** Ch.9.5, ERR-SEC-012 */
   async sendEmailVerification(to: string, verificationToken: string): Promise<void> {
     await this.send(

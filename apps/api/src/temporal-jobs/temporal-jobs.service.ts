@@ -26,7 +26,7 @@ function round3(n: number): number {
   return Math.round(n * 1000) / 1000;
 }
 
-interface JobResult {
+export interface JobResult {
   sent: number;
   skipped: number;
 }

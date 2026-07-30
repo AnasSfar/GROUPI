@@ -19,6 +19,12 @@ import { VerifyEmailDto } from './dto/verify-email.dto';
 
 const NON_AUTHENTICABLE_STATUSES = new Set(['SUSPENDED', 'DISABLED', 'ARCHIVED']);
 
+
+function expectedSchoolTypeForLevelCode(code: string): 'PRIMARY' | 'COLLEGE' | 'HIGH_SCHOOL' {
+  if (code.startsWith('PRIM')) return 'PRIMARY';
+  if (code.startsWith('COL')) return 'COLLEGE';
+  return 'HIGH_SCHOOL';
+}
 interface RequestMeta {
   userAgent?: string;
   ipAddress?: string;
@@ -105,6 +111,52 @@ export class AuthService {
             phone: dto.phone,
             city: dto.city,
           },
+        });
+
+        const initialStudent = dto.initialStudent;
+        const [schoolLevel, school, academicYear] = await Promise.all([
+          tx.schoolLevel.findUnique({ where: { id: initialStudent.schoolLevelId } }),
+          tx.school.findUnique({ where: { id: initialStudent.schoolId } }),
+          tx.academicYear.findFirst({ where: { status: 'OPEN' }, orderBy: { startDate: 'desc' } }),
+        ]);
+        if (!schoolLevel || !schoolLevel.isActive) {
+          throw new BadRequestException('Niveau scolaire introuvable ou inactif');
+        }
+        if (!school || !school.isActive) {
+          throw new BadRequestException('Établissement introuvable ou inactif (ERR-PAR-002)');
+        }
+        const expectedSchoolType = expectedSchoolTypeForLevelCode(schoolLevel.code);
+        if (school.type !== expectedSchoolType) {
+          throw new BadRequestException('Cet établissement ne correspond pas au niveau scolaire sélectionné');
+        }
+        if (!academicYear) {
+          throw new BadRequestException('Aucune année académique ouverte');
+        }
+
+        const student = await tx.student.create({
+          data: {
+            parentId: created.id,
+            firstName: initialStudent.firstName,
+            lastName: initialStudent.lastName,
+            dateOfBirth: initialStudent.dateOfBirth ? new Date(initialStudent.dateOfBirth) : null,
+            status: 'ACTIVE',
+          },
+        });
+
+        const situation = await tx.studentSchoolSituation.create({
+          data: {
+            studentId: student.id,
+            academicYearId: academicYear.id,
+            schoolLevelId: initialStudent.schoolLevelId,
+            schoolId: initialStudent.schoolId,
+            class: initialStudent.schoolClass,
+            startDate: new Date(),
+          },
+        });
+
+        await tx.student.update({
+          where: { id: student.id },
+          data: { currentSchoolSituationId: situation.id },
         });
       }
 

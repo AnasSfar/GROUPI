@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AppLayout } from './components/AppLayout';
+import { HomePage } from './pages/HomePage';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
@@ -36,17 +37,20 @@ import { ParentSchoolRequestsPage } from './pages/ParentSchoolRequestsPage';
 import { AdminSchoolRequestsPage } from './pages/AdminSchoolRequestsPage';
 import { AccountSettingsPage } from './pages/AccountSettingsPage';
 import { VerifyEmailPage } from './pages/VerifyEmailPage';
+import { AdminInvitationAcceptPage } from './pages/AdminInvitationAcceptPage';
 
 function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
         <Routes>
+          <Route path="/" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route path="/admin-invitation" element={<AdminInvitationAcceptPage />} />
 
           <Route
             element={
@@ -268,7 +272,7 @@ function App() {
             <Route path="/account" element={<AccountSettingsPage />} />
           </Route>
 
-          <Route path="*" element={<Navigate to="/login" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>
@@ -276,3 +280,4 @@ function App() {
 }
 
 export default App;
+

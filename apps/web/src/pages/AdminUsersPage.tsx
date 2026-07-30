@@ -4,6 +4,7 @@ import { Select } from '../components/Select';
 import { ApiError } from '../api/client';
 import * as adminApi from '../api/adminApi';
 import type { AdminUser, UserStatus } from '../api/adminApi';
+import { ADMIN_PERMISSIONS } from '../api/adminApi';
 
 type StatusFilterValue = UserStatus | 'ALL';
 
@@ -70,8 +71,38 @@ function ReasonPrompt({
   );
 }
 
+function PermissionCheckboxList({
+  selected,
+  onChange,
+}: {
+  selected: string[];
+  onChange: (permissions: string[]) => void;
+}) {
+  return (
+    <div className="permission-list">
+      {ADMIN_PERMISSIONS.map((permission) => (
+        <label key={permission.code} className="permission-item">
+          <input
+            type="checkbox"
+            checked={selected.includes(permission.code)}
+            onChange={(e) =>
+              onChange(
+                e.target.checked
+                  ? [...selected, permission.code]
+                  : selected.filter((code) => code !== permission.code),
+              )
+            }
+          />
+          {permission.label}
+        </label>
+      ))}
+    </div>
+  );
+}
+
 export function AdminUsersPage() {
-  const { getAccessToken } = useAuth();
+  const { getAccessToken, currentUser } = useAuth();
+  const isSuperAdmin = currentUser?.roles.includes('SUPER_ADMIN') ?? false;
   const [statusFilter, setStatusFilter] = useState<StatusFilterValue>('ALL');
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,6 +111,18 @@ export function AdminUsersPage() {
     userId: string;
     action: 'suspend' | 'disable';
   } | null>(null);
+
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [invitePermissions, setInvitePermissions] = useState<string[]>([]);
+  const [inviteSubmitting, setInviteSubmitting] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
+
+  const [promotingUser, setPromotingUser] = useState<AdminUser | null>(null);
+  const [promotePermissions, setPromotePermissions] = useState<string[]>([]);
+  const [promoteSubmitting, setPromoteSubmitting] = useState(false);
+  const [promoteError, setPromoteError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const token = getAccessToken();
@@ -134,6 +177,54 @@ export function AdminUsersPage() {
     runAction(() => call);
   }
 
+  function openInviteModal() {
+    setInviteEmail('');
+    setInvitePermissions([]);
+    setInviteError(null);
+    setInviteSuccess(null);
+    setShowInviteModal(true);
+  }
+
+  async function handleInviteSubmit() {
+    const token = getAccessToken();
+    if (!token) return;
+    setInviteSubmitting(true);
+    setInviteError(null);
+    try {
+      await adminApi.inviteAdministrator(token, { email: inviteEmail, permissions: invitePermissions });
+      setInviteSuccess(`Invitation envoyée à ${inviteEmail}.`);
+      setInviteEmail('');
+      setInvitePermissions([]);
+      await load();
+    } catch (err) {
+      setInviteError(err instanceof ApiError ? err.message : "L'invitation a échoué.");
+    } finally {
+      setInviteSubmitting(false);
+    }
+  }
+
+  function openPromoteModal(user: AdminUser) {
+    setPromotingUser(user);
+    setPromotePermissions([]);
+    setPromoteError(null);
+  }
+
+  async function handlePromoteSubmit() {
+    const token = getAccessToken();
+    if (!token || !promotingUser) return;
+    setPromoteSubmitting(true);
+    setPromoteError(null);
+    try {
+      await adminApi.promoteToAdmin(token, promotingUser.id, promotePermissions);
+      setPromotingUser(null);
+      await load();
+    } catch (err) {
+      setPromoteError(err instanceof ApiError ? err.message : "La promotion a échoué.");
+    } finally {
+      setPromoteSubmitting(false);
+    }
+  }
+
   return (
     <>
       <div className="page-header">
@@ -141,6 +232,13 @@ export function AdminUsersPage() {
           <h1>Comptes utilisateurs</h1>
           <p>Validation, suspension et désactivation des comptes Professeur et Parent.</p>
         </div>
+        {isSuperAdmin && (
+          <div className="page-actions">
+            <button type="button" onClick={openInviteModal}>
+              Ajouter un administrateur
+            </button>
+          </div>
+        )}
       </div>
 
       <label className="status-filter">
@@ -228,6 +326,14 @@ export function AdminUsersPage() {
                             Désactiver
                           </button>
                         )}
+                        {isSuperAdmin &&
+                          user.status === 'ACTIVE' &&
+                          !user.roles.includes('ADMIN') &&
+                          !user.roles.includes('SUPER_ADMIN') && (
+                            <button type="button" className="ghost" onClick={() => openPromoteModal(user)}>
+                              Promouvoir Admin
+                            </button>
+                          )}
                       </>
                     )}
                   </td>
@@ -235,6 +341,76 @@ export function AdminUsersPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {showInviteModal && (
+        <div className="terms-modal-backdrop" onClick={() => setShowInviteModal(false)}>
+          <div className="terms-modal" onClick={(e) => e.stopPropagation()}>
+            <h2>Ajouter un administrateur</h2>
+            <p>
+              Un e-mail d'invitation sera envoyé à cette adresse pour qu'elle définisse son mot de
+              passe, son nom et son téléphone.
+            </p>
+            {inviteError && (
+              <p className="form-error" role="alert">
+                {inviteError}
+              </p>
+            )}
+            {inviteSuccess && <p className="form-notice">{inviteSuccess}</p>}
+            <label>
+              Adresse e-mail
+              <input
+                type="email"
+                required
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                autoFocus
+              />
+            </label>
+            <h3>Permissions accordées</h3>
+            <PermissionCheckboxList selected={invitePermissions} onChange={setInvitePermissions} />
+            <div className="terms-modal-actions">
+              <button type="button" className="ghost" onClick={() => setShowInviteModal(false)}>
+                Fermer
+              </button>
+              <button
+                type="button"
+                disabled={inviteSubmitting || !inviteEmail || invitePermissions.length === 0}
+                onClick={handleInviteSubmit}
+              >
+                {inviteSubmitting ? 'Envoi...' : "Envoyer l'invitation"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {promotingUser && (
+        <div className="terms-modal-backdrop" onClick={() => setPromotingUser(null)}>
+          <div className="terms-modal" onClick={(e) => e.stopPropagation()}>
+            <h2>Promouvoir {displayName(promotingUser)} Administrateur</h2>
+            <p>{promotingUser.email} conservera son rôle actuel en plus du rôle Administrateur.</p>
+            {promoteError && (
+              <p className="form-error" role="alert">
+                {promoteError}
+              </p>
+            )}
+            <h3>Permissions accordées</h3>
+            <PermissionCheckboxList selected={promotePermissions} onChange={setPromotePermissions} />
+            <div className="terms-modal-actions">
+              <button type="button" className="ghost" onClick={() => setPromotingUser(null)}>
+                Annuler
+              </button>
+              <button
+                type="button"
+                disabled={promoteSubmitting || promotePermissions.length === 0}
+                onClick={handlePromoteSubmit}
+              >
+                {promoteSubmitting ? 'Promotion...' : 'Promouvoir'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </>

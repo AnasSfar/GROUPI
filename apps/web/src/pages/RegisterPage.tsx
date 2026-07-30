@@ -1,16 +1,27 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ApiError } from '../api/client';
 import type { Role } from '../api/authApi';
 import * as referentialsApi from '../api/referentialsApi';
-import type { Subject, SchoolLevel } from '../api/referentialsApi';
+import type { City, School, SchoolLevel, Subject } from '../api/referentialsApi';
 import { SchoolLevelSectionPicker } from '../components/SchoolLevelSectionPicker';
 
+
+type SchoolType = School['type'];
+
+function schoolTypeForLevel(level?: SchoolLevel): SchoolType | null {
+  if (!level) return null;
+  if (level.code.startsWith('PRIM')) return 'PRIMARY';
+  if (level.code.startsWith('COL')) return 'COLLEGE';
+  return 'HIGH_SCHOOL';
+}
 export function RegisterPage() {
   const { register } = useAuth();
   const navigate = useNavigate();
-  const [role, setRole] = useState<Role>('TEACHER');
+  const [searchParams] = useSearchParams();
+  const initialRole: Role = searchParams.get('role')?.toLowerCase() === 'parent' ? 'PARENT' : 'TEACHER';
+  const [role, setRole] = useState<Role>(initialRole);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [firstName, setFirstName] = useState('');
@@ -18,20 +29,75 @@ export function RegisterPage() {
   const [phone, setPhone] = useState('');
   const [city, setCity] = useState('');
   const [acceptTerms, setAcceptTerms] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // RM-TPR-001/002 : profil minimum d'un Professeur — au moins une matière et un niveau.
+  // RM-TPR-001/002 : profil minimum d'un Professeur - au moins une matière et un niveau.
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [schoolLevels, setSchoolLevels] = useState<SchoolLevel[]>([]);
   const [subjectIds, setSubjectIds] = useState<string[]>([]);
   const [schoolLevelIds, setSchoolLevelIds] = useState<string[]>([]);
 
+  const [cities, setCities] = useState<City[]>([]);
+  const [schools, setSchools] = useState<School[]>([]);
+  const [studentFirstName, setStudentFirstName] = useState('');
+  const [studentLastName, setStudentLastName] = useState('');
+  const [studentDateOfBirth, setStudentDateOfBirth] = useState('');
+  const [studentSchoolLevelId, setStudentSchoolLevelId] = useState('');
+  const [studentCityId, setStudentCityId] = useState('');
+  const [studentSchoolId, setStudentSchoolId] = useState('');
+
+  const isTeacher = role === 'TEACHER';
+  const isParent = role === 'PARENT';
+
   useEffect(() => {
-    if (role !== 'TEACHER') return;
-    referentialsApi.listSubjects().then(setSubjects).catch(() => setSubjects([]));
     referentialsApi.listSchoolLevels().then(setSchoolLevels).catch(() => setSchoolLevels([]));
-  }, [role]);
+  }, []);
+
+  useEffect(() => {
+    if (!isTeacher) return;
+    referentialsApi.listSubjects().then(setSubjects).catch(() => setSubjects([]));
+  }, [isTeacher]);
+
+  useEffect(() => {
+    if (!isParent) return;
+    referentialsApi.listCities().then(setCities).catch(() => setCities([]));
+    referentialsApi.listSchools().then(setSchools).catch(() => setSchools([]));
+  }, [isParent]);
+
+  const selectedStudentSchoolLevel = useMemo(
+    () => schoolLevels.find((level) => level.id === studentSchoolLevelId),
+    [schoolLevels, studentSchoolLevelId],
+  );
+  const expectedSchoolType = schoolTypeForLevel(selectedStudentSchoolLevel);
+
+  const schoolsForSelectedLevel = useMemo(() => {
+    if (!expectedSchoolType) return schools;
+    return schools.filter((school) => school.type === expectedSchoolType);
+  }, [expectedSchoolType, schools]);
+
+  const availableCities = useMemo(() => {
+    if (!expectedSchoolType) return cities;
+    const cityIds = new Set(schoolsForSelectedLevel.map((school) => school.cityId));
+    return cities.filter((item) => cityIds.has(item.id));
+  }, [cities, expectedSchoolType, schoolsForSelectedLevel]);
+
+  const filteredSchools = useMemo(() => {
+    if (!studentCityId) return schoolsForSelectedLevel;
+    return schoolsForSelectedLevel.filter((school) => school.cityId === studentCityId);
+  }, [schoolsForSelectedLevel, studentCityId]);
+
+  useEffect(() => {
+    if (studentSchoolId && !filteredSchools.some((school) => school.id === studentSchoolId)) {
+      setStudentSchoolId('');
+    }
+  }, [filteredSchools, studentSchoolId]);
+  useEffect(() => {
+    if (studentCityId && !availableCities.some((item) => item.id === studentCityId)) {
+      setStudentCityId('');
+    }
+  }, [availableCities, studentCityId]);
 
   function toggleSubject(subjectId: string, checked: boolean) {
     setSubjectIds((prev) => (checked ? [...prev, subjectId] : prev.filter((id) => id !== subjectId)));
@@ -43,8 +109,13 @@ export function RegisterPage() {
     );
   }
 
-  const isTeacher = role === 'TEACHER';
   const teacherRequirementsMet = !isTeacher || (subjectIds.length > 0 && schoolLevelIds.length > 0);
+  const parentRequirementsMet =
+    !isParent ||
+    (studentFirstName.trim() !== '' &&
+      studentLastName.trim() !== '' &&
+      studentSchoolLevelId !== '' &&
+      studentSchoolId !== '');
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -61,6 +132,17 @@ export function RegisterPage() {
         city,
         acceptTerms,
         ...(isTeacher ? { subjectIds, schoolLevelIds } : {}),
+        ...(isParent
+          ? {
+              initialStudent: {
+                firstName: studentFirstName,
+                lastName: studentLastName,
+                ...(studentDateOfBirth ? { dateOfBirth: studentDateOfBirth } : {}),
+                schoolLevelId: studentSchoolLevelId,
+                schoolId: studentSchoolId,
+              },
+            }
+          : {}),
       });
       navigate('/login', {
         replace: true,
@@ -79,8 +161,8 @@ export function RegisterPage() {
   }
 
   return (
-    <div className="auth-page">
-      <form className="auth-card" onSubmit={handleSubmit}>
+    <div className={`auth-page ${isParent ? 'auth-page-wide' : ''}`}>
+      <form className={`auth-card ${isParent ? 'auth-card-wide' : ''}`} onSubmit={handleSubmit}>
         <img src="/favicon.png" alt="GROUPI" className="auth-logo" />
         <h1>Créer un compte</h1>
         {error && (
@@ -202,30 +284,159 @@ export function RegisterPage() {
               />
               {schoolLevelIds.length === 0 && (
                 <p className="form-notice" role="status">
-                  Sélectionne au moins un niveau scolaire (tu peux en cocher plusieurs, dans
-                  plusieurs sections à la fois).
+                  Sélectionne au moins un niveau scolaire.
                 </p>
               )}
             </div>
           </>
         )}
 
-        <label>
+        {isParent && (
+          <fieldset className="auth-fieldset">
+            <legend>Premier enfant</legend>
+            <div className="field-row">
+              <label>
+                Prénom de l'enfant
+                <input
+                  type="text"
+                  required
+                  value={studentFirstName}
+                  onChange={(e) => setStudentFirstName(e.target.value)}
+                />
+              </label>
+              <label>
+                Nom de l'enfant
+                <input
+                  type="text"
+                  required
+                  value={studentLastName}
+                  onChange={(e) => setStudentLastName(e.target.value)}
+                />
+              </label>
+            </div>
+            <label>
+              Date de naissance
+              <input
+                type="date"
+                value={studentDateOfBirth}
+                onChange={(e) => setStudentDateOfBirth(e.target.value)}
+              />
+            </label>
+            <label>
+              Niveau scolaire
+              <select
+                required
+                value={studentSchoolLevelId}
+                onChange={(e) => setStudentSchoolLevelId(e.target.value)}
+              >
+                <option value="">Sélectionner un niveau</option>
+                {schoolLevels.map((level) => (
+                  <option key={level.id} value={level.id}>
+                    {level.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="field-row">
+              <label>
+                Ville de l'établissement
+                <select value={studentCityId} onChange={(e) => setStudentCityId(e.target.value)}>
+                  <option value="">Toutes les villes</option>
+                  {availableCities.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Établissement
+                <select
+                  required
+                  disabled={!studentSchoolLevelId}
+                  value={studentSchoolId}
+                  onChange={(e) => setStudentSchoolId(e.target.value)}
+                >
+                  <option value="">{!studentSchoolLevelId ? "Choisir d abord un niveau" : filteredSchools.length === 0 ? "Aucun établissement compatible" : "Sélectionner un établissement"}</option>
+                  {filteredSchools.map((school) => (
+                    <option key={school.id} value={school.id}>
+                      {school.name} - {school.city.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+          </fieldset>
+        )}
+
+        <div className="terms-row" onClick={() => setShowTerms(true)}>
           <input
             type="checkbox"
             checked={acceptTerms}
-            onChange={(e) => setAcceptTerms(e.target.checked)}
+            readOnly
+            aria-label="Conditions d'utilisation acceptées"
           />
-          J'accepte les conditions d'utilisation de GROUPI
-        </label>
+          <span>
+            J'accepte les{' '}
+            <button type="button" className="terms-link" onClick={() => setShowTerms(true)}>
+              conditions d'utilisation
+            </button>{' '}
+            de GROUPI
+          </span>
+        </div>
 
-        <button type="submit" disabled={submitting || !acceptTerms || !teacherRequirementsMet}>
+        <button
+          type="submit"
+          disabled={submitting || !acceptTerms || !teacherRequirementsMet || !parentRequirementsMet}
+        >
           {submitting ? 'Création...' : 'Créer mon compte'}
         </button>
         <p className="auth-links">
           Déjà un compte ? <Link to="/login">Se connecter</Link>
         </p>
       </form>
+
+      {showTerms && (
+        <div className="terms-modal-backdrop" role="presentation" onClick={() => setShowTerms(false)}>
+          <section
+            className="terms-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="terms-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 id="terms-title">Conditions d'utilisation de GROUPI</h2>
+            <p>
+              GROUPI facilite la gestion des cours particuliers, des inscriptions, des présences et
+              du suivi comptable. Les informations saisies doivent être exactes et concerner vos
+              propres enfants ou votre propre activité de professeur.
+            </p>
+            <p>
+              L'utilisateur s'engage à utiliser la plateforme de manière loyale, à respecter la
+              confidentialité des données consultées et à signaler toute information incorrecte.
+            </p>
+            <p>
+              La création du compte reste soumise à validation. GROUPI peut suspendre ou refuser un
+              compte en cas d'usage abusif ou d'informations manifestement incorrectes.
+            </p>
+            <div className="terms-modal-actions">
+              <button type="button" className="ghost" onClick={() => setShowTerms(false)}>
+                Fermer
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAcceptTerms(true);
+                  setShowTerms(false);
+                }}
+              >
+                Accepter
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

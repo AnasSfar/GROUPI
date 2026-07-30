@@ -1,10 +1,12 @@
 /**
  * Low-level HTTP helper for the GROUPI API.
  *
- * All calls go through the same-origin `/api/v1` path, which Vite's dev server proxies to the
- * NestJS backend (see vite.config.ts). This avoids needing CORS configured on apps/api.
+ * In dev, calls go through the same-origin `/api/v1` path, which Vite's dev server proxies to the
+ * NestJS backend (see vite.config.ts) — no CORS needed. In prod (Vercel), apps/web and apps/api
+ * are two separate domains, so `VITE_API_BASE_URL` must point at the deployed API's absolute URL
+ * (e.g. https://groupi-api.vercel.app/api/v1) — apps/api's CORS_ORIGIN must then allow this site's origin.
  */
-export const API_BASE_URL = '/api/v1';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
 
 const ACCESS_TOKEN_KEY = 'groupi.accessToken';
 const REFRESH_TOKEN_KEY = 'groupi.refreshToken';

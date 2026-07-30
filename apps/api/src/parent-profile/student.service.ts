@@ -10,6 +10,12 @@ const INCLUDE_CURRENT_SITUATION = {
   },
 } as const;
 
+
+function expectedSchoolTypeForLevelCode(code: string): 'PRIMARY' | 'COLLEGE' | 'HIGH_SCHOOL' {
+  if (code.startsWith('PRIM')) return 'PRIMARY';
+  if (code.startsWith('COL')) return 'COLLEGE';
+  return 'HIGH_SCHOOL';
+}
 @Injectable()
 export class StudentService {
   constructor(
@@ -59,7 +65,12 @@ export class StudentService {
       throw new BadRequestException('Établissement introuvable ou inactif (ERR-PAR-002)');
     }
 
-    const academicYear = await this.prisma.academicYear.findFirst({
+    
+    const expectedSchoolType = expectedSchoolTypeForLevelCode(schoolLevel.code);
+    if (school.type !== expectedSchoolType) {
+      throw new BadRequestException('Cet établissement ne correspond pas au niveau scolaire sélectionné');
+    }
+const academicYear = await this.prisma.academicYear.findFirst({
       where: { status: 'OPEN' },
       orderBy: { startDate: 'desc' },
     });

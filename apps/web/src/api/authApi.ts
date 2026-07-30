@@ -3,6 +3,15 @@ import { apiRequest } from './client';
 /** Self-registration is only ever TEACHER or PARENT — Admin/SuperAdmin accounts are never self-created. */
 export type Role = 'TEACHER' | 'PARENT';
 
+export interface InitialStudentPayload {
+  firstName: string;
+  lastName: string;
+  dateOfBirth?: string;
+  schoolLevelId: string;
+  schoolId: string;
+  schoolClass?: string;
+}
+
 export interface RegisterPayload {
   email: string;
   password: string;

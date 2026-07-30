@@ -69,11 +69,11 @@ export function listSchoolLevels(accessToken?: string | null): Promise<SchoolLev
   return apiRequest<SchoolLevel[]>('/referentials/school-levels', { accessToken });
 }
 
-export function listCities(accessToken: string): Promise<City[]> {
+export function listCities(accessToken?: string | null): Promise<City[]> {
   return apiRequest<City[]>('/referentials/cities', { accessToken });
 }
 
-export function listSchools(accessToken: string): Promise<School[]> {
+export function listSchools(accessToken?: string | null): Promise<School[]> {
   return apiRequest<School[]>('/referentials/schools', { accessToken });
 }
 
