@@ -15,8 +15,10 @@ datasource db {
   // épuisé en quelques requêtes concurrentes.
   url       = env("DATABASE_URL")
   // Neon : URL directe (sans pooler) — `prisma migrate deploy` a besoin d'un vrai verrou de
-  // session, incompatible avec PgBouncer en mode transaction.
-  directUrl = env("DIRECT_URL")
+  // session, incompatible avec PgBouncer en mode transaction. Nom imposé par l'intégration
+  // Vercel/Neon (Storage tab) — évite de dupliquer la valeur dans une variable DIRECT_URL
+  // à part, qui se désynchroniserait si Neon fait tourner les identifiants.
+  directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
 // ---------------------------------------------------------------------------

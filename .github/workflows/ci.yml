@@ -9,7 +9,7 @@ on:
 env:
   DATABASE_URL: postgresql://groupi:groupi@localhost:5432/groupi?schema=public
   # Pas de pooler en local/CI — identique à DATABASE_URL (voir apps/api/prisma/schema.prisma).
-  DIRECT_URL: postgresql://groupi:groupi@localhost:5432/groupi?schema=public
+  DATABASE_URL_UNPOOLED: postgresql://groupi:groupi@localhost:5432/groupi?schema=public
 
 jobs:
   api:
@@ -56,7 +56,7 @@ jobs:
       - name: Apply migrations to the e2e test database (groupi_test)
         env:
           DATABASE_URL: postgresql://groupi:groupi@localhost:5432/groupi_test?schema=public
-          DIRECT_URL: postgresql://groupi:groupi@localhost:5432/groupi_test?schema=public
+          DATABASE_URL_UNPOOLED: postgresql://groupi:groupi@localhost:5432/groupi_test?schema=public
         run: npx prisma migrate deploy --schema apps/api/prisma/schema.prisma
 
       - name: Seed the e2e test database (groupi_test)
