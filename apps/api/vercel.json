@@ -1,4 +1,5 @@
 {
+  "buildCommand": "npm run build",
   "rewrites": [{ "source": "/(.*)", "destination": "/api" }],
   "crons": [
     { "path": "/api/v1/internal/temporal-jobs/hourly", "schedule": "0 6 * * *" },
