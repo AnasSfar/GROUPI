@@ -7,6 +7,22 @@ import type { AdminUser, UserStatus } from '../api/adminApi';
 import { ADMIN_PERMISSIONS } from '../api/adminApi';
 
 type StatusFilterValue = UserStatus | 'ALL';
+type RoleFilterValue = 'ALL' | 'ADMIN' | 'TEACHER' | 'PARENT';
+
+const ROLE_FILTER_LABELS: Record<RoleFilterValue, string> = {
+  ALL: 'Tous',
+  ADMIN: 'Administrateurs',
+  TEACHER: 'Professeurs',
+  PARENT: 'Parents',
+};
+
+// Super Admin est regroupé sous "Administrateurs" (le filtre distingue avant tout le métier :
+// qui gère la plateforme vs. qui l'utilise — pas la nuance de permissions entre les deux).
+function matchesRoleFilter(user: AdminUser, filter: RoleFilterValue): boolean {
+  if (filter === 'ALL') return true;
+  if (filter === 'ADMIN') return user.roles.includes('ADMIN') || user.roles.includes('SUPER_ADMIN');
+  return user.roles.includes(filter);
+}
 
 const STATUS_LABELS: Record<UserStatus, string> = {
   PENDING_VALIDATION: 'En attente',
@@ -104,6 +120,8 @@ export function AdminUsersPage() {
   const { getAccessToken, currentUser } = useAuth();
   const isSuperAdmin = currentUser?.roles.includes('SUPER_ADMIN') ?? false;
   const [statusFilter, setStatusFilter] = useState<StatusFilterValue>('ALL');
+  const [roleFilter, setRoleFilter] = useState<RoleFilterValue>('ALL');
+  const [search, setSearch] = useState('');
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -225,6 +243,13 @@ export function AdminUsersPage() {
     }
   }
 
+  const searchQuery = search.trim().toLowerCase();
+  const visibleUsers = users.filter((user) => {
+    if (!matchesRoleFilter(user, roleFilter)) return false;
+    if (!searchQuery) return true;
+    return displayName(user).toLowerCase().includes(searchQuery) || user.email.toLowerCase().includes(searchQuery);
+  });
+
   return (
     <>
       <div className="page-header">
@@ -241,19 +266,41 @@ export function AdminUsersPage() {
         )}
       </div>
 
-      <label className="status-filter">
-        Statut :
-        <Select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as StatusFilterValue)}
-        >
-          {Object.entries(STATUS_FILTER_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </Select>
-      </label>
+      <div className="filters-row">
+        <input
+          type="search"
+          className="search-input"
+          placeholder="Rechercher un nom ou un e-mail..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          aria-label="Rechercher un compte par nom ou e-mail"
+        />
+
+        <label className="status-filter">
+          Rôle :
+          <Select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value as RoleFilterValue)}>
+            {Object.entries(ROLE_FILTER_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </Select>
+        </label>
+
+        <label className="status-filter">
+          Statut :
+          <Select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as StatusFilterValue)}
+          >
+            {Object.entries(STATUS_FILTER_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </Select>
+        </label>
+      </div>
 
       {error && (
         <p className="form-error" role="alert">
@@ -263,8 +310,8 @@ export function AdminUsersPage() {
 
       {loading ? (
         <p>Chargement...</p>
-      ) : users.length === 0 ? (
-        <p>Aucun compte dans cet état.</p>
+      ) : visibleUsers.length === 0 ? (
+        <p>Aucun compte ne correspond à ces filtres.</p>
       ) : (
         <div className="table-wrap">
           <table className="admin-table">
@@ -279,17 +326,17 @@ export function AdminUsersPage() {
               </tr>
             </thead>
             <tbody>
-              {users.map((user) => (
+              {visibleUsers.map((user) => (
                 <tr key={user.id}>
-                  <td>{displayName(user)}</td>
-                  <td>{user.email}</td>
-                  <td>{user.roles.map((r) => ROLE_LABELS[r] ?? r).join(', ')}</td>
-                  <td>
+                  <td data-label="Nom">{displayName(user)}</td>
+                  <td data-label="Email">{user.email}</td>
+                  <td data-label="Rôle">{user.roles.map((r) => ROLE_LABELS[r] ?? r).join(', ')}</td>
+                  <td data-label="Statut">
                     <span className={`badge ${STATUS_BADGE[user.status]}`}>
                       {STATUS_LABELS[user.status]}
                     </span>
                   </td>
-                  <td>{new Date(user.createdAt).toLocaleDateString('fr-FR')}</td>
+                  <td data-label="Créé le">{new Date(user.createdAt).toLocaleDateString('fr-FR')}</td>
                   <td className="admin-actions">
                     {pendingReasonFor?.userId === user.id ? (
                       <ReasonPrompt

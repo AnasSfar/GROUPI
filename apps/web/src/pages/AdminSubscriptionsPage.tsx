@@ -144,18 +144,18 @@ export function AdminSubscriptionsPage() {
             <tbody>
               {subscriptions.map((sub) => (
                 <tr key={sub.id}>
-                  <td>
+                  <td data-label="Professeur">
                     {sub.teacher.firstName} {sub.teacher.lastName} ({sub.teacher.user.email})
                   </td>
-                  <td>{sub.plan.name}</td>
-                  <td>{sub.academicYear.label}</td>
-                  <td>
+                  <td data-label="Offre">{sub.plan.name}</td>
+                  <td data-label="Année académique">{sub.academicYear.label}</td>
+                  <td data-label="Statut">
                     <span className={`badge ${STATUS_BADGE[sub.status]}`}>{STATUS_LABELS[sub.status]}</span>
                     {sub.status === 'SUSPENDED' && sub.suspensionReason && (
                       <span className="table-hint"> — {sub.suspensionReason}</span>
                     )}
                   </td>
-                  <td>{sub.expiresAt ? new Date(sub.expiresAt).toLocaleDateString('fr-FR') : '—'}</td>
+                  <td data-label="Expire le">{sub.expiresAt ? new Date(sub.expiresAt).toLocaleDateString('fr-FR') : '—'}</td>
                   <td className="admin-actions">
                     {suspendingId === sub.id ? (
                       <ReasonPrompt onConfirm={(reason) => handleSuspend(sub.id, reason)} onCancel={() => setSuspendingId(null)} />

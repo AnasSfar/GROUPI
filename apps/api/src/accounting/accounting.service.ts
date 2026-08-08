@@ -14,6 +14,7 @@ import { EmailService } from '../email/email.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { isLockable } from '../sessions/sessions.service';
 import { RecordPaymentDto } from './dto/record-payment.dto';
+import { RecordSessionPaymentDto } from './dto/record-session-payment.dto';
 import { CorrectPaymentDto } from './dto/correct-payment.dto';
 import { CreateAdjustmentDto } from './dto/create-adjustment.dto';
 import { CreateAdminAdjustmentDto } from './dto/create-admin-adjustment.dto';
@@ -397,6 +398,25 @@ export class AccountingService {
       throw new BadRequestException('Inscription non active : paiement refusé (ERR-CPT-009)');
     }
 
+    if (dto.sessionId) {
+      const session = await this.prisma.session.findUnique({ where: { id: dto.sessionId } });
+      if (!session || session.groupId !== account.enrollment.groupId) {
+        throw new BadRequestException('Seance introuvable pour cette inscription');
+      }
+      const existing = await this.prisma.accountingEntry.findFirst({
+        where: {
+          accountId: account.id,
+          sessionId: dto.sessionId,
+          type: 'PAYMENT',
+          direction: 'CREDIT',
+          status: 'POSTED',
+        },
+      });
+      if (existing) {
+        throw new BadRequestException('Un paiement est deja enregistre pour cette seance');
+      }
+    }
+
     const effectiveDate = dto.effectiveDate ? new Date(dto.effectiveDate) : new Date();
     const entry = await this.prisma.$transaction((tx) =>
       this.postEntry(tx, {
@@ -406,6 +426,7 @@ export class AccountingService {
         amount: dto.amount,
         effectiveDate,
         authorId: teacherId,
+        sessionId: dto.sessionId,
         paymentMethod: dto.paymentMethod,
       }),
     );
@@ -422,6 +443,96 @@ export class AccountingService {
     await this.checkBalanceAlerts(account, entry.id);
 
     return this.toEntryView(entry);
+  }
+
+  // --- Vue Professeur "séance par séance" — miroir de AttendanceService.list/setOne (Ch.14) -----
+
+  private async loadOwnedSession(teacherId: string, sessionId: string) {
+    const session = await this.prisma.session.findUnique({
+      where: { id: sessionId },
+      include: { group: { select: { id: true, teacherId: true, publicPrice: true } } },
+    });
+    if (!session) {
+      throw new NotFoundException('Séance introuvable');
+    }
+    if (session.group.teacherId !== teacherId) {
+      throw new ForbiddenException("Cette séance n'appartient pas à votre compte");
+    }
+    return session;
+  }
+
+  /**
+   * Ch.16 : un paiement, comme une présence, se saisit séance par séance — cette vue liste les
+   * inscriptions ACTIVE du groupe de la séance avec, pour chacune, si la séance a été facturée
+   * (écriture SESSION postée, donc présence validée et facturable) et si elle est déjà réglée.
+   */
+  async listSessionPayments(teacherId: string, sessionId: string) {
+    const session = await this.loadOwnedSession(teacherId, sessionId);
+
+    const [enrollments, sessionEntries, paymentEntries] = await Promise.all([
+      this.prisma.enrollment.findMany({
+        where: { groupId: session.groupId, status: 'ACTIVE' },
+        include: { student: { select: { id: true, firstName: true, lastName: true } } },
+        orderBy: { student: { lastName: 'asc' } },
+      }),
+      this.prisma.accountingEntry.findMany({
+        where: { sessionId, type: 'SESSION', status: { not: 'CREATED' } },
+        include: { account: { select: { enrollmentId: true } } },
+      }),
+      this.prisma.accountingEntry.findMany({
+        where: { sessionId, type: 'PAYMENT', direction: 'CREDIT', status: 'POSTED' },
+        include: { account: { select: { enrollmentId: true } } },
+      }),
+    ]);
+
+    const invoicedByEnrollment = new Map(sessionEntries.map((e) => [e.account.enrollmentId, e]));
+    const paymentByEnrollment = new Map(paymentEntries.map((e) => [e.account.enrollmentId, e]));
+
+    return {
+      session: {
+        id: session.id,
+        groupId: session.groupId,
+        date: session.date,
+        startTime: session.startTime,
+        status: session.status,
+      },
+      entries: enrollments.map((e) => {
+        const invoiced = invoicedByEnrollment.get(e.id);
+        const payment = paymentByEnrollment.get(e.id);
+        return {
+          enrollmentId: e.id,
+          student: e.student,
+          rate: Number(e.customPrice ?? session.group.publicPrice),
+          invoiced: !!invoiced,
+          invoicedAmount: invoiced ? Number(invoiced.amount) : null,
+          payment: payment
+            ? {
+                entryId: payment.id,
+                amount: Number(payment.amount),
+                paymentMethod: payment.paymentMethod,
+                effectiveDate: payment.effectiveDate,
+              }
+            : null,
+        };
+      }),
+    };
+  }
+
+  /** Résout l'inscription à partir de l'élève et de la séance, puis délègue à `recordPayment`. */
+  async recordSessionPayment(
+    teacherId: string,
+    sessionId: string,
+    studentId: string,
+    dto: RecordSessionPaymentDto,
+  ) {
+    const session = await this.loadOwnedSession(teacherId, sessionId);
+    const enrollment = await this.prisma.enrollment.findFirst({
+      where: { groupId: session.groupId, studentId, status: 'ACTIVE' },
+    });
+    if (!enrollment) {
+      throw new BadRequestException('Élève non inscrit activement à ce groupe (ERR-CPT-009)');
+    }
+    return this.recordPayment(teacherId, enrollment.id, { ...dto, sessionId });
   }
 
   private async loadReversibleOwnPayment(
@@ -459,6 +570,7 @@ export class AccountingService {
         amount: Number(original.amount),
         effectiveDate,
         authorId: teacherId,
+        sessionId: original.sessionId ?? undefined,
         reversesEntryId: original.id,
         reasonNote: `Correction de l'écriture ${original.entryNumber}`,
       });
@@ -470,6 +582,7 @@ export class AccountingService {
         amount: dto.amount,
         effectiveDate,
         authorId: teacherId,
+        sessionId: original.sessionId ?? undefined,
         paymentMethod: original.paymentMethod ?? undefined,
         reasonNote: dto.reasonNote,
       });
@@ -504,6 +617,7 @@ export class AccountingService {
         amount: Number(original.amount),
         effectiveDate: new Date(),
         authorId: teacherId,
+        sessionId: original.sessionId ?? undefined,
         reversesEntryId: original.id,
         reasonNote: `Annulation de l'écriture ${original.entryNumber}`,
       });
@@ -1030,7 +1144,7 @@ export class AccountingService {
       averageCollectionDelayDays: averageDelay !== null ? round3(averageDelay) : null,
       bestCollectionMonth: bestMonth,
       worstCollectionMonth: worstMonth,
-      /** Proportion des comptes ayant déjà été débiteurs et actuellement régularisés (solde ≥ 0). */
+      /** Proportion des comptes ayant déjà été débiteurs et actuellement régularisés (solde = 0). */
       debtRegularizationRate: everDebtorCount > 0 ? round3((regularizedDebtors / everDebtorCount) * 100) : null,
     };
   }
@@ -1107,6 +1221,47 @@ export class AccountingService {
     };
   }
 
+  /** Vue Professeur "Paiements" : une ligne par compte eleve, avec statut paye / a payer / avance. */
+  async listTeacherAccounts(teacherId: string, groupId?: string) {
+    if (groupId) {
+      const group = await this.prisma.group.findUnique({ where: { id: groupId } });
+      if (!group) throw new NotFoundException('Groupe introuvable');
+      if (group.teacherId !== teacherId) {
+        throw new ForbiddenException("Ce groupe n'appartient pas a votre compte");
+      }
+    }
+
+    const accounts = await this.prisma.accountingAccount.findMany({
+      where: {
+        enrollment: {
+          ...(groupId ? { groupId } : {}),
+          group: { teacherId },
+        },
+      },
+      include: ACCOUNT_INCLUDE,
+      orderBy: [{ enrollment: { group: { name: 'asc' } } }, { enrollment: { student: { lastName: 'asc' } } }],
+    });
+
+    return Promise.all(
+      accounts.map(async (raw) => {
+        const account = await this.ensureAccountCurrent(raw);
+        const indicators = await this.computeAccountIndicators(account);
+        const currentBalance = indicators.currentBalance;
+        return {
+          account: this.toAccountView(account),
+          currentBalance,
+          paidAmount: indicators.paidAmount,
+          invoicedAmount: indicators.invoicedAmount,
+          remainingToPay: indicators.remainingToPay,
+          paymentCount: indicators.paymentCount,
+          lastPaymentAmount: indicators.lastPaymentAmount,
+          lastPaymentDate: indicators.lastPaymentDate,
+          paymentRate: indicators.paymentRate,
+          status: currentBalance < 0 ? 'TO_PAY' : currentBalance > 0 ? 'CREDIT' : 'PAID',
+        };
+      }),
+    );
+  }
   /**
    * Ch.16.3 "Paiements" : comptes en solde négatif (Parents en retard de paiement), triés du plus
    * débiteur au moins débiteur. Réutilise `computeBalance`/`ACCOUNT_INCLUDE` plutôt que de

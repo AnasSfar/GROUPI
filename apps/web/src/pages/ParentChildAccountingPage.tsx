@@ -75,18 +75,18 @@ export function ParentChildAccountingPage() {
                 {accounts.map((account) => (
                   <Fragment key={account.id}>
                     <tr>
-                      <td>{account.group.name}</td>
-                      <td>{account.group.subject.name}</td>
-                      <td>
+                      <td data-label="Groupe">{account.group.name}</td>
+                      <td data-label="Matière">{account.group.subject.name}</td>
+                      <td data-label="Professeur">
                         {account.group.teacher.firstName} {account.group.teacher.lastName}
                       </td>
-                      <td>{formatAmount(account.rate)}</td>
-                      <td>
+                      <td data-label="Tarif">{formatAmount(account.rate)}</td>
+                      <td data-label="Solde actuel">
                         <span className={`badge ${account.currentBalance < 0 ? 'badge-danger' : 'badge-success'}`}>
                           {formatAmount(account.currentBalance)}
                         </span>
                       </td>
-                      <td>
+                      <td data-label="Détail">
                         <button
                           type="button"
                           className="ghost-link"

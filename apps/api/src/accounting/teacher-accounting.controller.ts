@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { AccountingService } from './accounting.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -13,6 +13,11 @@ import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 @Roles(Role.TEACHER)
 export class TeacherAccountingController {
   constructor(private readonly service: AccountingService) {}
+
+  @Get('accounts')
+  listAccounts(@CurrentUser() user: AuthenticatedUser, @Query('groupId') groupId?: string) {
+    return this.service.listTeacherAccounts(user.id, groupId);
+  }
 
   @Get('indicators')
   getIndicators(@CurrentUser() user: AuthenticatedUser) {

@@ -167,15 +167,15 @@ export function ParentSchoolRequestsPage() {
               <tbody>
                 {requests.map((request) => (
                   <tr key={request.id}>
-                    <td>{request.name}</td>
-                    <td>{TYPE_LABELS[request.type] ?? request.type}</td>
-                    <td>{request.city.name}</td>
-                    <td>
+                    <td data-label="Établissement">{request.name}</td>
+                    <td data-label="Type">{TYPE_LABELS[request.type] ?? request.type}</td>
+                    <td data-label="Ville">{request.city.name}</td>
+                    <td data-label="Statut">
                       <span className={`badge ${STATUS_BADGE[request.status]}`}>
                         {STATUS_LABEL[request.status]}
                       </span>
                     </td>
-                    <td className="table-hint">
+                    <td className="table-hint" data-label="Détail">
                       {request.status === 'REJECTED' && request.rejectionReason}
                       {request.status === 'APPROVED' && request.createdSchool && 'Ajouté au référentiel'}
                       {request.status === 'PENDING' && 'En cours d’examen par un administrateur'}

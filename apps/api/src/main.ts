@@ -1,3 +1,6 @@
+import { initSentry } from './instrumentation';
+initSentry();
+
 import { createApp } from './create-app';
 
 async function bootstrap() {

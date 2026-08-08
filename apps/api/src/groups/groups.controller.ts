@@ -70,6 +70,12 @@ export class GroupsController {
     return this.service.archive(user.id, id);
   }
 
+  @Post(':id/reactivate')
+  @Roles(Role.TEACHER)
+  reactivate(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.service.reactivate(user.id, id);
+  }
+
   @Delete(':id')
   @Roles(Role.TEACHER)
   remove(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {

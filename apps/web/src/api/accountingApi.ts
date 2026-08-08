@@ -85,6 +85,7 @@ export interface RecordPaymentPayload {
   amount: number;
   paymentMethod?: string;
   effectiveDate?: string;
+  sessionId?: string;
 }
 
 export function recordPayment(
@@ -173,6 +174,26 @@ export function getTeacherIndicators(accessToken: string): Promise<TeacherAccoun
   return apiRequest<TeacherAccountingIndicators>('/teacher/accounting/indicators', { accessToken });
 }
 
+export type TeacherAccountPaymentStatus = 'TO_PAY' | 'PAID' | 'CREDIT';
+
+export interface TeacherAccountSummary {
+  account: AccountingAccountView;
+  currentBalance: number;
+  paidAmount: number;
+  invoicedAmount: number;
+  remainingToPay: number;
+  paymentCount: number;
+  lastPaymentAmount: number | null;
+  lastPaymentDate: string | null;
+  paymentRate: number | null;
+  status: TeacherAccountPaymentStatus;
+}
+
+export function listTeacherAccounts(accessToken: string, groupId?: string): Promise<TeacherAccountSummary[]> {
+  const query = groupId ? `?groupId=${encodeURIComponent(groupId)}` : '';
+  return apiRequest<TeacherAccountSummary[]>(`/teacher/accounting/accounts${query}`, { accessToken });
+}
+
 export interface GroupAccountingIndicators {
   billedSessionCount: number;
   totalInvoiced: number;
@@ -199,6 +220,42 @@ export interface GroupAccountingIndicators {
 
 export function getGroupIndicators(accessToken: string, groupId: string): Promise<GroupAccountingIndicators> {
   return apiRequest<GroupAccountingIndicators>(`/groups/${groupId}/accounting/indicators`, { accessToken });
+}
+
+export interface SessionPaymentEntry {
+  enrollmentId: string;
+  student: { id: string; firstName: string; lastName: string };
+  rate: number;
+  invoiced: boolean;
+  invoicedAmount: number | null;
+  payment: { entryId: string; amount: number; paymentMethod: string | null; effectiveDate: string } | null;
+}
+
+export interface SessionPaymentsView {
+  session: { id: string; groupId: string; date: string; startTime: string; status: string };
+  entries: SessionPaymentEntry[];
+}
+
+export function getSessionPayments(accessToken: string, sessionId: string): Promise<SessionPaymentsView> {
+  return apiRequest<SessionPaymentsView>(`/sessions/${sessionId}/payments`, { accessToken });
+}
+
+export interface RecordSessionPaymentPayload {
+  amount: number;
+  paymentMethod?: string;
+}
+
+export function recordSessionPayment(
+  accessToken: string,
+  sessionId: string,
+  studentId: string,
+  payload: RecordSessionPaymentPayload,
+): Promise<AccountingEntry> {
+  return apiRequest<AccountingEntry>(`/sessions/${sessionId}/payments/${studentId}`, {
+    method: 'POST',
+    accessToken,
+    body: payload,
+  });
 }
 
 export function getParentChildSummary(

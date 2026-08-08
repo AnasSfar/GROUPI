@@ -3,3 +3,6 @@ dist/
 .env
 apps/*/generated/
 .claude/worktrees/
+
+.vercel
+.env*

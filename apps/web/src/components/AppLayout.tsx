@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import * as notificationsApi from '../api/notificationsApi';
+import * as teacherProfileApi from '../api/teacherProfileApi';
+import type { TeacherProfile } from '../api/teacherProfileApi';
 import {
   IconGauge,
   IconBell,
@@ -51,6 +53,7 @@ export function AppLayout() {
   const { currentUser, logout, getAccessToken } = useAuth();
   const navigate = useNavigate();
   const [unreadCount, setUnreadCount] = useState(0);
+  const [teacherProfile, setTeacherProfile] = useState<TeacherProfile | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,19 +77,56 @@ export function AppLayout() {
 
   async function handleLogout() {
     await logout();
-    navigate('/login', { replace: true });
+    navigate('/', { replace: true });
   }
 
   const isAdmin = currentUser?.roles.includes('SUPER_ADMIN') || currentUser?.roles.includes('ADMIN');
   const isTeacher = currentUser?.roles.includes('TEACHER');
   const isParent = currentUser?.roles.includes('PARENT');
   const workspaceLabel = compactRoles(currentUser?.roles);
+  const teacherDisplayName = teacherProfile
+    ? `${teacherProfile.firstName} ${teacherProfile.lastName}`.trim()
+    : null;
+  const identityInitials =
+    teacherDisplayName
+      ?.split(/\s+/)
+      .map((part) => part[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase() ||
+    currentUser?.email?.slice(0, 2).toUpperCase() ||
+    '?';
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadTeacherIdentity() {
+      if (!isTeacher) {
+        setTeacherProfile(null);
+        return;
+      }
+      const token = getAccessToken();
+      if (!token) return;
+      try {
+        const profile = await teacherProfileApi.getMyProfile(token);
+        if (!cancelled) setTeacherProfile(profile);
+      } catch {
+        if (!cancelled) setTeacherProfile(null);
+      }
+    }
+    loadTeacherIdentity();
+    return () => {
+      cancelled = true;
+    };
+  }, [getAccessToken, isTeacher]);
 
   const sections = useMemo<NavSection[]>(() => {
     const result: NavSection[] = [
       {
         title: 'Accueil',
-        items: [{ to: '/dashboard', icon: <IconGauge />, label: 'Tableau de bord' }],
+        items: [
+          { to: '/dashboard', icon: <IconGauge />, label: 'Tableau de bord' },
+          { to: '/notifications', icon: <IconBell />, label: 'Notifications', badge: unreadCount },
+        ],
       },
     ];
 
@@ -94,13 +134,14 @@ export function AppLayout() {
       result.push({
         title: 'Professeur',
         items: [
-          { to: '/teacher/profile', icon: <IconBookOpen />, label: 'Mon profil' },
+          { to: '/teacher/profile', icon: <IconBookOpen />, label: 'Profil & compte' },
           { to: '/teacher/groups', icon: <IconLayers />, label: 'Mes groupes' },
+          { to: '/teacher/sessions', icon: <IconCalendarCheck />, label: 'Mes seances' },
           { to: '/teacher/enrollments', icon: <IconClipboardCheck />, label: 'Inscriptions' },
-          { to: '/teacher/pre-enrollments', icon: <IconUserPlus />, label: 'Préinscriptions' },
-          { to: '/teacher/accounting', icon: <IconWallet />, label: 'Comptabilité' },
-          { to: '/teacher/exports', icon: <IconDownload />, label: 'Exports' },
+          { to: '/teacher/accounting', icon: <IconWallet />, label: 'Paiements' },
           { to: '/teacher/subscription', icon: <IconCreditCard />, label: 'Abonnement' },
+          { to: '/teacher/pre-enrollments', icon: <IconUserPlus />, label: 'Préinscriptions' },
+          { to: '/teacher/exports', icon: <IconDownload />, label: 'Exports' },
         ],
       });
     }
@@ -135,13 +176,10 @@ export function AppLayout() {
 
     result.push({
       title: 'Suivi',
-      items: [
-        { to: '/notifications', icon: <IconBell />, label: 'Notifications', badge: unreadCount },
-        { to: '/account', icon: <IconUserCheck />, label: 'Mon compte' },
-      ],
+      items: isTeacher ? [] : [{ to: '/account', icon: <IconUserCheck />, label: 'Mon compte' }],
     });
 
-    return result;
+    return result.filter((section) => section.items.length > 0);
   }, [isAdmin, isParent, isTeacher, unreadCount]);
 
   return (
@@ -184,9 +222,20 @@ export function AppLayout() {
       </aside>
       <main className="app-main">
         <div className="workspace-bar">
-          <div>
-            <span className="workspace-eyebrow">Espace {workspaceLabel}</span>
-            {currentUser && <span className="workspace-email">{currentUser.email}</span>}
+          <div className="workspace-identity">
+            {teacherProfile?.photo ? (
+              <img src={teacherProfile.photo} alt="" className="workspace-avatar" />
+            ) : (
+              <span className="workspace-avatar workspace-avatar-fallback">{identityInitials}</span>
+            )}
+            <div>
+              <span className="workspace-eyebrow">Espace {workspaceLabel}</span>
+              {currentUser && (
+                <span className="workspace-email">
+                  {teacherDisplayName ? `${teacherDisplayName} - ${currentUser.email}` : currentUser.email}
+                </span>
+              )}
+            </div>
           </div>
           <Link to="/notifications" className="workspace-notifications">
             <IconBell width={15} height={15} />

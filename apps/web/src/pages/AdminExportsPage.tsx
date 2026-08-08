@@ -181,11 +181,11 @@ export function AdminExportsPage() {
               <tbody>
                 {jobs.map((job) => (
                   <tr key={job.id}>
-                    <td>{job.fileName ?? '—'}</td>
-                    <td>
+                    <td data-label="Fichier">{job.fileName ?? '—'}</td>
+                    <td data-label="Statut">
                       <span className={`badge ${STATUS_BADGE[job.status]}`}>{STATUS_LABELS[job.status]}</span>
                     </td>
-                    <td>{new Date(job.createdAt).toLocaleString('fr-FR')}</td>
+                    <td data-label="Généré le">{new Date(job.createdAt).toLocaleString('fr-FR')}</td>
                     <td className="admin-actions">
                       {job.status === 'READY' ? (
                         <button type="button" onClick={() => handleDownload(job)}>
@@ -222,10 +222,10 @@ export function AdminExportsPage() {
               <tbody>
                 {gdprQueue.map((req) => (
                   <tr key={req.id}>
-                    <td>{req.user?.email ?? '—'}</td>
-                    <td>{new Date(req.requestedAt).toLocaleDateString('fr-FR')}</td>
-                    <td>{new Date(req.dueAt).toLocaleDateString('fr-FR')}</td>
-                    <td>
+                    <td data-label="Utilisateur">{req.user?.email ?? '—'}</td>
+                    <td data-label="Demandée le">{new Date(req.requestedAt).toLocaleDateString('fr-FR')}</td>
+                    <td data-label="À traiter avant le">{new Date(req.dueAt).toLocaleDateString('fr-FR')}</td>
+                    <td data-label="Statut">
                       <span className={`badge ${req.status === 'FULFILLED' ? 'badge-success' : 'badge-warning'}`}>
                         {req.status === 'FULFILLED' ? 'Traitée' : 'En attente'}
                       </span>
@@ -268,16 +268,16 @@ export function AdminExportsPage() {
               <tbody>
                 {journal.map((entry) => (
                   <tr key={entry.id}>
-                    <td>{entry.user.email}</td>
-                    <td>{entry.type}</td>
-                    <td>{FORMAT_LABELS[entry.format]}</td>
-                    <td>
+                    <td data-label="Utilisateur">{entry.user.email}</td>
+                    <td data-label="Type">{entry.type}</td>
+                    <td data-label="Format">{FORMAT_LABELS[entry.format]}</td>
+                    <td data-label="Résultat">
                       <span className={`badge ${OUTCOME_BADGE[entry.outcome] ?? 'badge-neutral'}`}>
                         {OUTCOME_LABELS[entry.outcome] ?? entry.outcome}
                       </span>
                       {entry.refusalReason && <span className="table-hint"> — {entry.refusalReason}</span>}
                     </td>
-                    <td>{new Date(entry.createdAt).toLocaleString('fr-FR')}</td>
+                    <td data-label="Date">{new Date(entry.createdAt).toLocaleString('fr-FR')}</td>
                   </tr>
                 ))}
               </tbody>

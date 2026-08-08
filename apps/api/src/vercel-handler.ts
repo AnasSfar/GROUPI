@@ -1,3 +1,6 @@
+import { initSentry } from './instrumentation';
+initSentry();
+
 import * as express from 'express';
 import type { Express, Request, Response } from 'express';
 import { createApp } from './create-app';

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Select } from '../components/Select';
+import { useToast } from '../components/Toast';
 import { ApiError } from '../api/client';
 import * as notificationsApi from '../api/notificationsApi';
 import type { Activity, ActivityPriority } from '../api/notificationsApi';
@@ -24,6 +25,7 @@ function formatDateTime(iso: string): string {
 /** Ch.18.3 : centre d'activités personnel — historique chronologique, plus récent d'abord. */
 export function NotificationsPage() {
   const { getAccessToken } = useAuth();
+  const { showToast } = useToast();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +55,7 @@ export function NotificationsPage() {
     try {
       const updated = await notificationsApi.markRead(token, id);
       setActivities((prev) => prev.map((a) => (a.id === id ? updated : a)));
+      showToast('Marqué comme lu');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Le marquage comme lu a échoué.');
     }
@@ -63,6 +66,7 @@ export function NotificationsPage() {
     if (!token) return;
     try {
       await notificationsApi.markAllRead(token);
+      showToast('Toutes les activités ont été marquées comme lues');
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Le marquage comme lu a échoué.');

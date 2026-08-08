@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Select } from '../components/Select';
+import { useToast } from '../components/Toast';
 import { ApiError } from '../api/client';
 import * as groupsApi from '../api/groupsApi';
 import * as attendanceApi from '../api/attendanceApi';
@@ -65,10 +66,10 @@ function AttendanceRow({
 
   return (
     <tr>
-      <td>
+      <td data-label="Élève">
         {entry.student.firstName} {entry.student.lastName}
       </td>
-      <td>
+      <td data-label="Statut">
         <Select value={status} onChange={(e) => setStatus(e.target.value as AttendanceStatus)} disabled={locked}>
           {STATUS_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>
@@ -77,7 +78,7 @@ function AttendanceRow({
           ))}
         </Select>
       </td>
-      <td>
+      <td data-label="Retard">
         {status === 'LATE' && (
           <input
             type="number"
@@ -90,7 +91,7 @@ function AttendanceRow({
           />
         )}
       </td>
-      <td>
+      <td data-label="Commentaire">
         <input
           type="text"
           placeholder="Commentaire (optionnel)"
@@ -99,7 +100,7 @@ function AttendanceRow({
           disabled={locked}
         />
       </td>
-      <td>
+      <td data-label="État">
         {entry.attendance ? (
           <span className={`badge ${STATUS_BADGE[entry.attendance.status]}`}>{entry.attendance.statusLabel}</span>
         ) : (
@@ -128,6 +129,7 @@ function AttendanceRow({
 export function TeacherAttendancePage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const { getAccessToken } = useAuth();
+  const { showToast } = useToast();
   const [view, setView] = useState<SessionAttendanceView | null>(null);
   const [group, setGroup] = useState<Group | null>(null);
   const [alerts, setAlerts] = useState<AbandonmentAlert[]>([]);
@@ -174,6 +176,7 @@ export function TeacherAttendancePage() {
         lateDuration: status === 'LATE' && lateDuration ? Number(lateDuration) : undefined,
         comment: comment || undefined,
       });
+      showToast('Présence enregistrée');
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Enregistrement impossible.');
@@ -187,6 +190,7 @@ export function TeacherAttendancePage() {
     setNotice(null);
     try {
       await attendanceApi.resetAttendance(token, sessionId, studentId);
+      showToast('Présence réinitialisée');
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Impossible de réinitialiser cette présence.');
@@ -202,6 +206,7 @@ export function TeacherAttendancePage() {
       const result = await attendanceApi.validateAttendance(token, sessionId);
       setView(result);
       setNotice('Présences validées : la séance est marquée terminée.');
+      showToast('Présences validées');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Validation impossible.');
     }

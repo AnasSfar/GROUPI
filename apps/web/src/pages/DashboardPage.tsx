@@ -3,16 +3,17 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ApiError } from '../api/client';
 import * as dashboardApi from '../api/dashboardApi';
-import * as absenceNoticeApi from '../api/absenceNoticeApi';
 import type {
   TeacherDashboard,
   ParentDashboard,
-  ParentChildDashboard,
   AdminDashboard,
   GroupOccupancyView,
 } from '../api/dashboardApi';
 import { AlertList } from '../components/AlertList';
 import { EmptyState, LoadingState } from '../components/UiState';
+import { StatGrid } from '../components/StatGrid';
+import { ChildDetailCard } from '../components/ChildDetailCard';
+import { formatAmount, formatDateTime } from '../utils/format';
 import {
   IconUsers,
   IconBookOpen,
@@ -25,6 +26,7 @@ import {
   IconCreditCard,
   IconWallet,
   IconDownload,
+  IconAlertTriangle,
 } from '../components/icons';
 
 interface DashCard {
@@ -32,32 +34,6 @@ interface DashCard {
   icon: ReactNode;
   title: string;
   description: string;
-}
-
-function formatAmount(n: number): string {
-  return `${n.toFixed(3)} TND`;
-}
-
-function formatDateTime(date: string, startTime: string): string {
-  return `${new Date(date).toLocaleDateString('fr-FR')} à ${startTime}`;
-}
-
-interface StatTile {
-  label: string;
-  value: string;
-}
-
-function StatGrid({ tiles }: { tiles: StatTile[] }) {
-  return (
-    <div className="card-grid stat-grid">
-      {tiles.map((tile) => (
-        <div key={tile.label} className="card-section stat-tile">
-          <p className="table-hint">{tile.label}</p>
-          <p className="stat-value">{tile.value}</p>
-        </div>
-      ))}
-    </div>
-  );
 }
 
 const GROUP_CATEGORY_BADGE: Record<GroupOccupancyView['category'], string> = {
@@ -75,6 +51,14 @@ const GROUP_CATEGORY_LABEL: Record<GroupOccupancyView['category'], string> = {
   NORMAL: 'Normal',
   OTHER: '—',
 };
+
+function canOpenAttendance(status: string): boolean {
+  return status === 'PLANNED' || status === 'COMPLETED' || status === 'LOCKED';
+}
+
+function attendanceActionLabel(status: string): string {
+  return status === 'PLANNED' ? "Faire l'appel" : "Voir l'appel";
+}
 
 function TeacherDashboardView({ data, onRefresh }: { data: TeacherDashboard; onRefresh: () => void }) {
   void onRefresh;
@@ -95,26 +79,50 @@ function TeacherDashboardView({ data, onRefresh }: { data: TeacherDashboard; onR
 
       <section className="card-section">
         <h2>Activité</h2>
+        {data.activity.todaysSessions.length > 0 && (
+          <>
+            <p className="table-hint section-spacer">Aujourd'hui</p>
+            <ul className="activity-list">
+              {data.activity.todaysSessions.map((s) => (
+                <li key={s.id} className="activity-item activity-row attendance-shortcut-row">
+                  <span className="activity-row-dot tone-amber" />
+                  <p>{s.group.name}</p>
+                  <span className="activity-row-value">{formatDateTime(s.date, s.startTime)}</span>
+                  {canOpenAttendance(s.status) && (
+                    <>
+                      <Link className="attendance-shortcut" to={`/teacher/sessions/${s.id}/attendance`}>
+                        <IconClipboardCheck aria-hidden="true" />
+                        {attendanceActionLabel(s.status)}
+                      </Link>
+                      <Link className="attendance-shortcut" to={`/teacher/enrollments?groupId=${s.group.id}&paymentSessionId=${s.id}`}>
+                        <IconCreditCard aria-hidden="true" />
+                        Saisir les paiements
+                      </Link>
+                    </>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
         <StatGrid
           tiles={[
-            { label: 'Groupes actifs', value: String(data.activity.activeGroupsCount) },
-            { label: 'Élèves inscrits', value: String(data.activity.totalActiveStudents) },
-            { label: "Séances aujourd'hui", value: String(data.activity.todaysSessions.length) },
-            { label: "Demandes d'inscription en attente", value: String(data.activity.pendingEnrollmentsCount) },
-            { label: 'Changements de groupe en attente', value: String(data.activity.pendingGroupChangesCount) },
+            { label: 'Groupes actifs', value: String(data.activity.activeGroupsCount), icon: <IconLayers />, tone: 'teal' },
+            { label: 'Élèves inscrits', value: String(data.activity.totalActiveStudents), icon: <IconUsers />, tone: 'info' },
+            { label: "Séances aujourd'hui", value: String(data.activity.todaysSessions.length), icon: <IconCalendarCheck />, tone: 'teal' },
+            { label: "Demandes d'inscription en attente", value: String(data.activity.pendingEnrollmentsCount), icon: <IconUserPlus />, tone: 'amber' },
+            { label: 'Changements de groupe en attente', value: String(data.activity.pendingGroupChangesCount), icon: <IconLayers />, tone: 'amber' },
           ]}
         />
         {data.activity.upcomingSessions.length > 0 && (
           <>
-            <p className="table-hint section-spacer">
-              Prochaines séances
-            </p>
+            <p className="table-hint section-spacer">Prochaines séances</p>
             <ul className="activity-list">
               {data.activity.upcomingSessions.slice(0, 5).map((s) => (
-                <li key={s.id} className="activity-item">
-                  <p>
-                    {s.group.name} — {formatDateTime(s.date, s.startTime)}
-                  </p>
+                <li key={s.id} className="activity-item activity-row">
+                  <span className="activity-row-dot" />
+                  <p>{s.group.name}</p>
+                  <span className="activity-row-value">{formatDateTime(s.date, s.startTime)}</span>
                 </li>
               ))}
             </ul>
@@ -126,9 +134,9 @@ function TeacherDashboardView({ data, onRefresh }: { data: TeacherDashboard; onR
         <h2>Présences</h2>
         <StatGrid
           tiles={[
-            { label: "Absences aujourd'hui", value: String(data.presences.absencesToday) },
-            { label: "Retards aujourd'hui", value: String(data.presences.latesToday) },
-            { label: "Élèves à risque d'abandon", value: String(data.presences.abandonmentAlerts.length) },
+            { label: "Absences aujourd'hui", value: String(data.presences.absencesToday), icon: <IconClipboardCheck />, tone: 'red' },
+            { label: "Retards aujourd'hui", value: String(data.presences.latesToday), icon: <IconClipboardCheck />, tone: 'amber' },
+            { label: "Élèves à risque d'abandon", value: String(data.presences.abandonmentAlerts.length), icon: <IconAlertTriangle />, tone: 'red' },
           ]}
         />
         {data.presences.abandonmentAlerts.length > 0 && (
@@ -150,12 +158,12 @@ function TeacherDashboardView({ data, onRefresh }: { data: TeacherDashboard; onR
         <h2>Comptabilité</h2>
         <StatGrid
           tiles={[
-            { label: 'CA prévisionnel', value: formatAmount(data.accounting.forecastRevenue) },
-            { label: 'CA réalisé', value: formatAmount(data.accounting.realizedRevenue) },
-            { label: 'CA encaissé', value: formatAmount(data.accounting.collectedRevenue) },
-            { label: 'Restant à encaisser', value: formatAmount(data.accounting.receivableRevenue) },
-            { label: 'Comptes débiteurs', value: String(data.accounting.debtorAccountCount) },
-            { label: 'Comptes créditeurs', value: String(data.accounting.creditorAccountCount) },
+            { label: 'CA prévisionnel', value: formatAmount(data.accounting.forecastRevenue), icon: <IconWallet />, tone: 'teal' },
+            { label: 'CA réalisé', value: formatAmount(data.accounting.realizedRevenue), icon: <IconWallet />, tone: 'green' },
+            { label: 'CA encaissé', value: formatAmount(data.accounting.collectedRevenue), icon: <IconWallet />, tone: 'green' },
+            { label: 'Restant à encaisser', value: formatAmount(data.accounting.receivableRevenue), icon: <IconCreditCard />, tone: 'amber' },
+            { label: 'Comptes débiteurs', value: String(data.accounting.debtorAccountCount), icon: <IconUsers />, tone: 'red' },
+            { label: 'Comptes créditeurs', value: String(data.accounting.creditorAccountCount), icon: <IconUsers />, tone: 'green' },
           ]}
         />
         <p className="section-link">
@@ -180,11 +188,11 @@ function TeacherDashboardView({ data, onRefresh }: { data: TeacherDashboard; onR
               <tbody>
                 {data.payments.debtorAccounts.map((d) => (
                   <tr key={d.account.id}>
-                    <td>
+                    <td data-label="Élève">
                       {d.account.student.firstName} {d.account.student.lastName}
                     </td>
-                    <td>{d.account.group.name}</td>
-                    <td>
+                    <td data-label="Groupe">{d.account.group.name}</td>
+                    <td data-label="Solde">
                       <span className={`badge ${d.alert ? 'badge-danger' : 'badge-warning'}`}>{formatAmount(d.balance)}</span>
                     </td>
                   </tr>
@@ -200,11 +208,14 @@ function TeacherDashboardView({ data, onRefresh }: { data: TeacherDashboard; onR
             </p>
             <ul className="activity-list">
               {data.payments.recentPayments.slice(0, 5).map((p) => (
-                <li key={p.id} className="activity-item">
+                <li key={p.id} className="activity-item activity-row">
+                  <span className="activity-row-dot tone-green" />
                   <p>
-                    {p.account.student.firstName} {p.account.student.lastName} ({p.account.group.name}) —{' '}
-                    {formatAmount(p.amount)} le {new Date(p.effectiveDate).toLocaleDateString('fr-FR')}
+                    {p.account.student.firstName} {p.account.student.lastName} ({p.account.group.name})
                   </p>
+                  <span className="activity-row-value">
+                    {formatAmount(p.amount)} · {new Date(p.effectiveDate).toLocaleDateString('fr-FR')}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -227,14 +238,14 @@ function TeacherDashboardView({ data, onRefresh }: { data: TeacherDashboard; onR
             <tbody>
               {data.groups.map((g) => (
                 <tr key={g.id}>
-                  <td>{g.name}</td>
-                  <td>
+                  <td data-label="Groupe">{g.name}</td>
+                  <td data-label="Matière / Niveau">
                     {g.subject} — {g.schoolLevel}
                   </td>
-                  <td>
+                  <td data-label="Occupation">
                     {g.activeCount}/{g.capacity}
                   </td>
-                  <td>
+                  <td data-label="État">
                     <span className={`badge ${GROUP_CATEGORY_BADGE[g.category]}`}>{GROUP_CATEGORY_LABEL[g.category]}</span>
                   </td>
                 </tr>
@@ -246,7 +257,11 @@ function TeacherDashboardView({ data, onRefresh }: { data: TeacherDashboard; onR
 
       <section className="card-section">
         <h2>Profil</h2>
-        <StatGrid tiles={[{ label: 'Complétude du profil', value: `${data.profile.completenessScore}%` }]} />
+        <StatGrid
+          tiles={[
+            { label: 'Complétude du profil', value: `${data.profile.completenessScore}%`, icon: <IconBookOpen />, tone: 'teal' },
+          ]}
+        />
         {data.profile.missingFields.length > 0 && (
           <p className="table-hint">À compléter : {data.profile.missingFields.join(', ')}</p>
         )}
@@ -257,10 +272,10 @@ function TeacherDashboardView({ data, onRefresh }: { data: TeacherDashboard; onR
         {data.statistics.available ? (
           <StatGrid
             tiles={[
-              { label: "Taux d'assiduité moyen", value: data.statistics.averageAttendanceRate != null ? `${(data.statistics.averageAttendanceRate * 100).toFixed(1)}%` : '—' },
-              { label: 'CA du mois', value: formatAmount(data.statistics.revenueThisMonth ?? 0) },
-              { label: "CA de l'année", value: formatAmount(data.statistics.revenueThisYear ?? 0) },
-              { label: 'Meilleur mois', value: data.statistics.bestCollectionMonth ?? '—' },
+              { label: "Taux d'assiduité moyen", value: data.statistics.averageAttendanceRate != null ? `${(data.statistics.averageAttendanceRate * 100).toFixed(1)}%` : '—', icon: <IconClipboardCheck />, tone: 'green' },
+              { label: 'CA du mois', value: formatAmount(data.statistics.revenueThisMonth ?? 0), icon: <IconWallet />, tone: 'teal' },
+              { label: "CA de l'année", value: formatAmount(data.statistics.revenueThisYear ?? 0), icon: <IconWallet />, tone: 'teal' },
+              { label: 'Meilleur mois', value: data.statistics.bestCollectionMonth ?? '—', icon: <IconCalendarCheck />, tone: 'info' },
             ]}
           />
         ) : (
@@ -274,8 +289,8 @@ function TeacherDashboardView({ data, onRefresh }: { data: TeacherDashboard; onR
         <h2>Préinscriptions</h2>
         <StatGrid
           tiles={[
-            { label: 'Reçues', value: String(data.preEnrollments.receivedCount) },
-            { label: 'En attente de traitement', value: String(data.preEnrollments.pendingCount) },
+            { label: 'Reçues', value: String(data.preEnrollments.receivedCount), icon: <IconUserPlus />, tone: 'teal' },
+            { label: 'En attente de traitement', value: String(data.preEnrollments.pendingCount), icon: <IconUserPlus />, tone: 'amber' },
           ]}
         />
         {data.preEnrollments.mostRequestedSubjects.length > 0 && (
@@ -307,169 +322,6 @@ function TeacherDashboardView({ data, onRefresh }: { data: TeacherDashboard; onR
   );
 }
 
-function AbsenceNoticeButton({
-  sessionId,
-  studentId,
-  onReported,
-}: {
-  sessionId: string;
-  studentId: string;
-  onReported: () => void;
-}) {
-  const { getAccessToken } = useAuth();
-  const [open, setOpen] = useState(false);
-  const [reason, setReason] = useState('');
-  const [comment, setComment] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit() {
-    const token = getAccessToken();
-    if (!token) return;
-    setSaving(true);
-    setError(null);
-    try {
-      await absenceNoticeApi.createAbsenceNotice(token, sessionId, {
-        studentId,
-        reason: reason || undefined,
-        comment: comment || undefined,
-      });
-      setOpen(false);
-      onReported();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Signalement impossible.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  if (!open) {
-    return (
-      <button type="button" className="ghost" onClick={() => setOpen(true)}>
-        Signaler une absence
-      </button>
-    );
-  }
-
-  return (
-    <span className="add-row">
-      <input placeholder="Motif (optionnel)" value={reason} onChange={(e) => setReason(e.target.value)} />
-      <input placeholder="Commentaire (optionnel)" value={comment} onChange={(e) => setComment(e.target.value)} />
-      <button type="button" onClick={submit} disabled={saving}>
-        Confirmer
-      </button>
-      <button type="button" className="ghost" onClick={() => setOpen(false)}>
-        Annuler
-      </button>
-      {error && <span className="form-error">{error}</span>}
-    </span>
-  );
-}
-
-function ChildDashboardCard({
-  child,
-  showName,
-  onRefresh,
-}: {
-  child: ParentChildDashboard;
-  showName: boolean;
-  onRefresh: () => void;
-}) {
-  return (
-    <section className="card-section">
-      {showName && (
-        <h2>
-          {child.student.firstName} {child.student.lastName}
-        </h2>
-      )}
-      <StatGrid
-        tiles={[
-          { label: 'Groupes suivis', value: String(child.groups.length) },
-          { label: 'Solde global', value: formatAmount(child.globalBalance) },
-          { label: "Taux d'assiduité", value: child.attendanceSummary.attendanceRate != null ? `${(child.attendanceSummary.attendanceRate * 100).toFixed(1)}%` : '—' },
-        ]}
-      />
-
-      <p className="table-hint section-spacer">
-        Groupes suivis
-      </p>
-      <ul className="tag-list">
-        {child.groups.map((g) => (
-          <li key={g.enrollmentId} className="tag">
-            {g.group.name} — {g.group.subject} ({g.group.teacher.firstName} {g.group.teacher.lastName})
-          </li>
-        ))}
-      </ul>
-
-      {child.upcomingSessions.length > 0 && (
-        <>
-          <p className="table-hint section-spacer">
-            Prochaines séances
-          </p>
-          <ul className="activity-list">
-            {child.upcomingSessions.slice(0, 5).map((s) => (
-              <li key={s.id} className="activity-item">
-                <div className="activity-item-header">
-                  <span>
-                    {s.group.name} — {formatDateTime(s.date, s.startTime)}
-                  </span>
-                </div>
-                <p>
-                  {s.absenceReported ? (
-                    <span className="badge badge-info">Absence signalée</span>
-                  ) : s.canReportAbsence ? (
-                    <AbsenceNoticeButton sessionId={s.id} studentId={child.student.id} onReported={onRefresh} />
-                  ) : (
-                    <span className="table-hint">Délai de signalement dépassé</span>
-                  )}
-                </p>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-
-      {child.cancelledOrPostponedSessions.length > 0 && (
-        <div className="alert-banner">
-          <h3>Modifications de planning</h3>
-          <ul>
-            {child.cancelledOrPostponedSessions.map((s) => (
-              <li key={s.id}>
-                {s.group.name} — {formatDateTime(s.date, s.startTime)} ({s.status === 'CANCELLED' ? 'annulée' : 'reportée'})
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {child.recentComments.length > 0 && (
-        <>
-          <p className="table-hint section-spacer">
-            Derniers commentaires pédagogiques
-          </p>
-          <ul className="activity-list">
-            {child.recentComments.map((c) => (
-              <li key={c.id} className="activity-item">
-                <div className="activity-item-header">
-                  <strong>{c.groupName}</strong>
-                  <span className="activity-item-date">{new Date(c.createdAt).toLocaleDateString('fr-FR')}</span>
-                </div>
-                <p>{c.body}</p>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-
-      <p className="table-hint section-spacer">
-        <Link to={`/parent/children/${child.student.id}/attendance`}>Présences détaillées</Link>
-        {' · '}
-        <Link to={`/parent/children/${child.student.id}/accounting`}>Comptabilité détaillée</Link>
-      </p>
-    </section>
-  );
-}
-
 function ParentDashboardView({ data, onRefresh }: { data: ParentDashboard; onRefresh: () => void }) {
   return (
     <>
@@ -483,7 +335,7 @@ function ParentDashboardView({ data, onRefresh }: { data: ParentDashboard; onRef
         <EmptyState title="Aucun enfant actif déclaré">Ajoutez un enfant pour suivre ses inscriptions, présences et comptes.</EmptyState>
       )}
       {data.children.map((child) => (
-        <ChildDashboardCard key={child.student.id} child={child} showName={data.multipleChildren} onRefresh={onRefresh} />
+        <ChildDetailCard key={child.student.id} child={child} showName={data.multipleChildren} onRefresh={onRefresh} />
       ))}
     </>
   );
@@ -502,12 +354,12 @@ function AdminDashboardView({ data }: { data: AdminDashboard }) {
         <h2>Vue d'ensemble</h2>
         <StatGrid
           tiles={[
-            { label: 'Professeurs actifs', value: String(data.overview.activeTeacherCount) },
-            { label: 'Parents actifs', value: String(data.overview.activeParentCount) },
-            { label: 'Groupes actifs', value: String(data.overview.activeGroupCount) },
-            { label: 'Élèves actifs', value: String(data.overview.activeStudentCount) },
-            { label: 'Inscriptions actives', value: String(data.overview.activeEnrollmentCount) },
-            ...(data.totalAdminsCount !== undefined ? [{ label: 'Administrateurs', value: String(data.totalAdminsCount) }] : []),
+            { label: 'Professeurs actifs', value: String(data.overview.activeTeacherCount), icon: <IconBookOpen />, tone: 'teal' },
+            { label: 'Parents actifs', value: String(data.overview.activeParentCount), icon: <IconChildren />, tone: 'teal' },
+            { label: 'Groupes actifs', value: String(data.overview.activeGroupCount), icon: <IconLayers />, tone: 'info' },
+            { label: 'Élèves actifs', value: String(data.overview.activeStudentCount), icon: <IconUsers />, tone: 'info' },
+            { label: 'Inscriptions actives', value: String(data.overview.activeEnrollmentCount), icon: <IconClipboardCheck />, tone: 'green' },
+            ...(data.totalAdminsCount !== undefined ? [{ label: 'Administrateurs', value: String(data.totalAdminsCount), icon: <IconUsers />, tone: 'info' as const }] : []),
           ]}
         />
       </section>
@@ -516,10 +368,10 @@ function AdminDashboardView({ data }: { data: AdminDashboard }) {
         <h2>Référentiels</h2>
         <StatGrid
           tiles={[
-            { label: 'Matières actives', value: String(data.referentials.subjectCount) },
-            { label: 'Niveaux actifs', value: String(data.referentials.schoolLevelCount) },
-            { label: 'Établissements actifs', value: String(data.referentials.schoolCount) },
-            { label: 'Années académiques ouvertes', value: String(data.referentials.openAcademicYearCount) },
+            { label: 'Matières actives', value: String(data.referentials.subjectCount), icon: <IconBookOpen />, tone: 'teal' },
+            { label: 'Niveaux actifs', value: String(data.referentials.schoolLevelCount), icon: <IconLayers />, tone: 'teal' },
+            { label: 'Établissements actifs', value: String(data.referentials.schoolCount), icon: <IconSearch />, tone: 'teal' },
+            { label: 'Années académiques ouvertes', value: String(data.referentials.openAcademicYearCount), icon: <IconCalendarCheck />, tone: 'teal' },
           ]}
         />
       </section>
@@ -532,10 +384,10 @@ function AdminDashboardView({ data }: { data: AdminDashboard }) {
           ) : (
             <ul className="activity-list">
               {data.pendingAccountValidations.map((u) => (
-                <li key={u.id} className="activity-item">
-                  <p>
-                    {u.email} — {u.roles.join(', ')}
-                  </p>
+                <li key={u.id} className="activity-item activity-row">
+                  <span className="activity-row-dot tone-amber" />
+                  <p>{u.email}</p>
+                  <span className="activity-row-value">{u.roles.join(', ')}</span>
                 </li>
               ))}
             </ul>
@@ -549,7 +401,11 @@ function AdminDashboardView({ data }: { data: AdminDashboard }) {
       {data.pendingSchoolSituations && (
         <section className="card-section">
           <h2>Situations scolaires en attente</h2>
-          <StatGrid tiles={[{ label: 'En attente', value: String(data.pendingSchoolSituations.length) }]} />
+          <StatGrid
+            tiles={[
+              { label: 'En attente', value: String(data.pendingSchoolSituations.length), icon: <IconCalendarCheck />, tone: 'amber' },
+            ]}
+          />
           <p className="section-link">
             <Link to="/admin/school-situations">Traiter les demandes →</Link>
           </p>
@@ -561,10 +417,10 @@ function AdminDashboardView({ data }: { data: AdminDashboard }) {
           <h2>Abonnements</h2>
           <StatGrid
             tiles={[
-              { label: 'En attente de paiement', value: String(data.subscriptions.pendingPaymentCount) },
-              { label: 'Actifs', value: String(data.subscriptions.activeCount) },
-              { label: 'Suspendus', value: String(data.subscriptions.suspendedCount) },
-              { label: 'Expirés', value: String(data.subscriptions.expiredCount) },
+              { label: 'En attente de paiement', value: String(data.subscriptions.pendingPaymentCount), icon: <IconCreditCard />, tone: 'amber' },
+              { label: 'Actifs', value: String(data.subscriptions.activeCount), icon: <IconCreditCard />, tone: 'green' },
+              { label: 'Suspendus', value: String(data.subscriptions.suspendedCount), icon: <IconCreditCard />, tone: 'red' },
+              { label: 'Expirés', value: String(data.subscriptions.expiredCount), icon: <IconCreditCard />, tone: 'red' },
             ]}
           />
           <p className="section-link">
@@ -576,7 +432,11 @@ function AdminDashboardView({ data }: { data: AdminDashboard }) {
       {data.auditLog && (
         <section className="card-section">
           <h2>Journal d'audit</h2>
-          <StatGrid tiles={[{ label: "Total d'entrées", value: String(data.auditLog.totalCount) }]} />
+          <StatGrid
+            tiles={[
+              { label: "Total d'entrées", value: String(data.auditLog.totalCount), icon: <IconClipboardCheck />, tone: 'info' },
+            ]}
+          />
           <ul className="activity-list">
             {data.auditLog.recent.slice(0, 10).map((a) => (
               <li key={a.id} className="activity-item">
@@ -808,3 +668,5 @@ export function DashboardPage() {
     </>
   );
 }
+
+

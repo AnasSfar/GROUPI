@@ -133,17 +133,17 @@ export function AdminSchoolRequestsPage() {
             <tbody>
               {requests.map((request) => (
                 <tr key={request.id}>
-                  <td>
+                  <td data-label="Établissement">
                     {request.name}
                     {request.address && <div className="table-hint">{request.address}</div>}
                     {request.comment && <div className="table-hint">« {request.comment} »</div>}
                   </td>
-                  <td>{TYPE_LABELS[request.type] ?? request.type}</td>
-                  <td>{request.city.name}</td>
-                  <td>
+                  <td data-label="Type">{TYPE_LABELS[request.type] ?? request.type}</td>
+                  <td data-label="Ville">{request.city.name}</td>
+                  <td data-label="Parent">
                     {request.parent.firstName} {request.parent.lastName} ({request.parent.phone})
                   </td>
-                  <td>
+                  <td data-label="Statut">
                     {request.status === 'PENDING' && <span className="badge badge-warning">En attente</span>}
                     {request.status === 'APPROVED' && <span className="badge badge-success">Approuvée</span>}
                     {request.status === 'REJECTED' && (

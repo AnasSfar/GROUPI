@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useConfirm } from './ConfirmDialog';
 import { ApiError } from '../api/client';
 import * as conversationsApi from '../api/enrollmentConversationsApi';
 import type { EnrollmentComment } from '../api/enrollmentConversationsApi';
@@ -17,6 +18,7 @@ function formatDateTime(iso: string): string {
  */
 export function EnrollmentCommentThread({ enrollmentId }: { enrollmentId: string }) {
   const { currentUser, getAccessToken } = useAuth();
+  const confirm = useConfirm();
   const [comments, setComments] = useState<EnrollmentComment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +73,13 @@ export function EnrollmentCommentThread({ enrollmentId }: { enrollmentId: string
   async function handleDelete(commentId: string) {
     const token = getAccessToken();
     if (!token) return;
+    const ok = await confirm({
+      title: 'Supprimer ce commentaire ?',
+      message: 'Cette action est irréversible.',
+      confirmLabel: 'Supprimer',
+      danger: true,
+    });
+    if (!ok) return;
     setError(null);
     try {
       const updated = await conversationsApi.deleteComment(token, enrollmentId, commentId);

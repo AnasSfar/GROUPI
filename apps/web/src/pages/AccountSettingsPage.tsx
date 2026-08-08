@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../components/Toast';
 import { ApiError } from '../api/client';
 import * as authApi from '../api/authApi';
 
@@ -13,6 +14,7 @@ const ROLE_LABELS: Record<string, string> = {
 
 export function AccountSettingsPage() {
   const { currentUser, logout, getAccessToken } = useAuth();
+  const { showToast } = useToast();
   const navigate = useNavigate();
   const [confirming, setConfirming] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -28,6 +30,7 @@ export function AccountSettingsPage() {
     try {
       await authApi.resendVerificationEmail(token);
       setResent(true);
+      showToast('E-mail de vérification envoyé');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Impossible d'envoyer l'e-mail de vérification.");
     } finally {
@@ -43,7 +46,7 @@ export function AccountSettingsPage() {
     try {
       await authApi.deactivateMe(token);
       await logout();
-      navigate('/login', { replace: true });
+      navigate('/', { replace: true });
     } catch (err) {
       setSubmitting(false);
       setError(err instanceof ApiError ? err.message : 'Impossible de désactiver votre compte.');

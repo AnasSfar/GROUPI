@@ -118,15 +118,15 @@ export function ParentChildAttendancePage() {
               <tbody>
                 {entries.map((entry) => (
                   <tr key={entry.id}>
-                    <td>{new Date(entry.session.date).toLocaleDateString('fr-FR')}</td>
-                    <td>{entry.session.startTime}</td>
-                    <td>{entry.group.name}</td>
-                    <td>
+                    <td data-label="Date">{new Date(entry.session.date).toLocaleDateString('fr-FR')}</td>
+                    <td data-label="Heure">{entry.session.startTime}</td>
+                    <td data-label="Groupe">{entry.group.name}</td>
+                    <td data-label="Statut">
                       <span className={`badge ${STATUS_BADGE[entry.status] ?? 'badge-neutral'}`}>
                         {entry.statusLabel}
                       </span>
                     </td>
-                    <td>{entry.billable ? 'Facturée' : 'Non facturée'}</td>
+                    <td data-label="Facturation">{entry.billable ? 'Facturée' : 'Non facturée'}</td>
                   </tr>
                 ))}
               </tbody>

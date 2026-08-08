@@ -94,10 +94,10 @@ export function AdminAcademicYearsPage() {
               <tbody>
                 {years.map((year) => (
                   <tr key={year.id}>
-                    <td>{year.label}</td>
-                    <td>{new Date(year.startDate).toLocaleDateString('fr-FR')}</td>
-                    <td>{new Date(year.endDate).toLocaleDateString('fr-FR')}</td>
-                    <td>
+                    <td data-label="Libellé">{year.label}</td>
+                    <td data-label="Début">{new Date(year.startDate).toLocaleDateString('fr-FR')}</td>
+                    <td data-label="Fin">{new Date(year.endDate).toLocaleDateString('fr-FR')}</td>
+                    <td data-label="Statut">
                       <span className={`badge ${year.status === 'OPEN' ? 'badge-success' : 'badge-neutral'}`}>
                         {year.status === 'OPEN' ? 'Ouverte' : 'Clôturée'}
                       </span>

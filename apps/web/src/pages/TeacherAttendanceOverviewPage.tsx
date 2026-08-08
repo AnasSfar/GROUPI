@@ -136,15 +136,15 @@ export function TeacherAttendanceOverviewPage() {
               <tbody>
                 {stats.map((s) => (
                   <tr key={s.student.id}>
-                    <td>
+                    <td data-label="Élève">
                       {s.student.firstName} {s.student.lastName}
                     </td>
-                    <td>{s.totalSessions}</td>
-                    <td>{s.present}</td>
-                    <td>{s.late}</td>
-                    <td>{s.excusedAbsences}</td>
-                    <td>{s.unexcusedAbsences}</td>
-                    <td>
+                    <td data-label="Séances">{s.totalSessions}</td>
+                    <td data-label="Présent">{s.present}</td>
+                    <td data-label="Retard">{s.late}</td>
+                    <td data-label="Absences excusées">{s.excusedAbsences}</td>
+                    <td data-label="Absences non excusées">{s.unexcusedAbsences}</td>
+                    <td data-label="Taux d'assiduité">
                       <AttendanceMeter rate={s.attendanceRate} />
                     </td>
                   </tr>
@@ -182,13 +182,13 @@ export function TeacherAttendanceOverviewPage() {
               <tbody>
                 {register.map((entry) => (
                   <tr key={`${entry.session.id}-${entry.student.id}`}>
-                    <td>{new Date(entry.session.date).toLocaleDateString('fr-FR')}</td>
-                    <td>{entry.session.startTime}</td>
-                    <td>
+                    <td data-label="Date">{new Date(entry.session.date).toLocaleDateString('fr-FR')}</td>
+                    <td data-label="Heure">{entry.session.startTime}</td>
+                    <td data-label="Élève">
                       {entry.student.firstName} {entry.student.lastName}
                     </td>
-                    <td>{entry.statusLabel}</td>
-                    <td>{entry.billable ? 'Facturée' : 'Non facturée'}</td>
+                    <td data-label="Statut">{entry.statusLabel}</td>
+                    <td data-label="Facturation">{entry.billable ? 'Facturée' : 'Non facturée'}</td>
                   </tr>
                 ))}
               </tbody>

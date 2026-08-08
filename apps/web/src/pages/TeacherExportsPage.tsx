@@ -223,13 +223,13 @@ export function TeacherExportsPage() {
               <tbody>
                 {jobs.map((job) => (
                   <tr key={job.id}>
-                    <td>{job.fileName ?? '—'}</td>
-                    <td>{FORMAT_LABELS[job.format]}</td>
-                    <td>
+                    <td data-label="Fichier">{job.fileName ?? '—'}</td>
+                    <td data-label="Format">{FORMAT_LABELS[job.format]}</td>
+                    <td data-label="Statut">
                       <span className={`badge ${STATUS_BADGE[job.status]}`}>{STATUS_LABELS[job.status]}</span>
                     </td>
-                    <td>{job.rowCount ?? '—'}</td>
-                    <td>{new Date(job.createdAt).toLocaleString('fr-FR')}</td>
+                    <td data-label="Lignes">{job.rowCount ?? '—'}</td>
+                    <td data-label="Généré le">{new Date(job.createdAt).toLocaleString('fr-FR')}</td>
                     <td className="admin-actions">
                       {job.status === 'READY' ? (
                         <button type="button" onClick={() => handleDownload(job)}>

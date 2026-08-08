@@ -111,6 +111,10 @@
 
 body {
   margin: 0;
+  /* Filet de sécurité : un débordement horizontal ponctuel (texte long, contenu RTL...) ne doit
+     jamais faire défiler toute la page — mieux vaut que le contenu se coupe localement (auquel
+     cas c'est un vrai bug à corriger, mais visible) que de laisser le body scroller. */
+  overflow-x: hidden;
 }
 
 #root {
@@ -197,7 +201,7 @@ code {
 .app-sidebar-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   padding: 0 8px;
   color: #fff;
   font-weight: 700;
@@ -210,10 +214,16 @@ code {
   opacity: 0.9;
 }
 
+/* Logo agrandi avec cadre blanc net (fond de secours + ombre), pour lui donner la présence d'un
+   vrai badge d'app plutôt qu'un petit favicon perdu sur le fond marine — voir l'aperçu produit de
+   la landing page (.landing-product-sidebar img). Rail d'icônes (<880px) : retour à une taille
+   plus contenue pour tenir dans la largeur réduite, voir media query plus bas. */
 .app-sidebar-brand img {
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-sm);
+  background: #fff;
+  box-shadow: var(--shadow-sm);
 }
 
 .app-sidebar-nav {
@@ -355,15 +365,40 @@ code {
   .app-sidebar-brand span,
   .app-sidebar-section-title,
   .app-sidebar-link span,
-  .app-sidebar-link-badge,
   .app-sidebar-email {
     display: none;
+  }
+  .app-sidebar-brand {
+    justify-content: center;
+    padding: 0;
+  }
+  .app-sidebar-brand img {
+    width: 30px;
+    height: 30px;
   }
   .app-sidebar-link {
     justify-content: center;
   }
   .app-sidebar-user {
     justify-content: center;
+  }
+
+  /* Le libellé disparaît en rail d'icônes : le badge garde un repère minimal (pastille, sans
+     le chiffre — illisible à cette taille) plutôt que de disparaître complètement (on perdrait
+     tout signal de non-lu). Le texte reste dans le DOM pour les lecteurs d'écran. */
+  .app-sidebar-link-badge {
+    position: absolute;
+    top: 6px;
+    right: 10px;
+    left: auto;
+    margin-left: 0;
+    min-width: 0;
+    width: 8px;
+    height: 8px;
+    padding: 0;
+    font-size: 0;
+    line-height: 0;
+    overflow: hidden;
   }
 }
 
@@ -388,6 +423,34 @@ code {
   backdrop-filter: blur(14px);
 }
 
+.workspace-identity {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.workspace-avatar {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  object-fit: cover;
+}
+
+.workspace-avatar-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
 .workspace-eyebrow {
   display: block;
   color: var(--text-h);
@@ -426,6 +489,10 @@ code {
   .workspace-bar {
     padding: 10px 16px;
   }
+  .workspace-avatar {
+    width: 34px;
+    height: 34px;
+  }
   .workspace-email,
   .workspace-notifications span {
     display: none;
@@ -438,6 +505,12 @@ code {
   padding: 32px 28px 64px;
   width: 100%;
   text-align: left;
+}
+
+@media (max-width: 480px) {
+  .app-main-inner {
+    padding: 20px 16px 48px;
+  }
 }
 
 .page-center {
@@ -687,18 +760,68 @@ code {
   text-align: left;
 }
 
+/* Variante plus large pour un contenu riche (ex. fiche enfant) — le contenu réutilisé (StatGrid,
+   listes d'activité...) vient avec ses propres classes de mise en forme, voir plus bas. */
+.terms-modal-wide {
+  width: min(720px, 100%);
+}
+
+.terms-modal-wide .card-section {
+  background: var(--bg-shell);
+}
+
+/* Onglets de la fiche enfant (.terms-modal-wide) — tout le détail reste dans la même fenêtre,
+   jamais de navigation vers une autre page (voir ChildAttendancePanel/ChildAccountingPanel/
+   ChildSituationPanel, extraits des pages dédiées pour être réutilisés ici). */
+.fiche-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.fiche-tabs button {
+  padding: 8px 4px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  margin-right: 16px;
+}
+
+.fiche-tabs button:hover:not(:disabled) {
+  border-color: transparent;
+  color: var(--text-h);
+}
+
+.fiche-tabs button.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.fiche-tab-content {
+  margin-top: 16px;
+}
+
 .terms-modal h2 {
   margin: 0 0 14px;
   font-size: 20px;
 }
 
-.terms-modal p {
+/* Enfant direct uniquement : le contenu réutilisé plus profondément imbriqué (ex. ChildDetailCard
+   dans .terms-modal-wide) a ses propres classes (.table-hint, .stat-value...) qui ne doivent pas
+   être écrasées par cette règle générique. */
+.terms-modal > p {
   color: var(--text);
   font-size: 14px;
   line-height: 1.6;
 }
 
-.terms-modal p + p {
+.terms-modal > p + p {
   margin-top: 12px;
 }
 
@@ -812,6 +935,12 @@ code {
   margin-top: 24px;
 }
 
+@media (max-width: 480px) {
+  .card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .dash-card {
   display: flex;
   flex-direction: column;
@@ -860,6 +989,53 @@ a.dash-card:hover {
   line-height: 145%;
 }
 
+/* --- Cartes enfant (Parent > Mes enfants) -------------------------------- */
+
+.child-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.child-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 18px;
+  background: var(--bg-shell);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  text-align: left;
+}
+
+.child-card-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--link-bg);
+  color: var(--link);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.child-card-name {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text-h);
+  margin: 0;
+}
+
+.child-card > button {
+  margin-top: 8px;
+  align-self: stretch;
+}
+
 .summary-row {
   display: flex;
   align-items: center;
@@ -901,6 +1077,12 @@ a.dash-card:hover {
   box-shadow: var(--shadow-sm);
   padding: 22px 24px;
   margin-top: 20px;
+}
+
+@media (max-width: 480px) {
+  .card-section {
+    padding: 16px;
+  }
 }
 
 .card-section label {
@@ -1071,7 +1253,46 @@ a.dash-card:hover {
   margin-top: 20px;
 }
 
-.profile-main .card-section:first-child,
+
+.profile-inline-sections {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.profile-inline-sections .card-section {
+  margin-top: 0;
+}
+
+.experience-institution {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-shell);
+}
+
+.experience-institution span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.experience-institution strong {
+  color: var(--text-h);
+  font-size: 13.5px;
+}
+
+@media (max-width: 720px) {
+  .profile-inline-sections {
+    grid-template-columns: 1fr;
+  }
+}.profile-main .card-section:first-child,
 .profile-side .card-section {
   margin-top: 0;
 }
@@ -1083,7 +1304,28 @@ a.dash-card:hover {
   white-space: pre-wrap;
 }
 
-@media (max-width: 860px) {
+
+.account-summary-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 14px;
+}
+
+.account-summary-row .profile-bio-text {
+  overflow-wrap: anywhere;
+}
+
+.account-summary-row .badge {
+  margin-top: 4px;
+  white-space: nowrap;
+}
+
+@media (max-width: 520px) {
+  .account-summary-row {
+    grid-template-columns: 1fr;
+  }
+}@media (max-width: 860px) {
   .profile-grid {
     grid-template-columns: 1fr;
   }
@@ -1201,6 +1443,36 @@ a.dash-card:hover {
   color: var(--text-muted);
 }
 
+/* Regroupe plusieurs filtres (ex. rôle + statut sur /admin/users) sur une même ligne, qui
+   passe à la ligne suivante sur mobile plutôt que de forcer un défilement horizontal. */
+.filters-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+}
+
+/* Champ de recherche libre au-dessus d'une liste/d'un tableau — même boîte que les inputs de
+   .card-section (voir plus bas), mais utilisable hors formulaire (barre de filtres d'une page). */
+.search-input {
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg);
+  color: var(--text-h);
+  min-width: 220px;
+  flex: 1 1 220px;
+  max-width: 320px;
+}
+
+.search-input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
 .status-filter {
   display: flex;
   align-items: center;
@@ -1290,6 +1562,77 @@ a.dash-card:hover {
   padding: 7px 4px;
 }
 
+/* Sous 640px, un .admin-table se transforme en pile de cartes (une par ligne) plutôt que de
+   défiler horizontalement — un <td> devient "Libellé : valeur" via data-label (à renseigner sur
+   chaque <td>, voir les pages existantes pour le patron). Les cellules étendues (colspan, ex.
+   panneau comptable déplié) et .admin-actions s'affichent en pleine largeur sans libellé. */
+@media (max-width: 640px) {
+  .table-wrap {
+    overflow-x: visible;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+  }
+
+  .admin-table thead {
+    display: none;
+  }
+
+  .admin-table,
+  .admin-table tbody,
+  .admin-table tr,
+  .admin-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .admin-table tr {
+    margin-bottom: 12px;
+    padding: 4px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .admin-table tbody tr:last-child {
+    margin-bottom: 0;
+  }
+
+  .admin-table tbody tr:hover td {
+    background: transparent;
+  }
+
+  /* Libellé au-dessus, valeur en dessous — plutôt qu'un flex "libellé/valeur" côte à côte, dont
+     le dimensionnement automatique des items flex anonymes (texte brut) est fragile avec du texte
+     long/RTL (ex. nom de matière en arabe) et peut pousser la ligne en dehors du viewport. */
+  .admin-table td {
+    display: block;
+    padding: 8px 0;
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+
+  .admin-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 2px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+  }
+
+  .admin-table td.admin-actions {
+    padding-top: 10px;
+  }
+
+  .admin-table td[colspan] {
+    padding: 10px 0;
+  }
+}
+
 /* --- Boutons ------------------------------------------------------------ */
 
 /* Base par défaut pour TOUT <button> de l'appli, quel que soit son conteneur —
@@ -1375,6 +1718,7 @@ button.ghost:hover:not(:disabled) {
 .reason-prompt {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
@@ -1387,6 +1731,22 @@ button.ghost:hover:not(:disabled) {
   background: var(--bg);
   color: var(--text-h);
   min-width: 160px;
+  flex: 1 1 160px;
+}
+
+/* Cibles tactiles : uniquement sur pointeur imprécis (doigt), jamais en desktop où la densité
+   actuelle (tableaux, lignes d'actions) reste voulue. `pointer: coarse` cible le tactile même
+   sur une largeur d'écran large (tablette), contrairement à un simple `max-width`. */
+@media (pointer: coarse) {
+  button {
+    min-height: 40px;
+    padding: 9px 14px;
+  }
+
+  .app-sidebar-footer button {
+    width: 40px;
+    height: 40px;
+  }
 }
 
 /* --- Badges de statut ---------------------------------------------------- */
@@ -1467,6 +1827,37 @@ button.ghost:hover:not(:disabled) {
 .tag button:hover {
   opacity: 1;
 }
+.subject-add-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.subject-add-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  min-height: 0;
+  padding: 0;
+  border: 1px dashed var(--accent-border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.subject-add-button:hover:not(:disabled) {
+  border-style: solid;
+  background: var(--accent-bg);
+}
+
+.subject-add-select {
+  width: min(240px, calc(100vw - 96px));
+}
 
 .add-row {
   display: flex;
@@ -1482,6 +1873,13 @@ button.ghost:hover:not(:disabled) {
   border-radius: var(--radius-sm);
   background-color: var(--bg);
   color: var(--text-h);
+}
+
+.add-row button {
+  flex: none;
+  padding: 5px 9px;
+  font-size: 12px;
+  min-height: 30px;
 }
 
 /* --- Sélecteur de niveaux scolaires par section (Ch.5.4, RM-TPR-001/002) -- */
@@ -1553,6 +1951,53 @@ button.ghost:hover:not(:disabled) {
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 10px 20px;
   padding: 0 18px 16px;
+}
+.level-year-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 2px 18px 16px;
+}
+
+.level-year-row {
+  display: grid;
+  grid-template-columns: 172px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+
+.level-year-row:first-child {
+  border-top: none;
+  padding-top: 2px;
+}
+
+.level-year-title {
+  color: var(--text-h);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.level-year-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px 18px;
+}
+
+@media (max-width: 720px) {
+  .level-year-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
+
+@media (max-width: 480px) {
+  .level-section-options,
+  .level-year-options {
+    grid-template-columns: 1fr;
+  }
 }
 
 .checkbox-grid {
@@ -1749,6 +2194,108 @@ button.ghost:hover:not(:disabled) {
   color: var(--text);
 }
 
+/* Variante ligne unique avec puce colorée + valeur alignée à droite (DA "Atelier Clair", aperçu
+   produit de la landing page — .landing-product-list div) : réservée aux listes d'activité
+   simples (prochaines séances, derniers paiements) — les usages existants avec en-tête +
+   paragraphe (alertes, notifications, journal d'audit) gardent .activity-item seul, inchangé.
+   Fond blanc et petit rayon comme le mockup, plutôt que le fond gris/grand rayon hérités de
+   .activity-item (même élément, les deux classes sont combinées dans le JSX). */
+.activity-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+}
+
+.activity-row-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--link);
+}
+
+.activity-row-dot.tone-green {
+  background: var(--success);
+}
+
+.activity-row-dot.tone-amber {
+  background: var(--warning);
+}
+
+.activity-row-dot.tone-red {
+  background: var(--danger);
+}
+
+.activity-row p {
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-h);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-row-value {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.attendance-shortcut-row {
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  align-items: center;
+}
+
+.attendance-shortcut {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+}
+
+.attendance-shortcut:hover {
+  background: var(--accent-hover);
+  color: #fff;
+}
+
+.attendance-shortcut svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
+@media (max-width: 720px) {
+  .attendance-shortcut-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .attendance-shortcut-row .activity-row-value {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .attendance-shortcut {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    justify-content: center;
+    width: 100%;
+    min-height: 40px;
+  }
+}
+
 /* --- Communication (Ch.19) : commentaires d'inscription et annonces de groupe -- */
 
 .comment-thread {
@@ -1841,6 +2388,63 @@ button.ghost:hover:not(:disabled) {
   color: var(--text-h);
   margin: 0;
   font-variant-numeric: tabular-nums;
+}
+
+/* Variante "tuile KPI" avec icône (DA "Atelier Clair", aperçu produit de la landing page —
+   .landing-product-tile) : réservée aux tuiles auxquelles StatGrid passe une icône — les tuiles
+   existantes sans icône gardent leur rendu compact (label puis valeur) pour ne rien changer aux
+   pages qui les utilisent déjà. Calquée au plus près sur .landing-product-tile : fond
+   --bg-shell, pas d'ombre, pas de liseré de couleur — seule l'icône est teintée par ton,
+   directement (pas de puce/chip de fond), exactement comme dans le mockup. */
+.stat-tile-icon {
+  padding: 14px;
+  background: var(--bg-shell);
+  box-shadow: none;
+  /* Écrase le border-left: 3px coloré du .stat-tile "de base" (ligne 1863, utilisé tel quel par
+     les tuiles Ch.14 Présences) — sans ça, ce liseré teal persiste par-dessus cette variante
+     alors qu'aucune règle ici ne le mentionnait pour le neutraliser. */
+  border-left: 1px solid var(--border);
+}
+
+.stat-tile-icon .stat-value {
+  font-size: 26px;
+  margin-top: 18px;
+}
+
+.stat-tile-icon .table-hint {
+  margin-top: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-weight: 700;
+}
+
+.stat-tile-icon-chip {
+  display: inline-flex;
+}
+
+.stat-tile-icon-chip svg {
+  width: 22px;
+  height: 22px;
+}
+
+.stat-tile-icon.tone-teal .stat-tile-icon-chip {
+  color: var(--link);
+}
+
+.stat-tile-icon.tone-green .stat-tile-icon-chip {
+  color: var(--success);
+}
+
+.stat-tile-icon.tone-amber .stat-tile-icon-chip {
+  color: var(--warning);
+}
+
+.stat-tile-icon.tone-red .stat-tile-icon-chip {
+  color: var(--danger);
+}
+
+.stat-tile-icon.tone-info .stat-tile-icon-chip {
+  color: var(--info);
 }
 
 .announcement-item {
@@ -1941,6 +2545,96 @@ button.ghost:hover:not(:disabled) {
   width: 80px;
 }
 
+/* --- Toast notifications ------------------------------------------------ */
+
+.toast-container {
+  position: fixed;
+  z-index: 200;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 10px;
+  max-width: 360px;
+  width: calc(100vw - 32px);
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-md);
+  pointer-events: auto;
+  animation: toast-in 0.18s ease-out;
+}
+
+.toast-message {
+  flex: 1;
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+
+.toast-close {
+  flex: none;
+  border: none;
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+}
+
+.toast-close:hover {
+  opacity: 1;
+}
+
+.toast-success {
+  border-color: var(--success);
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.toast-error {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.toast-info {
+  border-color: var(--info);
+  background: var(--info-bg);
+  color: var(--info);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 480px) {
+  .toast-container {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    max-width: none;
+    width: auto;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .loading-spinner {
     animation: none;
@@ -1954,6 +2648,10 @@ button.ghost:hover:not(:disabled) {
   .select-trigger,
   textarea {
     transition: none;
+  }
+
+  .toast {
+    animation: none;
   }
 }
 /* --- Landing page ------------------------------------------------------ */
@@ -2599,3 +3297,6 @@ button.ghost:hover:not(:disabled) {
     padding: 24px;
   }
 }
+
+
+

@@ -114,16 +114,16 @@ export function AdminSchoolSituationsPage() {
           <tbody>
             {situations.map((situation) => (
               <tr key={situation.id}>
-                <td>
+                <td data-label="Élève">
                   {situation.student.firstName} {situation.student.lastName}
                 </td>
-                <td>
+                <td data-label="Parent">
                   {situation.student.parent.firstName} {situation.student.parent.lastName} (
                   {situation.student.parent.phone})
                 </td>
-                <td>{situation.academicYear.label}</td>
-                <td>{situation.schoolLevel.name}</td>
-                <td>{situation.school.name}</td>
+                <td data-label="Nouvelle année">{situation.academicYear.label}</td>
+                <td data-label="Nouveau niveau">{situation.schoolLevel.name}</td>
+                <td data-label="Nouvel établissement">{situation.school.name}</td>
                 <td className="admin-actions">
                   {rejectingId === situation.id ? (
                     <ReasonPrompt

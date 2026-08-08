@@ -9,6 +9,7 @@ import { AdminAccountingController } from './admin-accounting.controller';
 import { TeacherAccountingController } from './teacher-accounting.controller';
 import { GroupAccountingController } from './group-accounting.controller';
 import { ParentAccountingController } from './parent-accounting.controller';
+import { SessionPaymentsController } from './session-payments.controller';
 
 @Module({
   imports: [AuthModule, EmailModule, NotificationsModule, SubscriptionsModule],
@@ -18,6 +19,7 @@ import { ParentAccountingController } from './parent-accounting.controller';
     TeacherAccountingController,
     GroupAccountingController,
     ParentAccountingController,
+    SessionPaymentsController,
   ],
   providers: [AccountingService],
   exports: [AccountingService],

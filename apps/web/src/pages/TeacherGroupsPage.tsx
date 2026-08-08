@@ -1,7 +1,9 @@
-import { Fragment, useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Select } from '../components/Select';
+import { useToast } from '../components/Toast';
+import { useConfirm } from '../components/ConfirmDialog';
 import { ApiError } from '../api/client';
 import * as referentialsApi from '../api/referentialsApi';
 import * as teacherProfileApi from '../api/teacherProfileApi';
@@ -47,13 +49,22 @@ const DAY_LABELS: Record<DayOfWeek, string> = {
 };
 
 export function TeacherGroupsPage() {
-  const { getAccessToken } = useAuth();
+  const { getAccessToken, currentUser } = useAuth();
+  const { showToast } = useToast();
+  const confirm = useConfirm();
   const [groups, setGroups] = useState<Group[]>([]);
+  const [groupSearch, setGroupSearch] = useState('');
+  // Un groupe non-Brouillon a un historique (ERR-GRP-020) : il ne peut jamais être supprimé de la
+  // base. "Supprimer" le retire alors seulement de cette liste (préférence locale au navigateur),
+  // sans toucher aux données — récupérable via "Afficher les groupes retirés".
+  const [hiddenGroupIds, setHiddenGroupIds] = useState<Set<string>>(new Set());
+  const [showHidden, setShowHidden] = useState(false);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [schoolLevels, setSchoolLevels] = useState<SchoolLevel[]>([]);
   const [subjectLevels, setSubjectLevels] = useState<SubjectLevelPair[]>([]);
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
   const [locations, setLocations] = useState<TeachingLocation[]>([]);
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -75,9 +86,6 @@ export function TeacherGroupsPage() {
   const [durationMinutes, setDurationMinutes] = useState('120');
   const [teachingLocationId, setTeachingLocationId] = useState('');
 
-  const [locationLabel, setLocationLabel] = useState('');
-  const [locationAddress, setLocationAddress] = useState('');
-
   // Ch.10.11/ERR-GRP-016/017 : édition du planning d'un groupe existant.
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [editSchedules, setEditSchedules] = useState<GroupScheduleInput[]>([]);
@@ -89,6 +97,45 @@ export function TeacherGroupsPage() {
     null,
   );
   const [savingSchedule, setSavingSchedule] = useState(false);
+
+  const hiddenStorageKey = currentUser ? `groupi:hiddenGroups:${currentUser.id}` : null;
+
+  useEffect(() => {
+    if (!hiddenStorageKey) return;
+    try {
+      const raw = localStorage.getItem(hiddenStorageKey);
+      setHiddenGroupIds(new Set(raw ? (JSON.parse(raw) as string[]) : []));
+    } catch {
+      setHiddenGroupIds(new Set());
+    }
+  }, [hiddenStorageKey]);
+
+  function persistHiddenGroupIds(ids: Set<string>) {
+    setHiddenGroupIds(ids);
+    if (hiddenStorageKey) {
+      localStorage.setItem(hiddenStorageKey, JSON.stringify([...ids]));
+    }
+  }
+
+  async function handleRemoveFromList(group: Group) {
+    const ok = await confirm({
+      title: `Retirer « ${group.name} » de la liste ?`,
+      message:
+        "Ce groupe possède un historique : il reste conservé en base (séances, inscriptions, paiements) mais n'apparaîtra plus dans « Mes groupes ». Vous pourrez le réafficher à tout moment.",
+      confirmLabel: 'Retirer de la liste',
+      danger: true,
+    });
+    if (!ok) return;
+    persistHiddenGroupIds(new Set(hiddenGroupIds).add(group.id));
+    showToast('Groupe retiré de la liste');
+  }
+
+  function handleRestoreToList(group: Group) {
+    const next = new Set(hiddenGroupIds);
+    next.delete(group.id);
+    persistHiddenGroupIds(next);
+    showToast('Groupe réaffiché');
+  }
 
   const load = useCallback(async () => {
     const token = getAccessToken();
@@ -153,23 +200,15 @@ export function TeacherGroupsPage() {
     setSchedules((prev) => prev.filter((_, i) => i !== index));
   }
 
-  async function handleAddLocation(event: FormEvent) {
-    event.preventDefault();
-    const token = getAccessToken();
-    if (!token || !locationLabel) return;
-    setError(null);
-    try {
-      const created = await teacherProfileApi.createLocation(token, {
-        label: locationLabel,
-        address: locationAddress || undefined,
-      });
-      setLocations((prev) => [...prev, created]);
-      setLocationLabel('');
-      setLocationAddress('');
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Impossible d'ajouter ce lieu.");
+  // Lieux gérés depuis /teacher/profile désormais — ici on ne fait que pré-remplir le premier
+  // créneau avec le lieu par défaut du profil (le plus souvent le seul), modifiable ensuite par
+  // créneau via le sélecteur "Lieu (optionnel)" comme avant.
+  useEffect(() => {
+    if (!teachingLocationId && locations.length > 0) {
+      const defaultLocation = locations.find((l) => l.isActive);
+      if (defaultLocation) setTeachingLocationId(defaultLocation.id);
     }
-  }
+  }, [locations, teachingLocationId]);
 
   async function handleCreateGroup(event: FormEvent) {
     event.preventDefault();
@@ -197,6 +236,8 @@ export function TeacherGroupsPage() {
       setStartDate('');
       setEndDate('');
       setSchedules([]);
+      setShowCreateModal(false);
+      showToast('Groupe créé');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Impossible de créer ce groupe.');
     }
@@ -215,12 +256,61 @@ export function TeacherGroupsPage() {
   async function handleDelete(groupId: string) {
     const token = getAccessToken();
     if (!token) return;
+    const ok = await confirm({
+      title: 'Supprimer ce groupe ?',
+      message: 'Cette action est irréversible.',
+      confirmLabel: 'Supprimer',
+      danger: true,
+    });
+    if (!ok) return;
     setError(null);
     try {
       await groupsApi.removeGroup(token, groupId);
       setGroups((prev) => prev.filter((g) => g.id !== groupId));
+      showToast('Groupe supprimé');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Suppression impossible.');
+    }
+  }
+
+  async function handleArchive(group: Group) {
+    const token = getAccessToken();
+    if (!token) return;
+    const ok = await confirm({
+      title: `Archiver « ${group.name} » ?`,
+      message:
+        'Le groupe ne pourra plus être modifié. Les demandes d\'inscription encore en attente seront automatiquement refusées.',
+      confirmLabel: 'Archiver',
+      danger: true,
+    });
+    if (!ok) return;
+    setError(null);
+    try {
+      const updated = await groupsApi.archiveGroup(token, group.id);
+      setGroups((prev) => prev.map((g) => (g.id === updated.id ? updated : g)));
+      showToast('Groupe archivé');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Archivage impossible.');
+    }
+  }
+
+  async function handleReactivate(group: Group) {
+    const token = getAccessToken();
+    if (!token) return;
+    const ok = await confirm({
+      title: `Réactiver « ${group.name} » ?`,
+      message:
+        "Le groupe repasse au statut Clôturé. Les demandes d'inscription refusées automatiquement lors de l'archivage ne seront pas restaurées.",
+      confirmLabel: 'Réactiver',
+    });
+    if (!ok) return;
+    setError(null);
+    try {
+      const updated = await groupsApi.reactivateGroup(token, group.id);
+      setGroups((prev) => prev.map((g) => (g.id === updated.id ? updated : g)));
+      showToast('Groupe réactivé');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Réactivation impossible.');
     }
   }
 
@@ -279,6 +369,7 @@ export function TeacherGroupsPage() {
       setEditingGroupId(null);
       setEditSchedules([]);
       setScheduleConflict(null);
+      showToast('Planning mis à jour');
     } catch (err) {
       if (
         err instanceof ApiError &&
@@ -297,12 +388,29 @@ export function TeacherGroupsPage() {
     return <p>Chargement...</p>;
   }
 
+  const groupSearchQuery = groupSearch.trim().toLowerCase();
+  const hiddenCount = groups.filter((group) => hiddenGroupIds.has(group.id)).length;
+  const visibleGroups = groups
+    .filter((group) => showHidden || !hiddenGroupIds.has(group.id))
+    .filter(
+      (group) =>
+        !groupSearchQuery ||
+        group.name.toLowerCase().includes(groupSearchQuery) ||
+        group.subject.name.toLowerCase().includes(groupSearchQuery) ||
+        group.schoolLevel.name.toLowerCase().includes(groupSearchQuery),
+    );
+
   return (
     <>
       <div className="page-header">
         <div>
           <h1>Mes groupes</h1>
-          <p>Créez et gérez vos groupes, plannings et lieux d'enseignement.</p>
+          <p>Créez et gérez vos groupes et plannings.</p>
+        </div>
+        <div className="page-actions">
+          <button type="button" onClick={() => setShowCreateModal(true)}>
+            Créer un groupe
+          </button>
         </div>
       </div>
 
@@ -316,231 +424,204 @@ export function TeacherGroupsPage() {
         <h2>Mes groupes ({groups.length})</h2>
         {groups.length === 0 && <p>Aucun groupe créé pour le moment.</p>}
         {groups.length > 0 && (
-          <div className="table-wrap">
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th>Nom</th>
-                <th>Matière / Niveau</th>
-                <th>Année</th>
-                <th>Statut</th>
-                <th>Places</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {groups.map((group) => (
-                <Fragment key={group.id}>
-                <tr>
-                  <td>{group.name}</td>
-                  <td>
-                    {group.subject.name} — {group.schoolLevel.name}
-                  </td>
-                  <td>{group.academicYear.label}</td>
-                  <td>
-                    <span className={`badge ${STATUS_BADGE[group.status]}`}>
-                      {STATUS_LABELS[group.status]}
-                    </span>
-                  </td>
-                  <td>
-                    {group._count.enrollments} / {group.capacity}
-                  </td>
-                  <td className="admin-actions">
-                    <Link to={`/teacher/groups/${group.id}/sessions`}>Séances</Link>
-                    <Link to={`/teacher/groups/${group.id}/announcements`}>Annonces</Link>
-                    {group.status !== 'ARCHIVED' && editingGroupId !== group.id && (
-                      <button type="button" onClick={() => startEditSchedules(group)}>
-                        Modifier planning
-                      </button>
-                    )}
-                    {group.status === 'DRAFT' && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => runAction(() => groupsApi.openGroup(getAccessToken()!, group.id))}
-                        >
-                          Ouvrir
-                        </button>
-                        <button type="button" className="danger" onClick={() => handleDelete(group.id)}>
-                          Supprimer
-                        </button>
-                      </>
-                    )}
-                    {(group.status === 'ACTIVE' || group.status === 'FULL') && (
-                      <button
-                        type="button"
-                        onClick={() => runAction(() => groupsApi.closeGroup(getAccessToken()!, group.id))}
-                      >
-                        Clôturer
-                      </button>
-                    )}
-                    {group.status === 'CLOSED' && (
-                      <button
-                        type="button"
-                        onClick={() => runAction(() => groupsApi.archiveGroup(getAccessToken()!, group.id))}
-                      >
-                        Archiver
-                      </button>
-                    )}
-                  </td>
-                </tr>
-                {editingGroupId === group.id && (
-                  <tr>
-                    <td colSpan={6}>
-                      <div style={{ padding: '12px 0' }}>
-                        <h3>Planning de « {group.name} »</h3>
-                        <ul className="tag-list">
-                          {editSchedules.map((s, i) => (
-                            <li key={i} className="tag">
-                              {DAY_LABELS[s.dayOfWeek]} {s.startTime} ({formatDuration(s.durationMinutes)})
-                              <button type="button" onClick={() => removeEditSchedule(i)}>
-                                ×
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                        <div className="field-row">
-                          <label>
-                            Jour
-                            <Select
-                              value={editDayOfWeek}
-                              onChange={(e) => setEditDayOfWeek(e.target.value as DayOfWeek)}
-                            >
-                              {Object.entries(DAY_LABELS).map(([value, label]) => (
-                                <option key={value} value={value}>
-                                  {label}
-                                </option>
-                              ))}
-                            </Select>
-                          </label>
-                          <label>
-                            Heure de début
-                            <input
-                              type="time"
-                              value={editStartTime}
-                              onChange={(e) => setEditStartTime(e.target.value)}
-                            />
-                          </label>
-                          <label>
-                            Durée (min)
-                            <input
-                              type="number"
-                              min={1}
-                              value={editDurationMinutes}
-                              onChange={(e) => setEditDurationMinutes(e.target.value)}
-                            />
-                          </label>
-                          <label>
-                            Lieu (optionnel)
-                            <Select
-                              value={editTeachingLocationId}
-                              onChange={(e) => setEditTeachingLocationId(e.target.value)}
-                            >
-                              <option value="">—</option>
-                              {locations.map((loc) => (
-                                <option key={loc.id} value={loc.id}>
-                                  {loc.label}
-                                </option>
-                              ))}
-                            </Select>
-                          </label>
-                        </div>
-                        <button type="button" onClick={addEditSchedule}>
-                          Ajouter ce créneau
-                        </button>
-
-                        {scheduleConflict?.groupId === group.id ? (
-                          <>
-                            <p className="form-notice" role="alert">
-                              {scheduleConflict.message}
-                            </p>
-                            <div className="page-actions" style={{ marginTop: 12 }}>
-                              <button
-                                type="button"
-                                onClick={() => submitScheduleUpdate(group.id, true)}
-                                disabled={savingSchedule}
-                              >
-                                Conserver les séances existantes
-                              </button>
-                              <button
-                                type="button"
-                                className="danger"
-                                onClick={() => submitScheduleUpdate(group.id, false)}
-                                disabled={savingSchedule}
-                              >
-                                Supprimer et laisser le planning se régénérer
-                              </button>
-                              <button
-                                type="button"
-                                className="ghost"
-                                onClick={() => setScheduleConflict(null)}
-                                disabled={savingSchedule}
-                              >
-                                Annuler
-                              </button>
-                            </div>
-                          </>
-                        ) : (
-                          <div className="page-actions" style={{ marginTop: 12 }}>
-                            <button
-                              type="button"
-                              onClick={() => submitScheduleUpdate(group.id)}
-                              disabled={editSchedules.length === 0 || savingSchedule}
-                            >
-                              {savingSchedule ? 'Enregistrement...' : 'Enregistrer le planning'}
-                            </button>
-                            <button
-                              type="button"
-                              className="ghost"
-                              onClick={cancelEditSchedules}
-                              disabled={savingSchedule}
-                            >
-                              Annuler
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                )}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
-          </div>
+          <input
+            type="search"
+            className="search-input"
+            placeholder="Rechercher un groupe, une matière, un niveau..."
+            value={groupSearch}
+            onChange={(e) => setGroupSearch(e.target.value)}
+            aria-label="Rechercher un groupe"
+          />
+        )}
+        {groups.length > 0 && visibleGroups.length === 0 && <p>Aucun groupe ne correspond à cette recherche.</p>}
+        {hiddenCount > 0 && (
+          <button type="button" className="ghost" style={{ marginTop: 10 }} onClick={() => setShowHidden((v) => !v)}>
+            {showHidden ? 'Masquer les groupes retirés' : `Afficher les groupes retirés de la liste (${hiddenCount})`}
+          </button>
         )}
       </section>
 
-      <section className="card-section">
-        <h2>Mes lieux d'enseignement</h2>
-        <ul className="tag-list">
-          {locations.map((loc) => (
-            <li key={loc.id} className="tag">
-              {loc.label}
-            </li>
-          ))}
-        </ul>
-        <form className="add-row" onSubmit={handleAddLocation}>
-          <input
-            type="text"
-            placeholder="Nom du lieu"
-            value={locationLabel}
-            onChange={(e) => setLocationLabel(e.target.value)}
-          />
-          <input
-            type="text"
-            placeholder="Adresse (optionnel)"
-            value={locationAddress}
-            onChange={(e) => setLocationAddress(e.target.value)}
-          />
-          <button type="submit" disabled={!locationLabel}>
-            Ajouter
-          </button>
-        </form>
-      </section>
+      {visibleGroups.map((group) => (
+        <section key={group.id} className="card-section">
+          <div style={{ marginBottom: 12 }}>
+            <h2>{group.name}</h2>
+            <p className="table-hint">
+              {group.subject.name} — {group.schoolLevel.name} · {group.academicYear.label}
+            </p>
+            <p className="table-hint" style={{ marginTop: 4 }}>
+              <span className={`badge ${STATUS_BADGE[group.status]}`}>{STATUS_LABELS[group.status]}</span>{' '}
+              {group._count.enrollments} / {group.capacity} places
+              {hiddenGroupIds.has(group.id) && <> · <span className="badge badge-neutral">Retiré de la liste</span></>}
+            </p>
+          </div>
 
-      <section className="card-section">
-        <h2>Créer un groupe</h2>
+          <div className="admin-actions">
+            <Link to={`/teacher/groups/${group.id}/students`}>Voir la liste des élèves</Link>
+            <Link to={`/teacher/groups/${group.id}/sessions`}>Voir les séances</Link>
+            <Link to={`/teacher/accounting?groupId=${group.id}`}>Voir les paiements</Link>
+            <Link to={`/teacher/groups/${group.id}/attendance`}>Voir les statistiques</Link>
+            <Link to={`/teacher/groups/${group.id}/announcements`}>Annonces</Link>
+          </div>
+
+          <div className="admin-actions" style={{ marginTop: 10 }}>
+            {group.status !== 'ARCHIVED' && editingGroupId !== group.id && (
+              <button type="button" onClick={() => startEditSchedules(group)}>
+                Modifier planning
+              </button>
+            )}
+            {group.status === 'DRAFT' && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => runAction(() => groupsApi.openGroup(getAccessToken()!, group.id))}
+                >
+                  Ouvrir
+                </button>
+                <button type="button" className="danger" onClick={() => handleDelete(group.id)}>
+                  Supprimer
+                </button>
+              </>
+            )}
+            {(group.status === 'ACTIVE' || group.status === 'FULL') && (
+              <button
+                type="button"
+                onClick={() => runAction(() => groupsApi.closeGroup(getAccessToken()!, group.id))}
+              >
+                Clôturer
+              </button>
+            )}
+            {group.status === 'CLOSED' && (
+              <button type="button" className="danger" onClick={() => handleArchive(group)}>
+                Archiver
+              </button>
+            )}
+            {group.status === 'ARCHIVED' && (
+              <button type="button" onClick={() => handleReactivate(group)}>
+                Réactiver
+              </button>
+            )}
+            {group.status !== 'DRAFT' &&
+              (hiddenGroupIds.has(group.id) ? (
+                <button type="button" onClick={() => handleRestoreToList(group)}>
+                  Réafficher dans la liste
+                </button>
+              ) : (
+                <button type="button" className="danger" onClick={() => handleRemoveFromList(group)}>
+                  Supprimer
+                </button>
+              ))}
+          </div>
+
+          {editingGroupId === group.id && (
+            <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+              <h3>Planning de « {group.name} »</h3>
+              <ul className="tag-list">
+                {editSchedules.map((s, i) => (
+                  <li key={i} className="tag">
+                    {DAY_LABELS[s.dayOfWeek]} {s.startTime} ({formatDuration(s.durationMinutes)})
+                    <button type="button" onClick={() => removeEditSchedule(i)}>
+                      ×
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <div className="field-row">
+                <label>
+                  Jour
+                  <Select value={editDayOfWeek} onChange={(e) => setEditDayOfWeek(e.target.value as DayOfWeek)}>
+                    {Object.entries(DAY_LABELS).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </Select>
+                </label>
+                <label>
+                  Heure de début
+                  <input type="time" value={editStartTime} onChange={(e) => setEditStartTime(e.target.value)} />
+                </label>
+                <label>
+                  Durée (min)
+                  <input
+                    type="number"
+                    min={1}
+                    value={editDurationMinutes}
+                    onChange={(e) => setEditDurationMinutes(e.target.value)}
+                  />
+                </label>
+                <label>
+                  Lieu (optionnel)
+                  <Select
+                    value={editTeachingLocationId}
+                    onChange={(e) => setEditTeachingLocationId(e.target.value)}
+                  >
+                    <option value="">—</option>
+                    {locations.map((loc) => (
+                      <option key={loc.id} value={loc.id}>
+                        {loc.label}
+                      </option>
+                    ))}
+                  </Select>
+                </label>
+              </div>
+              <button type="button" onClick={addEditSchedule}>
+                Ajouter ce créneau
+              </button>
+
+              {scheduleConflict?.groupId === group.id ? (
+                <>
+                  <p className="form-notice" role="alert">
+                    {scheduleConflict.message}
+                  </p>
+                  <div className="page-actions" style={{ marginTop: 12 }}>
+                    <button
+                      type="button"
+                      onClick={() => submitScheduleUpdate(group.id, true)}
+                      disabled={savingSchedule}
+                    >
+                      Conserver les séances existantes
+                    </button>
+                    <button
+                      type="button"
+                      className="danger"
+                      onClick={() => submitScheduleUpdate(group.id, false)}
+                      disabled={savingSchedule}
+                    >
+                      Supprimer et laisser le planning se régénérer
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={() => setScheduleConflict(null)}
+                      disabled={savingSchedule}
+                    >
+                      Annuler
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="page-actions" style={{ marginTop: 12 }}>
+                  <button
+                    type="button"
+                    onClick={() => submitScheduleUpdate(group.id)}
+                    disabled={editSchedules.length === 0 || savingSchedule}
+                  >
+                    {savingSchedule ? 'Enregistrement...' : 'Enregistrer le planning'}
+                  </button>
+                  <button type="button" className="ghost" onClick={cancelEditSchedules} disabled={savingSchedule}>
+                    Annuler
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      ))}
+
+      {showCreateModal && (
+        <div className="terms-modal-backdrop" onClick={() => setShowCreateModal(false)}>
+          <div className="terms-modal terms-modal-wide" onClick={(e) => e.stopPropagation()}>
+            <h2>Créer un groupe</h2>
         <form onSubmit={handleCreateGroup}>
           <label>
             Nom du groupe
@@ -693,26 +774,38 @@ export function TeacherGroupsPage() {
               Lieu (optionnel)
               <Select value={teachingLocationId} onChange={(e) => setTeachingLocationId(e.target.value)}>
                 <option value="">—</option>
-                {locations.map((loc) => (
-                  <option key={loc.id} value={loc.id}>
-                    {loc.label}
-                  </option>
-                ))}
+                {locations
+                  .filter((loc) => loc.isActive)
+                  .map((loc) => (
+                    <option key={loc.id} value={loc.id}>
+                      {loc.label}
+                    </option>
+                  ))}
               </Select>
+              <span className="table-hint">
+                Pré-rempli avec ton lieu par défaut. <Link to="/teacher/profile">Gérer mes lieux</Link>
+              </span>
             </label>
           </div>
           <button type="button" onClick={addSchedule}>
             Ajouter ce créneau
           </button>
 
-          <button
-            type="submit"
-            disabled={!subjectId || !schoolLevelId || !academicYearId || schedules.length === 0}
-          >
-            Créer le groupe
-          </button>
+          <div className="terms-modal-actions">
+            <button type="button" className="ghost" onClick={() => setShowCreateModal(false)}>
+              Annuler
+            </button>
+            <button
+              type="submit"
+              disabled={!subjectId || !schoolLevelId || !academicYearId || schedules.length === 0}
+            >
+              Créer le groupe
+            </button>
+          </div>
         </form>
-      </section>
+          </div>
+        </div>
+      )}
     </>
   );
 }

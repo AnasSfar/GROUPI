@@ -391,8 +391,9 @@ describe('Dashboards (e2e)', () => {
 
       const alertCodes = res.body.alerts.map((a: any) => a.code);
       expect(alertCodes).toEqual(
-        expect.arrayContaining(['GROUPS_FULL', 'GROUPS_NEED_STUDENTS', 'ABANDONMENT_RISK', 'DEBTOR_ACCOUNT']),
+        expect.arrayContaining(['GROUPS_FULL', 'ABANDONMENT_RISK', 'DEBTOR_ACCOUNT']),
       );
+      expect(alertCodes).not.toContain('GROUPS_NEED_STUDENTS');
     });
 
     it('statistiques avancées disponibles à partir de l’offre Intermédiaire (RM-DSH-011)', async () => {

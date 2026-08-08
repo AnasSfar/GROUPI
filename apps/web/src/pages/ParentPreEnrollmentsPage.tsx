@@ -160,21 +160,21 @@ export function ParentPreEnrollmentsPage() {
               <tbody>
                 {preEnrollments.map((pe) => (
                   <tr key={pe.id}>
-                    <td>
+                    <td data-label="Élève">
                       {pe.student.firstName} {pe.student.lastName}
                     </td>
-                    <td>
+                    <td data-label="Professeur">
                       {pe.teacher.firstName} {pe.teacher.lastName} ({pe.teacher.city})
                     </td>
-                    <td>
+                    <td data-label="Matière / Niveau">
                       {pe.subject ? `${pe.subject.name} — ` : ''}
                       {pe.schoolLevel.name}
                     </td>
-                    <td>{pe.academicYear.label}</td>
-                    <td>
+                    <td data-label="Année">{pe.academicYear.label}</td>
+                    <td data-label="Statut">
                       <span className={`badge ${STATUS_BADGE[pe.status]}`}>{STATUS_LABELS[pe.status]}</span>
                     </td>
-                    <td>
+                    <td data-label="Proposition">
                       {pe.status === 'PROPOSAL_SENT' && pe.proposedGroup ? (
                         <div className="proposal-summary">
                           <div>{pe.proposedGroup.name}</div>

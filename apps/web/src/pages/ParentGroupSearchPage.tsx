@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Select } from '../components/Select';
+import { useToast } from '../components/Toast';
 import { ApiError } from '../api/client';
 import * as referentialsApi from '../api/referentialsApi';
 import * as groupsApi from '../api/groupsApi';
@@ -31,6 +32,7 @@ function formatSchedule(group: PublicGroup): string {
 
 export function ParentGroupSearchPage() {
   const { getAccessToken } = useAuth();
+  const { showToast } = useToast();
   const [searchParams] = useSearchParams();
   const changeFromEnrollmentId = searchParams.get('changeFromEnrollment');
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -120,6 +122,7 @@ export function ParentGroupSearchPage() {
       setNotice('Demande d’inscription envoyée. Suivez son statut dans "Mes demandes d’inscription".');
       setRequestingGroupId(null);
       setStudentToEnroll('');
+      showToast('Demande d’inscription envoyée');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Impossible d'envoyer la demande.");
     }
@@ -137,6 +140,7 @@ export function ParentGroupSearchPage() {
       });
       setNotice('Demande de changement de groupe envoyée. Suivez son statut dans "Mes demandes d’inscription".');
       setRequestingGroupId(null);
+      showToast('Demande de changement de groupe envoyée');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Impossible d'envoyer la demande de changement.");
     }
@@ -224,16 +228,16 @@ export function ParentGroupSearchPage() {
             <tbody>
               {results.map((group) => (
                 <tr key={group.id}>
-                  <td>{group.name}</td>
-                  <td>
+                  <td data-label="Groupe">{group.name}</td>
+                  <td data-label="Professeur">
                     {group.teacher.firstName} {group.teacher.lastName} ({group.teacher.city})
                   </td>
-                  <td>
+                  <td data-label="Matière / Niveau">
                     {group.subject.name} — {group.schoolLevel.name}
                   </td>
-                  <td>{formatSchedule(group)}</td>
-                  <td>{group.publicPrice} TND</td>
-                  <td>
+                  <td data-label="Planning">{formatSchedule(group)}</td>
+                  <td data-label="Tarif">{group.publicPrice} TND</td>
+                  <td data-label="Places">
                     {group.status === 'FULL' || !group.hasAvailableSpots ? (
                       <span className="badge badge-warning">Complet</span>
                     ) : (

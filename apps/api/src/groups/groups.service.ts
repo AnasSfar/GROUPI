@@ -15,14 +15,20 @@ const INCLUDE_DETAILS = {
   schedules: { include: { teachingLocation: true } },
 } as const;
 
-/** Ch.10.12 : seules ces transitions manuelles sont exposées (COMPLET est automatique, dépend des inscriptions). */
+/**
+ * Ch.10.12 : seules ces transitions manuelles sont exposées (COMPLET est automatique, dépend des
+ * inscriptions). `ARCHIVED -> CLOSED` déroge sciemment à ERR-GRP-010/RM-GRP-017 (« archivé » est
+ * documenté comme un état terminal immuable) — activé à la demande explicite du Professeur, qui a
+ * été prévenu que les demandes d'inscription auto-rejetées lors de l'archivage (ERR-INS-029/031)
+ * ne sont pas restaurées par cette réactivation.
+ */
 const ALLOWED_TRANSITIONS: Record<GroupStatus, GroupStatus[]> = {
   DRAFT: ['ACTIVE'],
   ACTIVE: ['FULL', 'CLOSED'],
   FULL: ['ACTIVE', 'CLOSED'],
   SUSPENDED: [],
   CLOSED: ['ARCHIVED'],
-  ARCHIVED: [],
+  ARCHIVED: ['CLOSED'],
 };
 
 @Injectable()
@@ -259,6 +265,11 @@ export class GroupsService {
   }
 
   close(teacherId: string, groupId: string) {
+    return this.transition(teacherId, groupId, 'CLOSED');
+  }
+
+  /** Réactivation d'un groupe archivé — voir la note sur `ALLOWED_TRANSITIONS` ci-dessus. */
+  reactivate(teacherId: string, groupId: string) {
     return this.transition(teacherId, groupId, 'CLOSED');
   }
 

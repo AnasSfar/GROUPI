@@ -103,6 +103,19 @@ export function Select({ value, onChange, children, disabled, className, id, nam
     };
   }, [open]);
 
+  // La liste peut être plus large que le bouton (width: max-content en CSS) : sur un écran
+  // étroit, un déclencheur proche du bord droit produirait un popup qui déborde du viewport.
+  // Un second passage, une fois la liste rendue (donc sa largeur réelle connue), la recale.
+  useLayoutEffect(() => {
+    if (!open || !listRef.current) return;
+    const margin = 8;
+    const overflowRight = listRef.current.getBoundingClientRect().right - (window.innerWidth - margin);
+    if (overflowRight > 0) {
+      setListPosition((prev) => ({ ...prev, left: Math.max(margin, prev.left - overflowRight) }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, listPosition.top, listPosition.width]);
+
   useEffect(() => {
     if (open) {
       setActiveIndex(Math.max(0, selectedIndex));

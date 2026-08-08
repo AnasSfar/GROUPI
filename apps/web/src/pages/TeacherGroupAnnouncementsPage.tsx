@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useConfirm } from '../components/ConfirmDialog';
 import { ApiError } from '../api/client';
 import * as groupsApi from '../api/groupsApi';
 import * as announcementsApi from '../api/groupAnnouncementsApi';
@@ -29,6 +30,7 @@ function formatDateTime(iso: string): string {
 export function TeacherGroupAnnouncementsPage() {
   const { groupId } = useParams<{ groupId: string }>();
   const { getAccessToken } = useAuth();
+  const confirm = useConfirm();
   const [group, setGroup] = useState<Group | null>(null);
   const [announcements, setAnnouncements] = useState<TeacherGroupAnnouncement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -122,6 +124,13 @@ export function TeacherGroupAnnouncementsPage() {
   async function handleDelete(id: string) {
     const token = getAccessToken();
     if (!token || !groupId) return;
+    const ok = await confirm({
+      title: 'Supprimer cette annonce ?',
+      message: 'Cette action est irréversible.',
+      confirmLabel: 'Supprimer',
+      danger: true,
+    });
+    if (!ok) return;
     setError(null);
     try {
       await announcementsApi.deleteAnnouncement(token, groupId, id);

@@ -121,10 +121,10 @@ export function TeacherSubscriptionPage() {
             <tbody>
               {plans.map((plan) => (
                 <tr key={plan.id}>
-                  <td>{plan.name}</td>
-                  <td>{plan.price === 0 ? 'Gratuit' : `${plan.price} TND`}</td>
-                  <td>{plan.maxActiveEnrollments === null ? 'Illimitée' : plan.maxActiveEnrollments}</td>
-                  <td>{plan.durationDays ? `${plan.durationDays} jours` : "Jusqu'à la fin de l'année académique"}</td>
+                  <td data-label="Offre">{plan.name}</td>
+                  <td data-label="Tarif">{plan.price === 0 ? 'Gratuit' : `${plan.price} TND`}</td>
+                  <td data-label="Capacité (inscriptions actives)">{plan.maxActiveEnrollments === null ? 'Illimitée' : plan.maxActiveEnrollments}</td>
+                  <td data-label="Durée">{plan.durationDays ? `${plan.durationDays} jours` : "Jusqu'à la fin de l'année académique"}</td>
                 </tr>
               ))}
             </tbody>
@@ -185,15 +185,15 @@ export function TeacherSubscriptionPage() {
               <tbody>
                 {subscriptions.map((sub) => (
                   <tr key={sub.id}>
-                    <td>{sub.plan.name}</td>
-                    <td>{sub.academicYear.label}</td>
-                    <td>
+                    <td data-label="Offre">{sub.plan.name}</td>
+                    <td data-label="Année académique">{sub.academicYear.label}</td>
+                    <td data-label="Statut">
                       <span className={`badge ${STATUS_BADGE[sub.status]}`}>{STATUS_LABELS[sub.status]}</span>
                       {sub.status === 'SUSPENDED' && sub.suspensionReason && (
                         <span className="table-hint"> — {sub.suspensionReason}</span>
                       )}
                     </td>
-                    <td>{sub.expiresAt ? new Date(sub.expiresAt).toLocaleDateString('fr-FR') : '—'}</td>
+                    <td data-label="Expire le">{sub.expiresAt ? new Date(sub.expiresAt).toLocaleDateString('fr-FR') : '—'}</td>
                   </tr>
                 ))}
               </tbody>

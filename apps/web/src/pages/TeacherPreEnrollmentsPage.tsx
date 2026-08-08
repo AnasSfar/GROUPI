@@ -195,18 +195,18 @@ export function TeacherPreEnrollmentsPage() {
               <tbody>
                 {preEnrollments.map((pe) => (
                   <tr key={pe.id}>
-                    <td>
+                    <td data-label="Élève">
                       {pe.student.firstName} {pe.student.lastName}
                     </td>
-                    <td>
+                    <td data-label="Parent">
                       {pe.parent.firstName} {pe.parent.lastName} — {pe.parent.phone}
                     </td>
-                    <td>
+                    <td data-label="Matière / Niveau">
                       {pe.subject ? `${pe.subject.name} — ` : ''}
                       {pe.schoolLevel.name}
                     </td>
-                    <td>{pe.academicYear.label}</td>
-                    <td>
+                    <td data-label="Année">{pe.academicYear.label}</td>
+                    <td data-label="Statut">
                       <span className={`badge ${STATUS_BADGE[pe.status]}`}>{STATUS_LABELS[pe.status]}</span>
                     </td>
                     <td className="admin-actions">

@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../components/Toast';
 import { ApiError } from '../api/client';
 import * as enrollmentsApi from '../api/enrollmentsApi';
 import * as groupChangeApi from '../api/groupChangeApi';
@@ -51,6 +52,7 @@ const STATUS_BADGE: Record<EnrollmentStatus, string> = {
 
 export function ParentEnrollmentsPage() {
   const { getAccessToken } = useAuth();
+  const { showToast } = useToast();
   const [enrollments, setEnrollments] = useState<ParentEnrollment[]>([]);
   const [groupChanges, setGroupChanges] = useState<GroupChangeRequestView[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,6 +88,7 @@ export function ParentEnrollmentsPage() {
     try {
       const updated = await enrollmentsApi.cancelEnrollment(token, enrollmentId);
       setEnrollments((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+      showToast('Demande d’inscription annulée');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "L'annulation a échoué.");
     }
@@ -98,6 +101,7 @@ export function ParentEnrollmentsPage() {
     try {
       const updated = await groupChangeApi.cancelGroupChangeRequest(token, id);
       setGroupChanges((prev) => prev.map((g) => (g.id === updated.id ? updated : g)));
+      showToast('Demande de changement de groupe annulée');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "L'annulation a échoué.");
     }
@@ -146,23 +150,23 @@ export function ParentEnrollmentsPage() {
                 {enrollments.map((enrollment) => (
                   <Fragment key={enrollment.id}>
                   <tr>
-                    <td>
+                    <td data-label="Enfant">
                       {enrollment.student.firstName} {enrollment.student.lastName}
                     </td>
-                    <td>
+                    <td data-label="Groupe">
                       {enrollment.group.name}
                       <div className="cell-secondary">
                         {enrollment.group.subject.name} — {enrollment.group.schoolLevel.name}
                       </div>
                     </td>
-                    <td>
+                    <td data-label="Professeur">
                       {enrollment.group.teacher.firstName} {enrollment.group.teacher.lastName}
                     </td>
-                    <td>
+                    <td data-label="Jour / Horaire">
                       <ScheduleList schedules={enrollment.group.schedules} />
                     </td>
-                    <td>{new Date(enrollment.requestedAt).toLocaleDateString('fr-FR')}</td>
-                    <td>
+                    <td data-label="Demandée le">{new Date(enrollment.requestedAt).toLocaleDateString('fr-FR')}</td>
+                    <td data-label="Statut">
                       <span className={`badge ${STATUS_BADGE[enrollment.status]}`}>
                         {STATUS_LABELS[enrollment.status]}
                       </span>
@@ -177,7 +181,7 @@ export function ParentEnrollmentsPage() {
                         <Link to={`/parent/groups?changeFromEnrollment=${enrollment.id}`}>Changer de groupe</Link>
                       )}
                     </td>
-                    <td>
+                    <td data-label="Commentaires">
                       <button
                         type="button"
                         className="ghost-link"
@@ -188,7 +192,7 @@ export function ParentEnrollmentsPage() {
                         {expandedComments === enrollment.id ? 'Masquer' : 'Voir'}
                       </button>
                     </td>
-                    <td>
+                    <td data-label="Annonces">
                       <button
                         type="button"
                         className="ghost-link"
@@ -201,7 +205,7 @@ export function ParentEnrollmentsPage() {
                         {expandedAnnouncements === enrollment.group.id ? 'Masquer' : 'Voir'}
                       </button>
                     </td>
-                    <td>
+                    <td data-label="Comptabilité">
                       {/* Ch.15.3 : le compte de suivi comptable n'existe qu'à partir de l'activation. */}
                       {['ACTIVE', 'SUSPENDED', 'ARCHIVED'].includes(enrollment.status) ? (
                         <button
@@ -266,16 +270,16 @@ export function ParentEnrollmentsPage() {
               <tbody>
                 {groupChanges.map((change) => (
                   <tr key={change.id}>
-                    <td>
+                    <td data-label="Enfant">
                       {change.originalEnrollment.student.firstName} {change.originalEnrollment.student.lastName}
                     </td>
-                    <td>{change.originalEnrollment.group.name}</td>
-                    <td>
+                    <td data-label="Groupe actuel">{change.originalEnrollment.group.name}</td>
+                    <td data-label="Groupe cible">
                       {change.targetGroup.name} ({change.targetGroup.teacher.firstName}{' '}
                       {change.targetGroup.teacher.lastName})
                     </td>
-                    <td>{change.effectiveDate ? new Date(change.effectiveDate).toLocaleDateString('fr-FR') : '—'}</td>
-                    <td>
+                    <td data-label="Date effective">{change.effectiveDate ? new Date(change.effectiveDate).toLocaleDateString('fr-FR') : '—'}</td>
+                    <td data-label="Statut">
                       <span className={`badge ${CHANGE_STATUS_BADGE[change.status]}`}>
                         {CHANGE_STATUS_LABELS[change.status]}
                       </span>

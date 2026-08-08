@@ -327,14 +327,6 @@ export class DashboardService {
         message: `Groupe(s) complet(s) : ${fullGroups.map((g) => g.name).join(', ')}.`,
       });
     }
-    const needsStudents = input.groupsView.filter((g) => g.category === 'NEEDS_STUDENTS');
-    if (needsStudents.length > 0) {
-      alerts.push({
-        level: toAlertLevel('INFORMATION'),
-        code: 'GROUPS_NEED_STUDENTS',
-        message: `Groupe(s) avec des places disponibles : ${needsStudents.map((g) => g.name).join(', ')}.`,
-      });
-    }
     for (const a of input.abandonmentAlerts) {
       alerts.push({
         level: toAlertLevel('CRITICAL'),

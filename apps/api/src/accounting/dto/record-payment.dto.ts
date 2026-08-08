@@ -1,4 +1,4 @@
-import { IsISO8601, IsNumber, IsOptional, IsPositive, IsString, MaxLength } from 'class-validator';
+import { IsISO8601, IsNumber, IsOptional, IsPositive, IsString, IsUUID, MaxLength } from 'class-validator';
 
 /** Ch.15.10 : le Professeur enregistre manuellement chaque paiement reçu (RM-CPT-011/018). */
 export class RecordPaymentDto {
@@ -16,4 +16,9 @@ export class RecordPaymentDto {
   @IsOptional()
   @IsISO8601()
   effectiveDate?: string;
+
+  /** Seance reglee par ce paiement, quand le suivi se fait seance par seance. */
+  @IsOptional()
+  @IsUUID()
+  sessionId?: string;
 }

@@ -12,6 +12,47 @@ interface SectionGroup {
   section: SchoolLevelSection;
   levels: SchoolLevel[];
 }
+interface SecondaryYearGroup {
+  year: number;
+  label: string;
+  levels: SchoolLevel[];
+}
+
+const SECONDARY_YEAR_LABELS: Record<number, string> = {
+  1: '1ère année secondaire',
+  2: '2ème année secondaire',
+  3: '3ème année secondaire',
+  4: '4ème année secondaire',
+};
+
+function secondaryYear(level: SchoolLevel): number {
+  const match = /^SEC(\d+)/.exec(level.code);
+  return match ? Number(match[1]) : 0;
+}
+
+function secondaryLevelLabel(level: SchoolLevel): string {
+  const year = secondaryYear(level);
+  const prefix = year ? `${SECONDARY_YEAR_LABELS[year]} - ` : '';
+  return prefix && level.name.startsWith(prefix) ? level.name.slice(prefix.length) : level.name;
+}
+
+function groupSecondaryLevels(levels: SchoolLevel[]): SecondaryYearGroup[] {
+  const groups = new Map<number, SchoolLevel[]>();
+  levels.forEach((level) => {
+    const year = secondaryYear(level);
+    const current = groups.get(year) ?? [];
+    current.push(level);
+    groups.set(year, current);
+  });
+
+  return Array.from(groups.entries())
+    .sort(([yearA], [yearB]) => yearA - yearB)
+    .map(([year, yearLevels]) => ({
+      year,
+      label: SECONDARY_YEAR_LABELS[year] ?? 'Autres niveaux',
+      levels: yearLevels.sort((a, b) => a.order - b.order),
+    }));
+}
 
 /**
  * Chaque section (primaire/collège/lycée) est un panneau repliable ouvert/fermé d'un seul clic
@@ -66,20 +107,41 @@ export function SchoolLevelSectionPicker({ levels, selectedIds, onToggle }: Scho
                 {selectedCount > 0 ? `${selectedCount} sélectionné${selectedCount > 1 ? 's' : ''}` : sectionLevels.length}
               </span>
             </button>
-            {open && (
-              <div className="level-section-options">
-                {sectionLevels.map((level) => (
-                  <label key={level.id} className="level-option">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.includes(level.id)}
-                      onChange={(e) => onToggle(level.id, e.target.checked)}
-                    />
-                    {level.name}
-                  </label>
-                ))}
-              </div>
-            )}
+            {open &&
+              (section === 'LYCEE' ? (
+                <div className="level-year-groups">
+                  {groupSecondaryLevels(sectionLevels).map((group) => (
+                    <div key={group.year} className="level-year-row">
+                      <p className="level-year-title">{group.label}</p>
+                      <div className="level-year-options">
+                        {group.levels.map((level) => (
+                          <label key={level.id} className="level-option">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.includes(level.id)}
+                              onChange={(e) => onToggle(level.id, e.target.checked)}
+                            />
+                            {secondaryLevelLabel(level)}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="level-section-options">
+                  {sectionLevels.map((level) => (
+                    <label key={level.id} className="level-option">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(level.id)}
+                        onChange={(e) => onToggle(level.id, e.target.checked)}
+                      />
+                      {level.name}
+                    </label>
+                  ))}
+                </div>
+              ))}
           </div>
         );
       })}

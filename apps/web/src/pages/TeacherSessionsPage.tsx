@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Select } from '../components/Select';
+import { useToast } from '../components/Toast';
+import { useConfirm } from '../components/ConfirmDialog';
 import { ApiError } from '../api/client';
 import * as groupsApi from '../api/groupsApi';
 import { formatDuration } from '../api/groupsApi';
@@ -77,6 +79,8 @@ function PostponePrompt({
 export function TeacherSessionsPage() {
   const { groupId } = useParams<{ groupId: string }>();
   const { getAccessToken } = useAuth();
+  const { showToast } = useToast();
+  const confirm = useConfirm();
   const [group, setGroup] = useState<Group | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [locations, setLocations] = useState<TeachingLocation[]>([]);
@@ -129,6 +133,7 @@ export function TeacherSessionsPage() {
           ? `${result.count} séance(s) générée(s).`
           : 'Aucune nouvelle séance à générer (déjà à jour).',
       );
+      if (result.count > 0) showToast('Séances générées');
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Génération impossible.');
@@ -151,6 +156,7 @@ export function TeacherSessionsPage() {
       });
       setNotice('Séance exceptionnelle créée.');
       setDate('');
+      showToast('Séance exceptionnelle créée');
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Impossible de créer cette séance.');
@@ -175,6 +181,7 @@ export function TeacherSessionsPage() {
         durationMinutes: newDurationMinutes,
       });
       setNotice('Séance reportée.');
+      showToast('Séance reportée');
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Report impossible.');
@@ -188,6 +195,7 @@ export function TeacherSessionsPage() {
     setNotice(null);
     try {
       await sessionsApi.cancelSession(token, sessionId);
+      showToast('Séance annulée');
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Annulation impossible.');
@@ -197,11 +205,19 @@ export function TeacherSessionsPage() {
   async function handleDelete(sessionId: string) {
     const token = getAccessToken();
     if (!token) return;
+    const ok = await confirm({
+      title: 'Supprimer cette séance ?',
+      message: 'Cette action est irréversible.',
+      confirmLabel: 'Supprimer',
+      danger: true,
+    });
+    if (!ok) return;
     setError(null);
     setNotice(null);
     try {
       await sessionsApi.removeSession(token, sessionId);
       setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+      showToast('Séance supprimée');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Suppression impossible.');
     }
@@ -279,7 +295,7 @@ export function TeacherSessionsPage() {
               <tbody>
                 {sessions.map((session) => (
                   <tr key={session.id}>
-                    <td>
+                    <td data-label="Date">
                       {new Date(session.date).toLocaleDateString('fr-FR', {
                         weekday: 'long',
                         day: '2-digit',
@@ -287,11 +303,11 @@ export function TeacherSessionsPage() {
                         year: 'numeric',
                       })}
                     </td>
-                    <td>{session.startTime}</td>
-                    <td>{formatDuration(session.durationMinutes)}</td>
-                    <td>{MODE_LABELS[session.teachingMode]}</td>
-                    <td>{session.teachingLocation?.label ?? '—'}</td>
-                    <td>
+                    <td data-label="Heure">{session.startTime}</td>
+                    <td data-label="Durée">{formatDuration(session.durationMinutes)}</td>
+                    <td data-label="Mode">{MODE_LABELS[session.teachingMode]}</td>
+                    <td data-label="Lieu">{session.teachingLocation?.label ?? '—'}</td>
+                    <td data-label="Statut">
                       <span className={`badge ${STATUS_BADGE[session.status]}`}>
                         {STATUS_LABELS[session.status]}
                       </span>
@@ -301,6 +317,9 @@ export function TeacherSessionsPage() {
                         session.status === 'COMPLETED' ||
                         session.status === 'LOCKED') && (
                         <Link to={`/teacher/sessions/${session.id}/attendance`}>Présences</Link>
+                      )}
+                      {(session.status === 'COMPLETED' || session.status === 'LOCKED') && (
+                        <Link to={`/teacher/sessions/${session.id}/payments`}>Paiements</Link>
                       )}
                       {postponeTargetId === session.id ? (
                         <PostponePrompt

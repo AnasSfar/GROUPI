@@ -1,12 +1,24 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Select } from '../components/Select';
+import { ChildDetailCard } from '../components/ChildDetailCard';
+import { ChildAttendancePanel } from '../components/ChildAttendancePanel';
+import { ChildAccountingPanel } from '../components/ChildAccountingPanel';
+import { ChildSituationPanel } from '../components/ChildSituationPanel';
+import { EmptyState } from '../components/UiState';
 import { ApiError } from '../api/client';
 import * as referentialsApi from '../api/referentialsApi';
 import * as parentProfileApi from '../api/parentProfileApi';
+import * as dashboardApi from '../api/dashboardApi';
 import type { City, School, SchoolLevel } from '../api/referentialsApi';
 import type { ParentProfile, Student } from '../api/parentProfileApi';
+import type { ParentDashboard } from '../api/dashboardApi';
+
+type FicheTab = 'overview' | 'attendance' | 'accounting' | 'situation';
+
+function initials(student: Student): string {
+  return `${student.firstName[0] ?? ''}${student.lastName[0] ?? ''}`.toUpperCase();
+}
 
 function formatSchoolOption(school: School) {
   const city = school.city?.name ? ` - ${school.city.name}` : '';
@@ -21,6 +33,9 @@ export function ParentChildrenPage() {
   const [schools, setSchools] = useState<School[]>([]);
   const [cities, setCities] = useState<City[]>([]);
   const [schoolCityId, setSchoolCityId] = useState('');
+  const [dashboard, setDashboard] = useState<ParentDashboard | null>(null);
+  const [openChildId, setOpenChildId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<FicheTab>('overview');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,18 +55,20 @@ export function ParentChildrenPage() {
     setLoading(true);
     setError(null);
     try {
-      const [me, myStudents, levels, allSchools, allCities] = await Promise.all([
+      const [me, myStudents, levels, allSchools, allCities, parentDashboard] = await Promise.all([
         parentProfileApi.getMyProfile(token),
         parentProfileApi.listStudents(token),
         referentialsApi.listSchoolLevels(token),
         referentialsApi.listSchools(token),
         referentialsApi.listCities(token),
+        dashboardApi.getParentDashboard(token),
       ]);
       setProfile(me);
       setStudents(myStudents);
       setSchoolLevels(levels);
       setSchools(allSchools);
       setCities(allCities);
+      setDashboard(parentDashboard);
       setPhone(me.phone);
       setCity(me.city);
     } catch (err) {
@@ -149,6 +166,9 @@ export function ParentChildrenPage() {
     return <p className="form-error">{error ?? 'Profil introuvable.'}</p>;
   }
 
+  const openStudent = students.find((s) => s.id === openChildId) ?? null;
+  const openChildDashboard = dashboard?.children.find((c) => c.student.id === openChildId) ?? null;
+
   return (
     <>
       <div className="page-header">
@@ -188,55 +208,129 @@ export function ParentChildrenPage() {
 
       <section className="card-section">
         <h2>Mes enfants ({students.length})</h2>
-        {students.length === 0 && <p>Aucun enfant déclaré pour le moment.</p>}
+        {students.length === 0 && (
+          <EmptyState title="Aucun enfant déclaré pour le moment">
+            Déclarez votre premier enfant ci-dessous pour commencer à suivre ses inscriptions.
+          </EmptyState>
+        )}
         {students.length > 0 && (
-          <div className="table-wrap">
-            <table className="admin-table">
-              <thead>
-                <tr>
-                  <th>Nom</th>
-                  <th>Niveau</th>
-                  <th>Établissement</th>
-                  <th>Classe</th>
-                  <th>Statut</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {students.map((student) => (
-                  <tr key={student.id}>
-                    <td>
-                      {student.firstName} {student.lastName}
-                    </td>
-                    <td>{student.currentSchoolSituation?.schoolLevel.name ?? '—'}</td>
-                    <td>{student.currentSchoolSituation?.school.name ?? '—'}</td>
-                    <td>{student.currentSchoolSituation?.class ?? '—'}</td>
-                    <td>
-                      <span className={`badge ${student.status === 'ACTIVE' ? 'badge-success' : 'badge-neutral'}`}>
-                        {student.status === 'ACTIVE' ? 'Actif' : 'Archivé'}
-                      </span>
-                    </td>
-                    <td className="admin-actions">
-                      <Link to={`/parent/children/${student.id}/situation`}>Situation scolaire</Link>
-                      <Link to={`/parent/children/${student.id}/attendance`}>Présences</Link>
-                      <Link to={`/parent/children/${student.id}/accounting`}>Comptabilité</Link>
-                      {student.status === 'ACTIVE' ? (
-                        <button type="button" className="ghost" onClick={() => handleArchive(student.id)}>
-                          Archiver
-                        </button>
-                      ) : (
-                        <button type="button" onClick={() => handleReactivate(student.id)}>
-                          Réactiver
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="child-card-grid">
+            {students.map((student) => (
+              <div key={student.id} className="child-card">
+                <div className="child-card-avatar">{initials(student)}</div>
+                <p className="child-card-name">
+                  {student.firstName} {student.lastName}
+                </p>
+                <p className="table-hint">
+                  {student.currentSchoolSituation?.schoolLevel.name ?? 'Niveau non renseigné'}
+                </p>
+                <span className={`badge ${student.status === 'ACTIVE' ? 'badge-success' : 'badge-neutral'}`}>
+                  {student.status === 'ACTIVE' ? 'Actif' : 'Archivé'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenChildId(student.id);
+                    setActiveTab(student.status === 'ACTIVE' ? 'overview' : 'situation');
+                  }}
+                >
+                  Voir la fiche
+                </button>
+              </div>
+            ))}
           </div>
         )}
       </section>
+
+      {openStudent && (
+        <div className="terms-modal-backdrop" onClick={() => setOpenChildId(null)}>
+          <div className="terms-modal terms-modal-wide" onClick={(e) => e.stopPropagation()}>
+            <h2>
+              {openStudent.firstName} {openStudent.lastName}
+            </h2>
+            <p className="table-hint section-spacer">
+              {openStudent.currentSchoolSituation
+                ? `${openStudent.currentSchoolSituation.schoolLevel.name} · ${openStudent.currentSchoolSituation.school.name}${
+                    openStudent.currentSchoolSituation.class ? ` · ${openStudent.currentSchoolSituation.class}` : ''
+                  }`
+                : 'Situation scolaire non renseignée'}
+            </p>
+
+            <div className="fiche-tabs" role="tablist">
+              {openChildDashboard && (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === 'overview'}
+                  className={activeTab === 'overview' ? 'active' : ''}
+                  onClick={() => setActiveTab('overview')}
+                >
+                  Vue d'ensemble
+                </button>
+              )}
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === 'attendance'}
+                className={activeTab === 'attendance' ? 'active' : ''}
+                onClick={() => setActiveTab('attendance')}
+              >
+                Présences
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === 'accounting'}
+                className={activeTab === 'accounting' ? 'active' : ''}
+                onClick={() => setActiveTab('accounting')}
+              >
+                Comptabilité
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === 'situation'}
+                className={activeTab === 'situation' ? 'active' : ''}
+                onClick={() => setActiveTab('situation')}
+              >
+                Situation scolaire
+              </button>
+            </div>
+
+            {!openChildDashboard && (
+              <p className="form-notice section-spacer">
+                Le suivi d'activité (groupes, séances, remarques du professeur) n'est plus
+                disponible pour un enfant archivé — l'historique de présences, la comptabilité et
+                la situation scolaire restent consultables ci-dessous.
+              </p>
+            )}
+
+            <div className="fiche-tab-content">
+              {activeTab === 'overview' && openChildDashboard && (
+                <ChildDetailCard child={openChildDashboard} showName={false} onRefresh={load} onNavigate={setActiveTab} />
+              )}
+              {activeTab === 'attendance' && <ChildAttendancePanel studentId={openStudent.id} />}
+              {activeTab === 'accounting' && <ChildAccountingPanel studentId={openStudent.id} />}
+              {activeTab === 'situation' && <ChildSituationPanel studentId={openStudent.id} />}
+            </div>
+
+            <div className="terms-modal-actions">
+              {openStudent.status === 'ACTIVE' ? (
+                <button type="button" className="ghost" onClick={() => handleArchive(openStudent.id)}>
+                  Archiver cet enfant
+                </button>
+              ) : (
+                <button type="button" onClick={() => handleReactivate(openStudent.id)}>
+                  Réactiver cet enfant
+                </button>
+              )}
+              <button type="button" onClick={() => setOpenChildId(null)}>
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <section className="card-section">
         <h2>Ajouter un enfant</h2>

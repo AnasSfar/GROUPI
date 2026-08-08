@@ -156,6 +156,10 @@ export function archiveGroup(accessToken: string, groupId: string): Promise<Grou
   return apiRequest<Group>(`/groups/${groupId}/archive`, { method: 'POST', accessToken });
 }
 
+export function reactivateGroup(accessToken: string, groupId: string): Promise<Group> {
+  return apiRequest<Group>(`/groups/${groupId}/reactivate`, { method: 'POST', accessToken });
+}
+
 export function removeGroup(accessToken: string, groupId: string): Promise<{ id: string; deleted: boolean }> {
   return apiRequest(`/groups/${groupId}`, { method: 'DELETE', accessToken });
 }

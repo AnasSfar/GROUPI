@@ -152,11 +152,11 @@ export function StudentSituationPage() {
             <tbody>
               {history.map((situation) => (
                 <tr key={situation.id}>
-                  <td>{situation.academicYear.label}</td>
-                  <td>{situation.schoolLevel.name}</td>
-                  <td>{situation.school.name}</td>
-                  <td>{situation.class ?? '—'}</td>
-                  <td>
+                  <td data-label="Année académique">{situation.academicYear.label}</td>
+                  <td data-label="Niveau">{situation.schoolLevel.name}</td>
+                  <td data-label="Établissement">{situation.school.name}</td>
+                  <td data-label="Classe">{situation.class ?? '—'}</td>
+                  <td data-label="Statut">
                     <span className={`badge ${STATUS_BADGE[situation.status]}`}>
                       {STATUS_LABELS[situation.status]}
                     </span>
@@ -164,8 +164,8 @@ export function StudentSituationPage() {
                       <span className="table-hint"> — {situation.rejectionReason}</span>
                     )}
                   </td>
-                  <td>{new Date(situation.startDate).toLocaleDateString('fr-FR')}</td>
-                  <td>{situation.endDate ? new Date(situation.endDate).toLocaleDateString('fr-FR') : '—'}</td>
+                  <td data-label="Début">{new Date(situation.startDate).toLocaleDateString('fr-FR')}</td>
+                  <td data-label="Fin">{situation.endDate ? new Date(situation.endDate).toLocaleDateString('fr-FR') : '—'}</td>
                 </tr>
               ))}
             </tbody>
