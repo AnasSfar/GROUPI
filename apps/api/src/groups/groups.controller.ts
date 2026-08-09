@@ -20,8 +20,8 @@ export class GroupsController {
   /** Ch.10.5 : recherche publique — ouverte à tout compte Parent authentifié. */
   @Get('search')
   @Roles(Role.PARENT)
-  search(@Query() query: SearchGroupsQueryDto) {
-    return this.service.search(query);
+  search(@CurrentUser() user: AuthenticatedUser, @Query() query: SearchGroupsQueryDto) {
+    return this.service.search(user.id, query);
   }
 
   @Get('mine')

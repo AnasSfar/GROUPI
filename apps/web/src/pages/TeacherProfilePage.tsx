@@ -454,16 +454,6 @@ export function TeacherProfilePage() {
               </p>
             )}
           </section>
-          <section className="card-section">
-            <h2>Expérience</h2>
-            {teachingInstitution && (
-              <div className="experience-institution">
-                <span>Établissement</span>
-                <strong>{teachingInstitution}</strong>
-              </div>
-            )}
-            <p className="profile-bio-text">{experience || 'Aucune expérience renseignée pour le moment.'}</p>
-          </section>
         </div>
 
         <aside className="profile-side">
@@ -489,10 +479,10 @@ export function TeacherProfilePage() {
               Biographie
               <textarea value={bio} onChange={(e) => setBio(e.target.value)} rows={3} />
             </label>
-            <label>
+            {/* <label>
               Photo (URL)
               <input type="text" value={photo} onChange={(e) => setPhoto(e.target.value)} />
-            </label>
+            </label> */}
             <label>
               Établissement actuel ou passé
               <input

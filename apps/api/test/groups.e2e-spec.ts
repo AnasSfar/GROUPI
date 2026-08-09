@@ -24,12 +24,17 @@ describe('Groups — schedule update (e2e)', () => {
 
   const runId = Date.now();
   const teacherEmail = `e2e-grp-teacher-${runId}@example.com`;
+  const parentEmail = `e2e-grp-parent-${runId}@example.com`;
   const password = 'CorrectHorse123';
 
   let teacherToken: string;
+  let parentToken: string;
   let subjectId: string;
   let schoolLevelId: string;
+  let otherSchoolLevelId: string;
   let academicYearId: string;
+  let cityId: string;
+  let schoolId: string;
 
   function dateOnly(d: Date): Date {
     return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
@@ -95,8 +100,16 @@ describe('Groups — schedule update (e2e)', () => {
     });
     schoolLevelId = schoolLevel.id;
 
+    const otherSchoolLevel = await prisma.schoolLevel.create({
+      data: { name: `E2E GRP Other Level ${runId}`, code: `E2EGRPOTHER${runId}`, order: 1000, isActive: true },
+    });
+    otherSchoolLevelId = otherSchoolLevel.id;
+
     await prisma.subjectLevel.create({
       data: { subjectId, schoolLevelId, isAllowed: true, isActive: true },
+    });
+    await prisma.subjectLevel.create({
+      data: { subjectId, schoolLevelId: otherSchoolLevelId, isAllowed: true, isActive: true },
     });
 
     const academicYear = await prisma.academicYear.create({
@@ -108,6 +121,19 @@ describe('Groups — schedule update (e2e)', () => {
       },
     });
     academicYearId = academicYear.id;
+
+    const city = await prisma.city.create({ data: { name: `E2E GRP City ${runId}`, isActive: true } });
+    cityId = city.id;
+
+    const school = await prisma.school.create({
+      data: {
+        name: `E2E GRP School ${runId}`,
+        type: 'HIGH_SCHOOL',
+        cityId,
+        isActive: true,
+      },
+    });
+    schoolId = school.id;
 
     const registerRes = await api()
       .post('/api/v1/auth/register')
@@ -129,10 +155,40 @@ describe('Groups — schedule update (e2e)', () => {
       where: { id: registerRes.body.id },
       data: { status: 'VALIDATED' },
     });
+    await prisma.user.update({ where: { id: registerRes.body.id }, data: { status: 'ACTIVE' } });
     await grantActiveSubscription(prisma, registerRes.body.id, academicYearId);
 
     const loginRes = await api().post('/api/v1/auth/login').send({ email: teacherEmail, password }).expect(200);
     teacherToken = loginRes.body.accessToken as string;
+
+    const parentRegisterRes = await api()
+      .post('/api/v1/auth/register')
+      .send({
+        email: parentEmail,
+        password,
+        role: 'PARENT',
+        firstName: 'Parent',
+        lastName: 'Groupes',
+        phone: '20000003',
+        city: 'Tunis',
+        acceptTerms: true,
+        initialStudent: {
+          firstName: 'Kid',
+          lastName: 'Groupes',
+          schoolLevelId,
+          schoolId,
+        },
+      })
+      .expect(201);
+
+    await prisma.user.update({ where: { id: parentRegisterRes.body.id }, data: { status: 'ACTIVE' } });
+    await prisma.parentProfile.update({
+      where: { id: parentRegisterRes.body.id },
+      data: { validatedAt: new Date() },
+    });
+
+    const parentLoginRes = await api().post('/api/v1/auth/login').send({ email: parentEmail, password }).expect(200);
+    parentToken = parentLoginRes.body.accessToken as string;
   });
 
   afterAll(async () => {
@@ -154,12 +210,26 @@ describe('Groups — schedule update (e2e)', () => {
       await prisma.group.deleteMany({ where: { id: { in: groupIds } } });
     }
 
+    const students = await prisma.student.findMany({
+      where: { parentId: { in: userIds } },
+      select: { id: true },
+    });
+    const studentIds = students.map((s) => s.id);
+    await prisma.student.updateMany({
+      where: { id: { in: studentIds } },
+      data: { currentSchoolSituationId: null },
+    });
+    await prisma.studentSchoolSituation.deleteMany({ where: { studentId: { in: studentIds } } });
+    await prisma.student.deleteMany({ where: { id: { in: studentIds } } });
+
     await prisma.teacherSubject.deleteMany({ where: { teacherProfileId: { in: userIds } } });
     await prisma.teacherSchoolLevel.deleteMany({ where: { teacherProfileId: { in: userIds } } });
     await prisma.subjectLevel.deleteMany({ where: { subjectId } });
     await prisma.subject.deleteMany({ where: { id: subjectId } });
-    await prisma.schoolLevel.deleteMany({ where: { id: schoolLevelId } });
+    await prisma.schoolLevel.deleteMany({ where: { id: { in: [schoolLevelId, otherSchoolLevelId] } } });
     await prisma.academicYear.deleteMany({ where: { id: academicYearId } });
+    await prisma.school.deleteMany({ where: { id: schoolId } });
+    await prisma.city.deleteMany({ where: { id: cityId } });
 
     if (userIds.length > 0) {
       await prisma.activity.deleteMany({ where: { userId: { in: userIds } } });
@@ -167,6 +237,7 @@ describe('Groups — schedule update (e2e)', () => {
       await prisma.userSession.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.passwordResetToken.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.emailVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
+      await prisma.parentProfile.deleteMany({ where: { id: { in: userIds } } });
       await prisma.teacherProfile.deleteMany({ where: { id: { in: userIds } } });
       await prisma.user.deleteMany({ where: { id: { in: userIds } } });
     }
@@ -174,14 +245,14 @@ describe('Groups — schedule update (e2e)', () => {
     await app.close();
   });
 
-  async function createGroup(name: string, schedules: unknown[]) {
+  async function createGroup(name: string, schedules: unknown[], levelId = schoolLevelId) {
     const res = await api()
       .post('/api/v1/groups')
       .set('Authorization', `Bearer ${teacherToken}`)
       .send({
         name,
         subjectId,
-        schoolLevelId,
+        schoolLevelId: levelId,
         academicYearId,
         capacity: 10,
         publicPrice: 50,
@@ -203,6 +274,35 @@ describe('Groups — schedule update (e2e)', () => {
       .expect(201);
     return res.body.sessions as { id: string; status: string }[];
   }
+
+  it('filters parent group search to the active child school levels', async () => {
+    const matchingGroup = await createGroup(`E2E-GRP-${runId} Visible Parent`, [
+      { dayOfWeek: scheduleDay1, startTime: '09:00', durationMinutes: 60 },
+    ]);
+    const otherLevelGroup = await createGroup(
+      `E2E-GRP-${runId} Hidden Parent Level`,
+      [{ dayOfWeek: scheduleDay1, startTime: '10:00', durationMinutes: 60 }],
+      otherSchoolLevelId,
+    );
+
+    await api()
+      .post(`/api/v1/groups/${matchingGroup.id}/open`)
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .expect(201);
+    await api()
+      .post(`/api/v1/groups/${otherLevelGroup.id}/open`)
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .expect(201);
+
+    const res = await api()
+      .get('/api/v1/groups/search')
+      .set('Authorization', `Bearer ${parentToken}`)
+      .expect(200);
+
+    const ids = res.body.map((g: { id: string }) => g.id);
+    expect(ids).toContain(matchingGroup.id);
+    expect(ids).not.toContain(otherLevelGroup.id);
+  });
 
   it('(a) updating schedules with zero future sessions still works with no extra flag (regression)', async () => {
     const group = await createGroup(`E2E-GRP-${runId} Sans Séance`, [

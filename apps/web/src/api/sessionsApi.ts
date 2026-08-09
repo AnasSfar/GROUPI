@@ -68,6 +68,13 @@ export function generateSessions(accessToken: string, groupId: string): Promise<
   });
 }
 
+export function generateNextSession(accessToken: string, groupId: string): Promise<GenerateSessionsResult> {
+  return apiRequest<GenerateSessionsResult>(`/groups/${groupId}/sessions/generate-next`, {
+    method: 'POST',
+    accessToken,
+  });
+}
+
 export function createSession(
   accessToken: string,
   groupId: string,

@@ -36,8 +36,8 @@ export class AccountLifecycleService {
         status: true,
         roles: true,
         createdAt: true,
-        teacherProfile: { select: { firstName: true, lastName: true } },
-        parentProfile: { select: { firstName: true, lastName: true } },
+        teacherProfile: { select: { firstName: true, lastName: true, phone: true } },
+        parentProfile: { select: { firstName: true, lastName: true, phone: true } },
       },
       orderBy: { createdAt: 'asc' },
     });

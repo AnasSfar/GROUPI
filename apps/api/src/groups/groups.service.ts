@@ -337,13 +337,36 @@ export class GroupsService {
   }
 
   /** Ch.10.5/10.6 : recherche publique par les Parents — champs publics uniquement. */
-  async search(query: SearchGroupsQueryDto) {
+  async search(parentId: string, query: SearchGroupsQueryDto) {
+    const students = await this.prisma.student.findMany({
+      where: {
+        parentId,
+        status: 'ACTIVE',
+        currentSchoolSituation: { is: { status: 'ACTIVE' } },
+      },
+      select: { currentSchoolSituation: { select: { schoolLevelId: true } } },
+    });
+    const allowedSchoolLevelIds = [
+      ...new Set(students.map((s) => s.currentSchoolSituation?.schoolLevelId).filter(Boolean)),
+    ] as string[];
+
+    if (allowedSchoolLevelIds.length === 0) {
+      return [];
+    }
+    if (query.schoolLevelId && !allowedSchoolLevelIds.includes(query.schoolLevelId)) {
+      return [];
+    }
+
     const groups = await this.prisma.group.findMany({
       where: {
         status: { in: ['ACTIVE', 'FULL'] },
         ...(query.subjectId ? { subjectId: query.subjectId } : {}),
-        ...(query.schoolLevelId ? { schoolLevelId: query.schoolLevelId } : {}),
-        ...(query.city ? { teacher: { city: query.city } } : {}),
+        schoolLevelId: query.schoolLevelId ?? { in: allowedSchoolLevelIds },
+        teacher: {
+          status: 'VALIDATED',
+          user: { status: 'ACTIVE' },
+          ...(query.city ? { city: query.city } : {}),
+        },
       },
       include: { ...INCLUDE_DETAILS, _count: { select: { enrollments: true } } },
       orderBy: { createdAt: 'desc' },

@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Select } from '../components/Select';
 import { useToast } from '../components/Toast';
+import { useConfirm } from '../components/ConfirmDialog';
+import { useUnsavedChangesGuard } from '../hooks/useUnsavedChangesGuard';
+import { hasSessionStarted } from '../utils/format';
 import { ApiError } from '../api/client';
 import * as groupsApi from '../api/groupsApi';
 import * as attendanceApi from '../api/attendanceApi';
@@ -16,11 +18,11 @@ import type {
 } from '../api/attendanceApi';
 import type { AbsenceNoticeWithStudent } from '../api/absenceNoticeApi';
 
-const STATUS_OPTIONS: { value: AttendanceStatus; label: string }[] = [
-  { value: 'PRESENT', label: 'Présent' },
-  { value: 'LATE', label: 'Retard' },
-  { value: 'EXCUSED_ABSENT', label: 'Absent excusé' },
-  { value: 'UNEXCUSED_ABSENT', label: 'Absent non excusé' },
+const STATUS_COLUMNS: { value: AttendanceStatus; label: string; tone: 'success' | 'info' | 'warning' | 'danger' }[] = [
+  { value: 'PRESENT', label: 'Présent', tone: 'success' },
+  { value: 'LATE', label: 'Retard', tone: 'info' },
+  { value: 'EXCUSED_ABSENT', label: 'Absent excusé', tone: 'warning' },
+  { value: 'UNEXCUSED_ABSENT', label: 'Absent non excusé', tone: 'danger' },
 ];
 
 const STATUS_BADGE: Record<AttendanceStatus, string> = {
@@ -30,6 +32,10 @@ const STATUS_BADGE: Record<AttendanceStatus, string> = {
   UNEXCUSED_ABSENT: 'badge-danger',
 };
 
+/** L'enseignant coche juste "Retard" ; la durée exacte importe peu côté saisie rapide (backend
+ *  exige néanmoins une valeur non nulle — ERR-ATT-022 — donc on en pose une par défaut). */
+const DEFAULT_LATE_DURATION = '5';
+
 const SESSION_STATUS_LABELS: Record<string, string> = {
   PLANNED: 'Planifiée',
   COMPLETED: 'Terminée',
@@ -38,98 +44,30 @@ const SESSION_STATUS_LABELS: Record<string, string> = {
   POSTPONED: 'Reportée',
 };
 
-/** Formulaire de saisie inline pour une ligne élève — état local tant que non enregistré. */
-function AttendanceRow({
-  entry,
-  locked,
-  onSave,
-  onReset,
-}: {
-  entry: AttendanceEntry;
-  locked: boolean;
-  onSave: (studentId: string, status: AttendanceStatus, lateDuration: string, comment: string) => Promise<void>;
-  onReset: (studentId: string) => Promise<void>;
-}) {
-  const [status, setStatus] = useState<AttendanceStatus>(entry.attendance?.status ?? 'PRESENT');
-  const [lateDuration, setLateDuration] = useState(String(entry.attendance?.lateDuration ?? ''));
-  const [comment, setComment] = useState(entry.attendance?.comment ?? '');
-  const [saving, setSaving] = useState(false);
+interface PendingRow {
+  status: AttendanceStatus | null;
+  lateDuration: string;
+  comment: string;
+}
 
-  async function handleSave() {
-    setSaving(true);
-    try {
-      await onSave(entry.student.id, status, lateDuration, comment);
-    } finally {
-      setSaving(false);
-    }
-  }
+function pendingFromEntry(entry: AttendanceEntry): PendingRow {
+  return {
+    status: entry.attendance?.status ?? null,
+    lateDuration: entry.attendance?.lateDuration != null ? String(entry.attendance.lateDuration) : '',
+    comment: entry.attendance?.comment ?? '',
+  };
+}
 
-  return (
-    <tr>
-      <td data-label="Élève">
-        {entry.student.firstName} {entry.student.lastName}
-      </td>
-      <td data-label="Statut">
-        <Select value={status} onChange={(e) => setStatus(e.target.value as AttendanceStatus)} disabled={locked}>
-          {STATUS_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </Select>
-      </td>
-      <td data-label="Retard">
-        {status === 'LATE' && (
-          <input
-            type="number"
-            min={1}
-            placeholder="minutes"
-            value={lateDuration}
-            onChange={(e) => setLateDuration(e.target.value)}
-            disabled={locked}
-            style={{ width: '80px' }}
-          />
-        )}
-      </td>
-      <td data-label="Commentaire">
-        <input
-          type="text"
-          placeholder="Commentaire (optionnel)"
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-          disabled={locked}
-        />
-      </td>
-      <td data-label="État">
-        {entry.attendance ? (
-          <span className={`badge ${STATUS_BADGE[entry.attendance.status]}`}>{entry.attendance.statusLabel}</span>
-        ) : (
-          <span className="badge badge-neutral">Non renseignée</span>
-        )}
-        {entry.attendance && (
-          <span className={`badge ${entry.attendance.billable ? 'badge-info' : 'badge-neutral'}`} style={{ marginLeft: 6 }}>
-            {entry.attendance.billable ? 'Facturée' : 'Non facturée'}
-          </span>
-        )}
-      </td>
-      <td className="admin-actions">
-        <button type="button" onClick={handleSave} disabled={locked || saving}>
-          {entry.attendance ? 'Corriger' : 'Enregistrer'}
-        </button>
-        {entry.attendance && !locked && (
-          <button type="button" className="ghost" onClick={() => onReset(entry.student.id)}>
-            Effacer
-          </button>
-        )}
-      </td>
-    </tr>
-  );
+function isRowDirty(entry: AttendanceEntry, row: PendingRow): boolean {
+  const saved = pendingFromEntry(entry);
+  return saved.status !== row.status || saved.lateDuration !== row.lateDuration || saved.comment !== row.comment;
 }
 
 export function TeacherAttendancePage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const { getAccessToken } = useAuth();
   const { showToast } = useToast();
+  const confirm = useConfirm();
   const [view, setView] = useState<SessionAttendanceView | null>(null);
   const [group, setGroup] = useState<Group | null>(null);
   const [alerts, setAlerts] = useState<AbandonmentAlert[]>([]);
@@ -137,6 +75,8 @@ export function TeacherAttendancePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [pending, setPending] = useState<Record<string, PendingRow>>({});
+  const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     const token = getAccessToken();
@@ -146,6 +86,7 @@ export function TeacherAttendancePage() {
     try {
       const attendance = await attendanceApi.getSessionAttendance(token, sessionId);
       setView(attendance);
+      setPending(Object.fromEntries(attendance.entries.map((e) => [e.student.id, pendingFromEntry(e)])));
       const [groups, abandonAlerts, notices] = await Promise.all([
         groupsApi.listMine(token),
         attendanceApi.getAbandonmentAlerts(token, attendance.session.groupId),
@@ -165,22 +106,67 @@ export function TeacherAttendancePage() {
     load();
   }, [load]);
 
-  async function handleSave(studentId: string, status: AttendanceStatus, lateDuration: string, comment: string) {
+  const entries = view?.entries ?? [];
+
+  const dirtyEntries = useMemo(
+    () => entries.filter((entry) => pending[entry.student.id] && isRowDirty(entry, pending[entry.student.id])),
+    [entries, pending],
+  );
+
+  const hasUnsavedChanges = dirtyEntries.length > 0;
+
+  const confirmLeave = useCallback(
+    () =>
+      confirm({
+        title: 'Présences non enregistrées',
+        message: 'Des présences ont été modifiées sans être enregistrées. Quitter sans enregistrer ?',
+        confirmLabel: 'Quitter sans enregistrer',
+        cancelLabel: 'Rester sur la page',
+        danger: true,
+      }),
+    [confirm],
+  );
+
+  useUnsavedChangesGuard(hasUnsavedChanges, confirmLeave);
+
+  function updateRow(studentId: string, patch: Partial<PendingRow>) {
+    setPending((prev) => ({ ...prev, [studentId]: { ...prev[studentId], ...patch } }));
+  }
+
+  async function handleSaveAll() {
     const token = getAccessToken();
-    if (!token || !sessionId) return;
+    if (!token || !sessionId || dirtyEntries.length === 0) return;
     setError(null);
     setNotice(null);
+    setSaving(true);
     try {
-      await attendanceApi.setAttendance(token, sessionId, studentId, {
-        status,
-        lateDuration: status === 'LATE' && lateDuration ? Number(lateDuration) : undefined,
-        comment: comment || undefined,
-      });
-      showToast('Présence enregistrée');
+      const results = await Promise.allSettled(
+        dirtyEntries.map((entry) => {
+          const row = pending[entry.student.id];
+          return attendanceApi.setAttendance(token, sessionId, entry.student.id, {
+            status: row.status as AttendanceStatus,
+            lateDuration: row.status === 'LATE' && row.lateDuration ? Number(row.lateDuration) : undefined,
+            comment: row.comment || undefined,
+          });
+        }),
+      );
+      const failed = results.filter((r) => r.status === 'rejected').length;
+      if (failed > 0) {
+        setError(`${failed} présence(s) n'ont pas pu être enregistrées.`);
+      } else {
+        showToast('Présences enregistrées');
+      }
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Enregistrement impossible.');
+    } finally {
+      setSaving(false);
     }
+  }
+
+  function handleCancelAll() {
+    setPending(Object.fromEntries(entries.map((e) => [e.student.id, pendingFromEntry(e)])));
+    setNotice(null);
   }
 
   async function handleReset(studentId: string) {
@@ -199,12 +185,13 @@ export function TeacherAttendancePage() {
 
   async function handleValidate() {
     const token = getAccessToken();
-    if (!token || !sessionId) return;
+    if (!token || !sessionId || !canValidate) return;
     setError(null);
     setNotice(null);
     try {
       const result = await attendanceApi.validateAttendance(token, sessionId);
       setView(result);
+      setPending(Object.fromEntries(result.entries.map((e) => [e.student.id, pendingFromEntry(e)])));
       setNotice('Présences validées : la séance est marquée terminée.');
       showToast('Présences validées');
     } catch (err) {
@@ -220,10 +207,12 @@ export function TeacherAttendancePage() {
     return <p className="form-error">{error ?? 'Séance introuvable.'}</p>;
   }
 
-  const { session, entries } = view;
-  const filledCount = entries.filter((e) => e.attendance !== null).length;
-  const canValidate = session.status === 'PLANNED' && filledCount === entries.length && entries.length > 0;
-  const locked = session.status === 'LOCKED' || session.status === 'COMPLETED';
+  const { session } = view;
+  const filledCount = entries.filter((e) => pending[e.student.id]?.status).length;
+  const notYetStarted = session.status === 'PLANNED' && !hasSessionStarted(session.date, session.startTime);
+  const canValidate =
+    session.status === 'PLANNED' && !notYetStarted && filledCount === entries.length && entries.length > 0 && !hasUnsavedChanges;
+  const locked = session.status === 'LOCKED' || session.status === 'COMPLETED' || notYetStarted;
 
   return (
     <>
@@ -297,38 +286,122 @@ export function TeacherAttendancePage() {
         {entries.length === 0 && <p>Aucun élève inscrit activement dans ce groupe.</p>}
         {entries.length > 0 && (
           <div className="table-wrap">
-            <table className="admin-table">
+            <table className="admin-table attendance-table">
               <thead>
                 <tr>
                   <th>Élève</th>
-                  <th>Statut</th>
-                  <th>Retard</th>
+                  {STATUS_COLUMNS.map((col) => (
+                    <th key={col.value} className="attendance-tick-head">
+                      {col.label}
+                    </th>
+                  ))}
                   <th>Commentaire</th>
                   <th>État</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {entries.map((entry) => (
-                  <AttendanceRow
-                    key={entry.enrollmentId}
-                    entry={entry}
-                    locked={locked}
-                    onSave={handleSave}
-                    onReset={handleReset}
-                  />
-                ))}
+                {entries.map((entry) => {
+                  const row = pending[entry.student.id] ?? pendingFromEntry(entry);
+                  const dirty = isRowDirty(entry, row);
+                  return (
+                    <tr key={entry.enrollmentId}>
+                      <td data-label="Élève">
+                        {entry.student.firstName} {entry.student.lastName}
+                      </td>
+                      {STATUS_COLUMNS.map((col) => (
+                        <td key={col.value} data-label={col.label} className="attendance-tick-cell">
+                          <input
+                            type="radio"
+                            className={`attendance-tick attendance-tick-${col.tone}`}
+                            name={`status-${entry.enrollmentId}`}
+                            checked={row.status === col.value}
+                            disabled={locked}
+                            onChange={() =>
+                              updateRow(entry.student.id, {
+                                status: col.value,
+                                ...(col.value === 'LATE' && !row.lateDuration
+                                  ? { lateDuration: DEFAULT_LATE_DURATION }
+                                  : {}),
+                              })
+                            }
+                            aria-label={`${col.label} — ${entry.student.firstName} ${entry.student.lastName}`}
+                          />
+                        </td>
+                      ))}
+                      <td data-label="Commentaire">
+                        <input
+                          type="text"
+                          placeholder="Commentaire (optionnel)"
+                          value={row.comment}
+                          onChange={(e) => updateRow(entry.student.id, { comment: e.target.value })}
+                          disabled={locked}
+                        />
+                      </td>
+                      <td data-label="État">
+                        {dirty && (
+                          <span className="badge badge-warning" style={{ marginRight: 6 }}>
+                            Non enregistré
+                          </span>
+                        )}
+                        {entry.attendance ? (
+                          <span className={`badge ${STATUS_BADGE[entry.attendance.status]}`}>
+                            {entry.attendance.statusLabel}
+                          </span>
+                        ) : (
+                          !dirty && <span className="badge badge-neutral">Non renseignée</span>
+                        )}
+                        {entry.attendance && (
+                          <span
+                            className={`badge ${entry.attendance.billable ? 'badge-info' : 'badge-neutral'}`}
+                            style={{ marginLeft: 6 }}
+                          >
+                            {entry.attendance.billable ? 'Facturée' : 'Non facturée'}
+                          </span>
+                        )}
+                      </td>
+                      <td className="admin-actions">
+                        {entry.attendance && !locked && (
+                          <button type="button" className="ghost" onClick={() => handleReset(entry.student.id)}>
+                            Effacer
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
+
+        {!locked && entries.length > 0 && (
+          <div className="field-row" style={{ marginTop: 16 }}>
+            <button type="button" onClick={handleSaveAll} disabled={!hasUnsavedChanges || saving}>
+              {saving ? 'Enregistrement...' : 'Enregistrer'}
+            </button>
+            <button type="button" className="ghost" onClick={handleCancelAll} disabled={!hasUnsavedChanges || saving}>
+              Annuler
+            </button>
+            {hasUnsavedChanges && (
+              <span className="table-hint">
+                {dirtyEntries.length} présence(s) modifiée(s) non enregistrée(s).
+              </span>
+            )}
+          </div>
+        )}
+
         {session.status === 'PLANNED' && (
           <div className="field-row" style={{ marginTop: 16 }}>
             <button type="button" onClick={handleValidate} disabled={!canValidate}>
               Valider les présences
             </button>
             {!canValidate && entries.length > 0 && (
-              <span className="table-hint">Tous les élèves doivent recevoir un statut avant validation.</span>
+              <span className="table-hint">
+                {hasUnsavedChanges
+                  ? 'Enregistrez vos modifications avant de valider.'
+                  : 'Tous les élèves doivent recevoir un statut avant validation.'}
+              </span>
             )}
           </div>
         )}

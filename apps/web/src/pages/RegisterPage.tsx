@@ -6,6 +6,7 @@ import type { Role } from '../api/authApi';
 import * as referentialsApi from '../api/referentialsApi';
 import type { City, School, SchoolLevel, Subject } from '../api/referentialsApi';
 import { SchoolLevelSectionPicker } from '../components/SchoolLevelSectionPicker';
+import { Select } from '../components/Select';
 
 
 type SchoolType = School['type'];
@@ -340,19 +341,25 @@ export function RegisterPage() {
             <div className="field-row">
               <label>
                 Ville de l'établissement
-                <select value={studentCityId} onChange={(e) => setStudentCityId(e.target.value)}>
+                <Select
+                  searchable
+                  searchPlaceholder="Rechercher une ville..."
+                  value={studentCityId}
+                  onChange={(e) => setStudentCityId(e.target.value)}
+                >
                   <option value="">Toutes les villes</option>
                   {availableCities.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
               <label>
                 Établissement
-                <select
-                  required
+                <Select
+                  searchable
+                  searchPlaceholder="Rechercher un établissement..."
                   disabled={!studentSchoolLevelId}
                   value={studentSchoolId}
                   onChange={(e) => setStudentSchoolId(e.target.value)}
@@ -363,7 +370,7 @@ export function RegisterPage() {
                       {school.name} - {school.city.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
             </div>
 

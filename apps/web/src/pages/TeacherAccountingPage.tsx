@@ -202,7 +202,6 @@ export function TeacherAccountingPage() {
                   <th>Paye</th>
                   <th>Reste</th>
                   <th>Dernier paiement</th>
-                  <th>Taux</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -227,7 +226,6 @@ export function TeacherAccountingPage() {
                           ? `${formatAmount(row.lastPaymentAmount)} le ${formatDate(row.lastPaymentDate)}`
                           : '-'}
                       </td>
-                      <td data-label="Taux">{formatRate(row.paymentRate)}</td>
                       <td className="admin-actions">
                         <button
                           type="button"
@@ -268,8 +266,6 @@ export function TeacherAccountingPage() {
               { label: 'CA a recevoir', value: formatAmount(teacherIndicators.receivableRevenue) },
               { label: 'Comptes debiteurs', value: String(teacherIndicators.debtorAccountCount) },
               { label: 'Comptes crediteurs', value: String(teacherIndicators.creditorAccountCount) },
-              { label: "Taux d'encaissement", value: formatRate(teacherIndicators.collectionRate) },
-              { label: "Taux d'impayes", value: formatRate(teacherIndicators.unpaidRate) },
               { label: 'Paiements du mois', value: String(teacherIndicators.paymentsThisMonth) },
               { label: 'Plus ancienne dette', value: `${teacherIndicators.oldestDebtDays} j.` },
             ]}
@@ -286,7 +282,6 @@ export function TeacherAccountingPage() {
               { label: 'Total facture', value: formatAmount(groupIndicators.totalInvoiced) },
               { label: 'Total encaisse', value: formatAmount(groupIndicators.totalCollected) },
               { label: 'Reste a recevoir', value: formatAmount(groupIndicators.remainingToReceive) },
-              { label: 'Taux de paiement', value: formatRate(groupIndicators.groupPaymentRate) },
               { label: 'Comptes en alerte', value: String(groupIndicators.alertAccountCount) },
             ]}
           />

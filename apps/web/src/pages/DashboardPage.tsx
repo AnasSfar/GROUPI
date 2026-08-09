@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ApiError } from '../api/client';
@@ -8,12 +8,15 @@ import type {
   ParentDashboard,
   AdminDashboard,
   GroupOccupancyView,
+  DashboardSessionSummary,
 } from '../api/dashboardApi';
 import { AlertList } from '../components/AlertList';
 import { EmptyState, LoadingState } from '../components/UiState';
 import { StatGrid } from '../components/StatGrid';
 import { ChildDetailCard } from '../components/ChildDetailCard';
-import { formatAmount, formatDateTime } from '../utils/format';
+import { TeacherWeekCalendar } from '../components/TeacherWeekCalendar';
+import { WeekCalendar, addDays, startOfWeek, type WeekCalendarEvent } from '../components/WeekCalendar';
+import { formatAmount, formatDateTime, hasSessionStarted } from '../utils/format';
 import {
   IconUsers,
   IconBookOpen,
@@ -52,8 +55,10 @@ const GROUP_CATEGORY_LABEL: Record<GroupOccupancyView['category'], string> = {
   OTHER: '—',
 };
 
-function canOpenAttendance(status: string): boolean {
-  return status === 'PLANNED' || status === 'COMPLETED' || status === 'LOCKED';
+function canOpenAttendance(session: DashboardSessionSummary): boolean {
+  if (session.status === 'COMPLETED' || session.status === 'LOCKED') return true;
+  if (session.status !== 'PLANNED') return false;
+  return hasSessionStarted(session.date, session.startTime);
 }
 
 function attendanceActionLabel(status: string): string {
@@ -77,6 +82,8 @@ function TeacherDashboardView({ data, onRefresh }: { data: TeacherDashboard; onR
         </p>
       )}
 
+      <TeacherWeekCalendar />
+
       <section className="card-section">
         <h2>Activité</h2>
         {data.activity.todaysSessions.length > 0 && (
@@ -88,13 +95,13 @@ function TeacherDashboardView({ data, onRefresh }: { data: TeacherDashboard; onR
                   <span className="activity-row-dot tone-amber" />
                   <p>{s.group.name}</p>
                   <span className="activity-row-value">{formatDateTime(s.date, s.startTime)}</span>
-                  {canOpenAttendance(s.status) && (
+                  {canOpenAttendance(s) && (
                     <>
                       <Link className="attendance-shortcut" to={`/teacher/sessions/${s.id}/attendance`}>
                         <IconClipboardCheck aria-hidden="true" />
                         {attendanceActionLabel(s.status)}
                       </Link>
-                      <Link className="attendance-shortcut" to={`/teacher/enrollments?groupId=${s.group.id}&paymentSessionId=${s.id}`}>
+                      <Link className="attendance-shortcut" to={`/teacher/sessions/${s.id}/payments`}>
                         <IconCreditCard aria-hidden="true" />
                         Saisir les paiements
                       </Link>
@@ -322,6 +329,50 @@ function TeacherDashboardView({ data, onRefresh }: { data: TeacherDashboard; onR
   );
 }
 
+function ParentWeekCalendar({ data }: { data: ParentDashboard }) {
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+
+  const events = useMemo<WeekCalendarEvent[]>(() => {
+    const childLabel = (child: ParentDashboard['children'][number]) =>
+      data.multipleChildren ? `${child.student.firstName} ${child.student.lastName}` : undefined;
+    return data.children.flatMap((child) => [
+      ...child.upcomingSessions.map((s) => ({
+        id: s.id,
+        date: s.date,
+        startTime: s.startTime,
+        title: s.group.name,
+        subtitle: childLabel(child),
+        tone: 'accent' as const,
+      })),
+      ...child.cancelledOrPostponedSessions.map((s) => ({
+        id: s.id,
+        date: s.date,
+        startTime: s.startTime,
+        title: s.group.name,
+        subtitle: childLabel(child),
+        tone: (s.status === 'CANCELLED' ? 'danger' : 'warning') as const,
+      })),
+    ]);
+  }, [data]);
+
+  function handleNavigate(direction: 'prev' | 'next' | 'today') {
+    if (direction === 'today') {
+      setWeekStart(startOfWeek(new Date()));
+    } else {
+      setWeekStart((w) => addDays(w, direction === 'next' ? 7 : -7));
+    }
+  }
+
+  const canGoPrev = weekStart.getTime() > startOfWeek(new Date()).getTime();
+
+  return (
+    <section className="card-section">
+      <h2>Calendrier de la semaine</h2>
+      <WeekCalendar events={events} weekStart={weekStart} onNavigate={handleNavigate} canGoPrev={canGoPrev} />
+    </section>
+  );
+}
+
 function ParentDashboardView({ data, onRefresh }: { data: ParentDashboard; onRefresh: () => void }) {
   return (
     <>
@@ -334,6 +385,7 @@ function ParentDashboardView({ data, onRefresh }: { data: ParentDashboard; onRef
       {data.children.length === 0 && (
         <EmptyState title="Aucun enfant actif déclaré">Ajoutez un enfant pour suivre ses inscriptions, présences et comptes.</EmptyState>
       )}
+      {data.children.length > 0 && <ParentWeekCalendar data={data} />}
       {data.children.map((child) => (
         <ChildDetailCard key={child.student.id} child={child} showName={data.multipleChildren} onRefresh={onRefresh} />
       ))}

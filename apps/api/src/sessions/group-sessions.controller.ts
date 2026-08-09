@@ -32,6 +32,12 @@ export class GroupSessionsController {
     return this.service.generate(user.id, groupId);
   }
 
+  /** Ch.13.3 : génère uniquement la toute prochaine séance du planning hebdomadaire. */
+  @Post('generate-next')
+  generateNext(@CurrentUser() user: AuthenticatedUser, @Param('groupId') groupId: string) {
+    return this.service.generate(user.id, groupId, { single: true });
+  }
+
   /** Ch.13.10 : séance exceptionnelle (rattrapage, révision, etc.). */
   @Post()
   createExceptional(

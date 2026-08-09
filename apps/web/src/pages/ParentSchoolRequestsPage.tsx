@@ -122,7 +122,12 @@ export function ParentSchoolRequestsPage() {
             </label>
             <label>
               Ville
-              <Select value={cityId} onChange={(e) => setCityId(e.target.value)}>
+              <Select
+                searchable
+                searchPlaceholder="Rechercher une ville..."
+                value={cityId}
+                onChange={(e) => setCityId(e.target.value)}
+              >
                 <option value="">Sélectionner...</option>
                 {cities.map((city) => (
                   <option key={city.id} value={city.id}>

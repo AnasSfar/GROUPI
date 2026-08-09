@@ -8,8 +8,8 @@ export interface AdminUser {
   status: UserStatus;
   roles: string[];
   createdAt: string;
-  teacherProfile: { firstName: string; lastName: string } | null;
-  parentProfile: { firstName: string; lastName: string } | null;
+  teacherProfile: { firstName: string; lastName: string; phone: string } | null;
+  parentProfile: { firstName: string; lastName: string; phone: string } | null;
 }
 
 export interface AccountActionPayload {

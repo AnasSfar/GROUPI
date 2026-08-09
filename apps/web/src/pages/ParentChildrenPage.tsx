@@ -376,7 +376,12 @@ export function ParentChildrenPage() {
           </label>
           <label>
             Ville de l'établissement
-            <Select value={schoolCityId} onChange={(e) => setSchoolCityId(e.target.value)}>
+            <Select
+              searchable
+              searchPlaceholder="Rechercher une ville..."
+              value={schoolCityId}
+              onChange={(e) => setSchoolCityId(e.target.value)}
+            >
               <option value="">Sélectionner...</option>
               {cities.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -388,6 +393,8 @@ export function ParentChildrenPage() {
           <label>
             Établissement
             <Select
+              searchable
+              searchPlaceholder="Rechercher un établissement..."
               value={schoolId}
               onChange={(e) => setSchoolId(e.target.value)}
               disabled={!schoolCityId}

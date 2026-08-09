@@ -57,6 +57,11 @@ function displayName(user: AdminUser): string {
   return profile ? `${profile.firstName} ${profile.lastName}` : '—';
 }
 
+function displayPhone(user: AdminUser): string {
+  const profile = user.teacherProfile ?? user.parentProfile;
+  return profile?.phone ?? '—';
+}
+
 /** Petit formulaire inline de motif, requis avant de suspendre/désactiver (RM-CYC-029). */
 function ReasonPrompt({
   label,
@@ -319,6 +324,7 @@ export function AdminUsersPage() {
               <tr>
                 <th>Nom</th>
                 <th>Email</th>
+                <th>Téléphone</th>
                 <th>Rôle</th>
                 <th>Statut</th>
                 <th>Créé le</th>
@@ -330,6 +336,7 @@ export function AdminUsersPage() {
                 <tr key={user.id}>
                   <td data-label="Nom">{displayName(user)}</td>
                   <td data-label="Email">{user.email}</td>
+                  <td data-label="Téléphone">{displayPhone(user)}</td>
                   <td data-label="Rôle">{user.roles.map((r) => ROLE_LABELS[r] ?? r).join(', ')}</td>
                   <td data-label="Statut">
                     <span className={`badge ${STATUS_BADGE[user.status]}`}>

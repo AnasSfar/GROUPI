@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AccountingService } from '../accounting/accounting.service';
-import { computeLockDeadline, isLockable } from '../sessions/sessions.service';
+import { computeLockDeadline, isLockable, theoreticalStart } from '../sessions/sessions.service';
 import { SetAttendanceDto } from './dto/set-attendance.dto';
 import type { AttendanceStatsPeriod } from './dto/attendance-stats-query.dto';
 
@@ -183,7 +183,7 @@ export class AttendanceService {
     if (session.status === 'LOCKED') {
       throw new BadRequestException('Présence verrouillée : modification refusée (ERR-ATT-001/ERR-ATT-014)');
     }
-    if (dateOnly(session.date) > todayDateOnly()) {
+    if (theoreticalStart(session) > new Date()) {
       throw new BadRequestException('Séance non encore commencée : saisie refusée (ERR-ATT-004)');
     }
 
@@ -302,7 +302,7 @@ export class AttendanceService {
     if (session.status === 'POSTPONED') {
       throw new BadRequestException('Séance reportée : validation impossible sur cette occurrence (ERR-ATT-003)');
     }
-    if (dateOnly(session.date) > todayDateOnly()) {
+    if (theoreticalStart(session) > new Date()) {
       throw new BadRequestException('Séance non encore commencée : validation refusée (ERR-ATT-004)');
     }
 

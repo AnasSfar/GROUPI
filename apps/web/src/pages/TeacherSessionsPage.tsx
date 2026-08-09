@@ -9,6 +9,7 @@ import * as groupsApi from '../api/groupsApi';
 import { formatDuration } from '../api/groupsApi';
 import * as sessionsApi from '../api/sessionsApi';
 import * as teacherProfileApi from '../api/teacherProfileApi';
+import { hasSessionStarted } from '../utils/format';
 import type { Group, TeachingMode } from '../api/groupsApi';
 import type { Session, SessionStatus } from '../api/sessionsApi';
 import type { TeachingLocation } from '../api/teacherProfileApi';
@@ -140,6 +141,25 @@ export function TeacherSessionsPage() {
     }
   }
 
+  async function handleGenerateNext() {
+    const token = getAccessToken();
+    if (!token || !groupId) return;
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await sessionsApi.generateNextSession(token, groupId);
+      setNotice(
+        result.count > 0
+          ? 'Prochaine séance générée.'
+          : 'Aucune nouvelle séance à générer (déjà à jour).',
+      );
+      if (result.count > 0) showToast('Prochaine séance générée');
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Génération impossible.');
+    }
+  }
+
   async function handleCreateExceptional(event: FormEvent) {
     event.preventDefault();
     const token = getAccessToken();
@@ -261,6 +281,11 @@ export function TeacherSessionsPage() {
           <button type="button" onClick={handleGenerate}>
             Générer les séances
           </button>
+          <button type="button" onClick={handleGenerateNext}>
+            Générer la prochaine séance
+          </button>
+        </div>
+        <div className="filters-row">
           <label>
             Filtrer par statut
             <Select
@@ -313,9 +338,9 @@ export function TeacherSessionsPage() {
                       </span>
                     </td>
                     <td className="admin-actions">
-                      {(session.status === 'PLANNED' ||
-                        session.status === 'COMPLETED' ||
-                        session.status === 'LOCKED') && (
+                      {(session.status === 'COMPLETED' ||
+                        session.status === 'LOCKED' ||
+                        (session.status === 'PLANNED' && hasSessionStarted(session.date, session.startTime))) && (
                         <Link to={`/teacher/sessions/${session.id}/attendance`}>Présences</Link>
                       )}
                       {(session.status === 'COMPLETED' || session.status === 'LOCKED') && (

@@ -256,8 +256,10 @@ export class SessionsService {
    * max(startDate du groupe, aujourd'hui) et la fin du groupe (ou de son année académique).
    * Une séance = un couple (date, créneau) ; jamais générée deux fois pour le même groupe/date/
    * heure de début (ERR-SES-027, vérification applicative avant écriture).
+   * `options.single` : ne crée que la toute prochaine séance chronologique du planning au lieu
+   * de tout l'horizon disponible.
    */
-  async generate(teacherId: string, groupId: string) {
+  async generate(teacherId: string, groupId: string, options: { single?: boolean } = {}) {
     const group = await this.loadOwnedGroup(teacherId, groupId);
     this.assertGroupOpenForSessions(group);
     await this.assertTeacherActiveForSessions(teacherId);
@@ -299,6 +301,11 @@ export class SessionsService {
 
     if (plan.length === 0) {
       return { count: 0, sessions: [] };
+    }
+
+    if (options.single) {
+      plan.sort((a, b) => a.date.getTime() - b.date.getTime() || a.schedule.startTime.localeCompare(b.schedule.startTime));
+      plan.length = 1;
     }
 
     const sessions = await this.prisma.$transaction(

@@ -1,4 +1,4 @@
-import { Children, isValidElement, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Children, isValidElement, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { KeyboardEvent, ReactNode } from 'react';
 
@@ -21,6 +21,10 @@ interface SelectProps {
   id?: string;
   name?: string;
   'aria-label'?: string;
+  /** Affiche un champ de recherche en tête de liste — utile pour les longues listes
+   * (ex. les ~6000 établissements ou les villes) où le défilement seul est inutilisable. */
+  searchable?: boolean;
+  searchPlaceholder?: string;
 }
 
 // <option> peut recevoir plusieurs enfants JSX (ex. {firstName} {lastName}) :
@@ -50,6 +54,15 @@ function parseOptions(children: ReactNode): SelectOption[] {
   return options;
 }
 
+// Insensible aux accents (Béja/Beja, établissement/etablissement...) pour que la recherche
+// reste tolérante quel que soit le clavier utilisé.
+function normalize(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
 /**
  * Remplacement du <select> natif : la popup native n'est pas stylable en CSS
  * (rendu OS, pas navigateur), donc toute demande de "liste stylée" passe par
@@ -57,26 +70,47 @@ function parseOptions(children: ReactNode): SelectOption[] {
  * <select> natif et un onChange({ target: { value } }) compatible, pour rester
  * un remplacement quasi direct dans les pages existantes.
  */
-export function Select({ value, onChange, children, disabled, className, id, name, ...rest }: SelectProps) {
+export function Select({
+  value,
+  onChange,
+  children,
+  disabled,
+  className,
+  id,
+  name,
+  searchable,
+  searchPlaceholder,
+  ...rest
+}: SelectProps) {
   const options = parseOptions(children);
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const [listPosition, setListPosition] = useState({ top: 0, left: 0, width: 0 });
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const typeaheadRef = useRef('');
   const typeaheadTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const selectedIndex = options.findIndex((o) => o.value === value);
   const selectedOption = selectedIndex >= 0 ? options[selectedIndex] : undefined;
 
+  const filteredOptions = useMemo(() => {
+    if (!searchable || !query.trim()) return options;
+    const needle = normalize(query);
+    return options.filter((o) => normalize(o.label).includes(needle));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [options, query, searchable]);
+
   useEffect(() => {
     if (!open) return;
     function handleClickOutside(e: MouseEvent) {
       const target = e.target as Node;
       if (rootRef.current?.contains(target)) return;
-      if (listRef.current?.contains(target)) return;
+      if (popupRef.current?.contains(target)) return;
       setOpen(false);
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -107,9 +141,9 @@ export function Select({ value, onChange, children, disabled, className, id, nam
   // étroit, un déclencheur proche du bord droit produirait un popup qui déborde du viewport.
   // Un second passage, une fois la liste rendue (donc sa largeur réelle connue), la recale.
   useLayoutEffect(() => {
-    if (!open || !listRef.current) return;
+    if (!open || !popupRef.current) return;
     const margin = 8;
-    const overflowRight = listRef.current.getBoundingClientRect().right - (window.innerWidth - margin);
+    const overflowRight = popupRef.current.getBoundingClientRect().right - (window.innerWidth - margin);
     if (overflowRight > 0) {
       setListPosition((prev) => ({ ...prev, left: Math.max(margin, prev.left - overflowRight) }));
     }
@@ -118,10 +152,23 @@ export function Select({ value, onChange, children, disabled, className, id, nam
 
   useEffect(() => {
     if (open) {
+      setQuery('');
       setActiveIndex(Math.max(0, selectedIndex));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  useEffect(() => {
+    if (!open || !searchable) return;
+    setActiveIndex(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+
+  useEffect(() => {
+    if (open && searchable) {
+      searchInputRef.current?.focus();
+    }
+  }, [open, searchable]);
 
   useEffect(() => {
     if (!open || !listRef.current) return;
@@ -130,18 +177,18 @@ export function Select({ value, onChange, children, disabled, className, id, nam
   }, [activeIndex, open]);
 
   function commit(index: number) {
-    const opt = options[index];
+    const opt = filteredOptions[index];
     if (!opt || opt.disabled) return;
     onChange({ target: { value: opt.value } });
   }
 
   function moveActive(delta: number) {
-    if (options.length === 0) return;
+    if (filteredOptions.length === 0) return;
     setActiveIndex((prev) => {
       let next = prev;
-      for (let i = 0; i < options.length; i++) {
-        next = (next + delta + options.length) % options.length;
-        if (!options[next].disabled) break;
+      for (let i = 0; i < filteredOptions.length; i++) {
+        next = (next + delta + filteredOptions.length) % filteredOptions.length;
+        if (!filteredOptions[next].disabled) break;
       }
       return next;
     });
@@ -199,10 +246,33 @@ export function Select({ value, onChange, children, disabled, className, id, nam
         setOpen(false);
         break;
       default:
-        if (e.key.length === 1 && /[a-z0-9]/i.test(e.key)) {
+        if (!searchable && e.key.length === 1 && /[a-z0-9]/i.test(e.key)) {
           e.preventDefault();
           runTypeahead(e.key);
         }
+    }
+  }
+
+  function handleSearchKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        moveActive(1);
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        moveActive(-1);
+        break;
+      case 'Enter':
+        e.preventDefault();
+        commit(activeIndex);
+        setOpen(false);
+        break;
+      case 'Escape':
+        e.preventDefault();
+        setOpen(false);
+        triggerRef.current?.focus();
+        break;
     }
   }
 
@@ -226,35 +296,49 @@ export function Select({ value, onChange, children, disabled, className, id, nam
       </button>
       {open &&
         createPortal(
-          <ul
-            className="select-list"
-            role="listbox"
-            ref={listRef}
-            tabIndex={-1}
+          <div
+            className="select-popup"
+            ref={popupRef}
             style={{ position: 'fixed', top: listPosition.top, left: listPosition.left, minWidth: listPosition.width }}
           >
-            {options.map((opt, index) => (
-              <li
-                key={opt.value + index}
-                data-index={index}
-                role="option"
-                aria-selected={opt.value === value}
-                aria-disabled={opt.disabled}
-                className={['select-option', index === activeIndex ? 'is-active' : '', opt.disabled ? 'is-disabled' : '']
-                  .filter(Boolean)
-                  .join(' ')}
-                onMouseEnter={() => setActiveIndex(index)}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  if (opt.disabled) return;
-                  commit(index);
-                  setOpen(false);
-                }}
-              >
-                {opt.label}
-              </li>
-            ))}
-          </ul>,
+            {searchable && (
+              <div className="select-search">
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={query}
+                  placeholder={searchPlaceholder ?? 'Rechercher...'}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={handleSearchKeyDown}
+                  aria-label={searchPlaceholder ?? 'Rechercher'}
+                />
+              </div>
+            )}
+            <ul className="select-list" role="listbox" ref={listRef} tabIndex={-1}>
+              {filteredOptions.map((opt, index) => (
+                <li
+                  key={opt.value + index}
+                  data-index={index}
+                  role="option"
+                  aria-selected={opt.value === value}
+                  aria-disabled={opt.disabled}
+                  className={['select-option', index === activeIndex ? 'is-active' : '', opt.disabled ? 'is-disabled' : '']
+                    .filter(Boolean)
+                    .join(' ')}
+                  onMouseEnter={() => setActiveIndex(index)}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    if (opt.disabled) return;
+                    commit(index);
+                    setOpen(false);
+                  }}
+                >
+                  {opt.label}
+                </li>
+              ))}
+              {filteredOptions.length === 0 && <li className="select-empty">Aucun résultat</li>}
+            </ul>
+          </div>,
           document.body,
         )}
     </div>

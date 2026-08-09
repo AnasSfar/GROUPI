@@ -7,6 +7,7 @@ import { ApiError } from '../api/client';
 import * as groupsApi from '../api/groupsApi';
 import * as sessionsApi from '../api/sessionsApi';
 import { formatDuration } from '../api/groupsApi';
+import { hasSessionStarted } from '../utils/format';
 import type { Group } from '../api/groupsApi';
 import type { Session, SessionStatus } from '../api/sessionsApi';
 
@@ -36,8 +37,10 @@ interface SessionRow {
   group: Group;
 }
 
-function canOpenAttendance(status: SessionStatus): boolean {
-  return status === 'PLANNED' || status === 'COMPLETED' || status === 'LOCKED';
+function canOpenAttendance(session: Session): boolean {
+  if (session.status === 'COMPLETED' || session.status === 'LOCKED') return true;
+  if (session.status !== 'PLANNED') return false;
+  return hasSessionStarted(session.date, session.startTime);
 }
 
 function attendanceLabel(status: SessionStatus): string {
@@ -202,7 +205,7 @@ export function TeacherAllSessionsPage() {
                       </span>
                     </td>
                     <td className="admin-actions">
-                      {canOpenAttendance(session.status) ? (
+                      {canOpenAttendance(session) ? (
                         <Link to={`/teacher/sessions/${session.id}/attendance`}>
                           {attendanceLabel(session.status)}
                         </Link>

@@ -80,7 +80,6 @@ export function TeacherGroupsPage() {
   const [visibilityWhenFull, setVisibilityWhenFull] = useState<VisibilityWhenFull>('VISIBLE');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [schedules, setSchedules] = useState<GroupScheduleInput[]>([]);
   const [dayOfWeek, setDayOfWeek] = useState<DayOfWeek>('MONDAY');
   const [startTime, setStartTime] = useState('18:00');
   const [durationMinutes, setDurationMinutes] = useState('120');
@@ -143,17 +142,16 @@ export function TeacherGroupsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [myGroups, allSubjects, allLevels, allSubjectLevels, allYears, allLocations] = await Promise.all([
+      const [myGroups, myProfile, allSubjectLevels, allYears, allLocations] = await Promise.all([
         groupsApi.listMine(token),
-        referentialsApi.listSubjects(token),
-        referentialsApi.listSchoolLevels(token),
+        teacherProfileApi.getMyProfile(token),
         referentialsApi.listSubjectLevels(token),
         referentialsApi.listAcademicYears(token),
         teacherProfileApi.listLocations(token),
       ]);
       setGroups(myGroups);
-      setSubjects(allSubjects);
-      setSchoolLevels(allLevels);
+      setSubjects(myProfile.subjects.map(({ subject }) => subject));
+      setSchoolLevels(myProfile.schoolLevels.map(({ schoolLevel }) => schoolLevel));
       setSubjectLevels(allSubjectLevels);
       setAcademicYears(allYears.filter((y) => y.status === 'OPEN'));
       setLocations(allLocations);
@@ -179,26 +177,24 @@ export function TeacherGroupsPage() {
   }, [subjectId, subjectLevels, schoolLevels]);
 
   useEffect(() => {
+    if (subjects.length === 1 && !subjectId) {
+      setSubjectId(subjects[0].id);
+      return;
+    }
+    if (subjectId && !subjects.some((s) => s.id === subjectId)) {
+      setSubjectId('');
+    }
+  }, [subjects, subjectId]);
+
+  useEffect(() => {
     if (schoolLevelId && !availableLevels.some((l) => l.id === schoolLevelId)) {
       setSchoolLevelId('');
+      return;
+    }
+    if (!schoolLevelId && availableLevels.length === 1) {
+      setSchoolLevelId(availableLevels[0].id);
     }
   }, [availableLevels, schoolLevelId]);
-
-  function addSchedule() {
-    setSchedules((prev) => [
-      ...prev,
-      {
-        dayOfWeek,
-        startTime,
-        durationMinutes: Number(durationMinutes),
-        teachingLocationId: teachingLocationId || undefined,
-      },
-    ]);
-  }
-
-  function removeSchedule(index: number) {
-    setSchedules((prev) => prev.filter((_, i) => i !== index));
-  }
 
   // Lieux gérés depuis /teacher/profile désormais — ici on ne fait que pré-remplir le premier
   // créneau avec le lieu par défaut du profil (le plus souvent le seul), modifiable ensuite par
@@ -213,7 +209,15 @@ export function TeacherGroupsPage() {
   async function handleCreateGroup(event: FormEvent) {
     event.preventDefault();
     const token = getAccessToken();
-    if (!token || !subjectId || !schoolLevelId || !academicYearId || schedules.length === 0) return;
+    if (!token || !subjectId || !schoolLevelId || !academicYearId || !startTime || Number(durationMinutes) <= 0) return;
+    const groupSchedules = [
+      {
+        dayOfWeek,
+        startTime,
+        durationMinutes: Number(durationMinutes),
+        teachingLocationId: teachingLocationId || undefined,
+      },
+    ];
     setError(null);
     try {
       const created = await groupsApi.createGroup(token, {
@@ -228,16 +232,17 @@ export function TeacherGroupsPage() {
         visibilityWhenFull,
         startDate,
         endDate: endDate || undefined,
-        schedules,
+        schedules: groupSchedules,
       });
-      setGroups((prev) => [created, ...prev]);
+      const published =
+        created.status === 'DRAFT' ? await groupsApi.openGroup(token, created.id) : created;
+      setGroups((prev) => [published, ...prev]);
       setName('');
       setPublicPrice('');
       setStartDate('');
       setEndDate('');
-      setSchedules([]);
       setShowCreateModal(false);
-      showToast('Groupe créé');
+      showToast('Groupe créé et ouvert aux parents');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Impossible de créer ce groupe.');
     }
@@ -619,10 +624,10 @@ export function TeacherGroupsPage() {
       ))}
 
       {showCreateModal && (
-        <div className="terms-modal-backdrop" onClick={() => setShowCreateModal(false)}>
-          <div className="terms-modal terms-modal-wide" onClick={(e) => e.stopPropagation()}>
+        <div className="terms-modal-backdrop group-modal-backdrop" onClick={() => setShowCreateModal(false)}>
+          <div className="terms-modal group-modal" onClick={(e) => e.stopPropagation()}>
             <h2>Créer un groupe</h2>
-        <form onSubmit={handleCreateGroup}>
+        <form className="group-form" onSubmit={handleCreateGroup}>
           <label>
             Nom du groupe
             <input type="text" required value={name} onChange={(e) => setName(e.target.value)} />
@@ -736,17 +741,7 @@ export function TeacherGroupsPage() {
           </div>
 
           <h3>Planning hebdomadaire</h3>
-          <ul className="tag-list">
-            {schedules.map((s, i) => (
-              <li key={i} className="tag">
-                {DAY_LABELS[s.dayOfWeek]} {s.startTime} ({formatDuration(s.durationMinutes)})
-                <button type="button" onClick={() => removeSchedule(i)}>
-                  ×
-                </button>
-              </li>
-            ))}
-          </ul>
-          <div className="field-row">
+          <div className="field-row group-schedule-row">
             <label>
               Jour
               <Select value={dayOfWeek} onChange={(e) => setDayOfWeek(e.target.value as DayOfWeek)}>
@@ -787,19 +782,16 @@ export function TeacherGroupsPage() {
               </span>
             </label>
           </div>
-          <button type="button" onClick={addSchedule}>
-            Ajouter ce créneau
-          </button>
-
-          <div className="terms-modal-actions">
+          <div className="terms-modal-actions group-modal-actions">
             <button type="button" className="ghost" onClick={() => setShowCreateModal(false)}>
               Annuler
             </button>
             <button
               type="submit"
-              disabled={!subjectId || !schoolLevelId || !academicYearId || schedules.length === 0}
+              className="btn-primary"
+              disabled={!subjectId || !schoolLevelId || !academicYearId || !startTime || Number(durationMinutes) <= 0}
             >
-              Créer le groupe
+              Créer et ouvrir le groupe
             </button>
           </div>
         </form>
@@ -809,3 +801,5 @@ export function TeacherGroupsPage() {
     </>
   );
 }
+
+
