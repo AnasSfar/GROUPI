@@ -7,7 +7,7 @@ import { ApiError } from '../api/client';
 import * as groupsApi from '../api/groupsApi';
 import * as sessionsApi from '../api/sessionsApi';
 import { formatDuration } from '../api/groupsApi';
-import { hasSessionStarted } from '../utils/format';
+import { hasSessionStarted, sessionStartTimestamp } from '../utils/format';
 import type { Group } from '../api/groupsApi';
 import type { Session, SessionStatus } from '../api/sessionsApi';
 
@@ -48,7 +48,7 @@ function attendanceLabel(status: SessionStatus): string {
 }
 
 function sessionTimestamp(row: SessionRow): number {
-  return new Date(`${row.session.date.slice(0, 10)}T${row.session.startTime}:00`).getTime();
+  return sessionStartTimestamp(row.session.date, row.session.startTime);
 }
 
 /** Vue operationnelle Professeur : une ligne par occurrence de seance, tous groupes confondus. */

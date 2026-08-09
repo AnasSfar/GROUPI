@@ -3739,6 +3739,28 @@ a.week-calendar-event:hover {
   background: var(--bg-shell);
 }
 
+.week-calendar-event.tone-overdue {
+  border-left-color: var(--danger);
+  background: var(--danger-bg);
+  animation: week-calendar-overdue-blink 1.4s ease-in-out infinite;
+}
+
+@keyframes week-calendar-overdue-blink {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 55%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 0%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .week-calendar-event.tone-overdue {
+    animation: none;
+  }
+}
+
 @media (max-width: 720px) {
   .week-calendar-day-label,
   .week-calendar-event-subtitle {

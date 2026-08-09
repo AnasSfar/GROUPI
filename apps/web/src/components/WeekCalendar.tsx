@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { IconChevronLeft, IconChevronRight } from './icons';
 
-export type WeekCalendarTone = 'accent' | 'success' | 'danger' | 'warning' | 'info' | 'neutral';
+export type WeekCalendarTone = 'accent' | 'success' | 'danger' | 'warning' | 'info' | 'neutral' | 'overdue';
 
 export interface WeekCalendarEvent {
   id: string;
@@ -16,14 +16,20 @@ export interface WeekCalendarEvent {
   to?: string;
 }
 
-const DAY_LABELS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+function weekdayLabel(date: Date): string {
+  return date.toLocaleDateString('fr-FR', { weekday: 'short' }).replace(/\.$/, '');
+}
 
+/**
+ * Point de départ de la fenêtre de 7 jours affichée : hier (position 0), aujourd'hui (position 1),
+ * puis les 5 jours suivants. Pensée pour un tableau de bord tourné vers les séances à venir plutôt
+ * qu'une semaine calendaire figée du lundi au dimanche — la position d'"aujourd'hui" est donc fixe,
+ * pas le jour de la semaine qui s'y trouve.
+ */
 export function startOfWeek(date: Date): Date {
   const d = new Date(date);
-  const day = d.getDay();
-  const diff = (day === 0 ? -6 : 1) - day;
-  d.setDate(d.getDate() + diff);
   d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - 1);
   return d;
 }
 
@@ -114,13 +120,13 @@ export function WeekCalendar({
       </div>
 
       <div className="week-calendar-grid">
-        {days.map((day, i) => {
+        {days.map((day) => {
           const dayEvents = eventsByDay.get(dateKey(day)) ?? [];
           const isToday = isSameDay(day, today);
           return (
             <div key={dateKey(day)} className={`week-calendar-day-col${isToday ? ' is-today' : ''}`}>
               <div className="week-calendar-day-header">
-                <span className="week-calendar-day-label">{DAY_LABELS[i]}</span>
+                <span className="week-calendar-day-label">{weekdayLabel(day)}</span>
                 <span className="week-calendar-day-number">{day.getDate()}</span>
               </div>
               <div className="week-calendar-day-events">

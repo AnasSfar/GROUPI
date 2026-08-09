@@ -54,23 +54,57 @@ interface LockableSession {
   lockedAt: Date | null;
 }
 
-/** Fin théorique d'une séance (date + heure de début + durée). */
-function theoreticalEnd(session: Pick<LockableSession, 'date' | 'startTime' | 'durationMinutes'>): Date {
+/**
+ * Toutes les heures de séance (`startTime`) sont saisies et affichées comme heure murale
+ * française. On les ancre explicitement sur ce fuseau (plutôt que sur UTC ou l'heure du serveur)
+ * pour que le calcul reste correct été comme hiver (CET/CEST).
+ */
+const SESSION_TIME_ZONE = 'Europe/Paris';
+
+const zonedPartsFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: SESSION_TIME_ZONE,
+  hourCycle: 'h23',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+});
+
+/** Convertit une heure murale (`hours:minutes`, avec dépassement toléré) du jour `date` en instant UTC. */
+function zonedWallTimeToUtc(date: Date, hours: number, minutes: number): Date {
+  const utcGuess = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), hours, minutes, 0, 0));
+  const parts: Record<string, string> = {};
+  for (const part of zonedPartsFormatter.formatToParts(utcGuess)) {
+    if (part.type !== 'literal') parts[part.type] = part.value;
+  }
+  const asIfUtc = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour) % 24,
+    Number(parts.minute),
+    Number(parts.second),
+  );
+  const offsetMs = asIfUtc - utcGuess.getTime();
+  return new Date(utcGuess.getTime() - offsetMs);
+}
+
+/** Fin théorique d'une séance (date + heure de début + durée), en heure de Paris. */
+export function theoreticalEnd(session: Pick<LockableSession, 'date' | 'startTime' | 'durationMinutes'>): Date {
   const [hours, minutes] = session.startTime.split(':').map(Number);
-  const end = new Date(session.date);
-  end.setUTCHours(hours, minutes + session.durationMinutes, 0, 0);
-  return end;
+  return zonedWallTimeToUtc(session.date, hours, minutes + session.durationMinutes);
 }
 
 /**
- * Début théorique d'une séance (date + heure de début) — Ch.16.4/RM-DSH-006 : la borne du délai de
- * signalement d'absence par le Parent (voir `AbsenceNoticeService`, aucun champ dédié dans `Group`).
+ * Début théorique d'une séance (date + heure de début), en heure de Paris — Ch.16.4/RM-DSH-006 :
+ * la borne du délai de signalement d'absence par le Parent (voir `AbsenceNoticeService`, aucun
+ * champ dédié dans `Group`).
  */
 export function theoreticalStart(session: Pick<LockableSession, 'date' | 'startTime'>): Date {
   const [hours, minutes] = session.startTime.split(':').map(Number);
-  const start = new Date(session.date);
-  start.setUTCHours(hours, minutes, 0, 0);
-  return start;
+  return zonedWallTimeToUtc(session.date, hours, minutes);
 }
 
 /**

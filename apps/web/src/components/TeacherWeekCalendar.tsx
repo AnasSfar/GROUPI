@@ -6,6 +6,7 @@ import * as sessionsApi from '../api/sessionsApi';
 import type { Group } from '../api/groupsApi';
 import type { SessionStatus } from '../api/sessionsApi';
 import { WeekCalendar, addDays, dateKey, startOfWeek, type WeekCalendarEvent, type WeekCalendarTone } from './WeekCalendar';
+import { isAttendanceOverdue } from '../utils/format';
 
 const STATUS_TONE: Record<SessionStatus, WeekCalendarTone> = {
   PLANNED: 'accent',
@@ -58,8 +59,8 @@ export function TeacherWeekCalendar() {
             durationMinutes: s.durationMinutes,
             title: groups[i].name,
             subtitle: `${groups[i].subject.name} · ${groups[i].schoolLevel.name}`,
-            tone: STATUS_TONE[s.status],
-            to: `/teacher/groups/${groups[i].id}/sessions`,
+            tone: isAttendanceOverdue(s) ? ('overdue' as WeekCalendarTone) : STATUS_TONE[s.status],
+            to: '/teacher/sessions',
           })),
         ),
       );

@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../email/email.service';
-import { theoreticalStart } from '../sessions/sessions.service';
+import { theoreticalStart, theoreticalEnd } from '../sessions/sessions.service';
 
 function addHours(date: Date, hours: number): Date {
   return new Date(date.getTime() + hours * 60 * 60 * 1000);
@@ -122,6 +122,7 @@ export class TemporalJobsService {
     return { sent, skipped };
   }
 
+  /** NOT-ATT-009/NOT-SES-013 : rappel Professeur, présences non saisies 24h après la fin théorique de la séance. */
   async sendMissingAttendanceReminders(now = new Date()): Promise<JobResult> {
     const cutoff = addDays(now, -1);
     const sessions = await this.prisma.session.findMany({
@@ -131,7 +132,7 @@ export class TemporalJobsService {
     let sent = 0;
     let skipped = 0;
     for (const session of sessions) {
-      const end = addHours(theoreticalStart(session), session.durationMinutes / 60);
+      const end = theoreticalEnd(session);
       if (end > cutoff) continue;
       const recorded = new Set(session.attendances.map((a) => a.studentId));
       const missing = session.group.enrollments.some((e) => !recorded.has(e.studentId));
