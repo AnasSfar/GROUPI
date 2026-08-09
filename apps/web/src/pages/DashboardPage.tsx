@@ -350,7 +350,7 @@ function ParentWeekCalendar({ data }: { data: ParentDashboard }) {
         startTime: s.startTime,
         title: s.group.name,
         subtitle: childLabel(child),
-        tone: (s.status === 'CANCELLED' ? 'danger' : 'warning') as const,
+        tone: s.status === 'CANCELLED' ? ('danger' as const) : ('warning' as const),
       })),
     ]);
   }, [data]);

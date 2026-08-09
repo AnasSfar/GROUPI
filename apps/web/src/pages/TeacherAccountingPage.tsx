@@ -18,10 +18,6 @@ function formatAmount(n: number): string {
   return `${n.toFixed(3)} TND`;
 }
 
-function formatRate(n: number | null): string {
-  return n === null ? '-' : `${n.toFixed(1)}%`;
-}
-
 function formatDate(value: string | null): string {
   return value ? new Date(value).toLocaleDateString('fr-FR') : '-';
 }
