@@ -104,6 +104,27 @@ export interface ProposePreEnrollmentPayload {
   expiresAt: string;
 }
 
+export interface UpdatePreEnrollmentPayload {
+  schoolLevelId?: string;
+  subjectId?: string;
+}
+
+/** RM-PRE-008/009/010 : résultat de l'envoi groupé d'une proposition à toutes les préinscriptions
+ *  compatibles avec un groupe (Ch.11.7/11.8). */
+export interface ProposeAllResult {
+  sentCount: number;
+  failedCount: number;
+  sent: PreEnrollment[];
+  failed: { id: string; reason: string }[];
+}
+
+/** RM-PRE-005/015 : réglage d'ouverture/fermeture des préinscriptions, groupe par groupe. */
+export interface GroupPreEnrollmentsSetting {
+  id: string;
+  name: string;
+  preEnrollmentsOpen: boolean;
+}
+
 export interface EligibleTeachersFilters {
   city?: string;
   subjectId?: string;
@@ -123,12 +144,30 @@ export function createPreEnrollment(
   return apiRequest<PreEnrollment>('/pre-enrollments', { method: 'POST', accessToken, body: payload });
 }
 
+/** RM-PRE-031/ERR-PRE-018 : modification tant qu'aucune proposition n'a été envoyée (statut PENDING). */
+export function updatePreEnrollment(
+  accessToken: string,
+  id: string,
+  payload: UpdatePreEnrollmentPayload,
+): Promise<PreEnrollment> {
+  return apiRequest<PreEnrollment>(`/pre-enrollments/${id}`, { method: 'PATCH', accessToken, body: payload });
+}
+
 export function cancelPreEnrollment(accessToken: string, id: string): Promise<PreEnrollment> {
   return apiRequest<PreEnrollment>(`/pre-enrollments/${id}/cancel`, { method: 'POST', accessToken });
 }
 
 export function confirmPreEnrollment(accessToken: string, id: string): Promise<PreEnrollment> {
   return apiRequest<PreEnrollment>(`/pre-enrollments/${id}/confirm`, { method: 'POST', accessToken });
+}
+
+/** RM-PRE-026 : retrait de la confirmation tant que la demande d'inscription résultante n'a pas
+ *  encore été traitée par le Professeur. */
+export function withdrawPreEnrollmentConfirmation(accessToken: string, id: string): Promise<PreEnrollment> {
+  return apiRequest<PreEnrollment>(`/pre-enrollments/${id}/withdraw-confirmation`, {
+    method: 'POST',
+    accessToken,
+  });
 }
 
 export function rejectPreEnrollment(accessToken: string, id: string): Promise<PreEnrollment> {
@@ -170,4 +209,30 @@ export function listCompatiblePreEnrollments(
   groupId: string,
 ): Promise<PreEnrollment[]> {
   return apiRequest<PreEnrollment[]>(`/groups/${groupId}/compatible-pre-enrollments`, { accessToken });
+}
+
+/** RM-PRE-008/009/010 : envoi en un clic à toutes les préinscriptions compatibles avec ce groupe. */
+export function proposeAllCompatiblePreEnrollments(
+  accessToken: string,
+  groupId: string,
+  expiresAt: string,
+): Promise<ProposeAllResult> {
+  return apiRequest<ProposeAllResult>(`/groups/${groupId}/compatible-pre-enrollments/propose-all`, {
+    method: 'POST',
+    accessToken,
+    body: { expiresAt },
+  });
+}
+
+/** RM-PRE-005/015, PERM-PRE-006 : le Professeur ouvre/ferme les préinscriptions de ce groupe. */
+export function setGroupPreEnrollmentsOpen(
+  accessToken: string,
+  groupId: string,
+  open: boolean,
+): Promise<GroupPreEnrollmentsSetting> {
+  return apiRequest<GroupPreEnrollmentsSetting>(`/groups/${groupId}/pre-enrollments-open`, {
+    method: 'PATCH',
+    accessToken,
+    body: { open },
+  });
 }

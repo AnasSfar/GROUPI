@@ -1693,6 +1693,12 @@ a.dash-card:hover {
   background: var(--bg-shell);
 }
 
+/* RM-REF-011 : entrée de référentiel désactivée (matière/niveau/ville) — reste visible dans la
+   vue Administrateur (contrairement aux sélecteurs publics), mais visuellement estompée. */
+.admin-table tbody tr.row-inactive td {
+  opacity: 0.55;
+}
+
 /* `display: flex` sur un <td> le fait sortir du modèle de mise en page des tableaux : le
    navigateur l'enveloppe dans une cellule anonyme qui, elle, s'étire bien à la hauteur de la
    ligne, mais cette boîte flex ne s'étire pas automatiquement dedans — sa bordure basse (celle
@@ -2461,6 +2467,14 @@ button.ghost:hover:not(:disabled) {
   margin-left: auto;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+/* RM-NOT-010/011 : actions "Marquer comme lu"/"Archiver" du centre d'activités, côte à côte. */
+.activity-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
 }
 
 .activity-item p {

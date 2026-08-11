@@ -9,7 +9,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider  = "postgresql"
   // Neon : URL "-pooler" (PgBouncer, transaction mode) — nécessaire en serverless car chaque
   // invocation de fonction ouvre sa propre connexion ; sans pooling, le pool Postgres serait
   // épuisé en quelques requêtes concurrentes.
@@ -155,6 +155,10 @@ enum AttendanceStatus {
   EXCUSED_ABSENT
   UNEXCUSED_ABSENT
   LATE
+  /// RM-ATT-011 : valeur "non renseigné" — permet à `AttendanceService.reset()` de remettre une
+  /// présence à vide sans jamais supprimer physiquement la ligne `Attendance`/`AttendanceHistory`.
+  /// Jamais renvoyée telle quelle au client : les endpoints la traduisent toujours en `null`.
+  NOT_SET
 }
 
 enum DayOfWeek {
@@ -318,15 +322,15 @@ model User {
   deletedAt       DateTime?  @map("deleted_at")
 
   /// Verrouillage temporaire après échecs d'authentification (RM-SEC-016/037) — distinct de `status`.
-  failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
-  lockedUntil         DateTime? @map("locked_until")
+  failedLoginAttempts       Int       @default(0) @map("failed_login_attempts")
+  lockedUntil               DateTime? @map("locked_until")
   /// ERR-SEC-008 : throttle des changements de mot de passe volontaires (attaque par fatigue) —
   /// fenêtre glissante distincte de `failedLoginAttempts`, qui ne couvre que les échecs de connexion.
   passwordChangeCount       Int       @default(0) @map("password_change_count")
   passwordChangeWindowStart DateTime? @map("password_change_window_start")
   /// Incrémenté à chaque invalidation globale de session (RM-SEC-017/019/030) pour permettre
   /// la révocation immédiate d'un JWT déjà émis (vérifié dans JwtStrategy à chaque requête).
-  tokenVersion        Int       @default(0) @map("token_version")
+  tokenVersion              Int       @default(0) @map("token_version")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -344,10 +348,12 @@ model User {
   emailVerificationTokens          EmailVerificationToken[]
   adminInvitationTokens            AdminInvitationToken[]
   loginHistory                     LoginHistory[]
+  /// RM-SEC-013/014/031 : appareils/adresses IP déjà vus pour ce compte — sécurité uniquement.
+  devices                          UserDevice[]
   auditLogs                        AuditLog[]
   /// Ch.18 : centre d'activités personnel (une ligne par activité reçue, tous rôles confondus).
   activities                       Activity[]
-  schoolAdditionReviews            SchoolAdditionRequest[] @relation("SchoolAdditionReviewedBy")
+  schoolAdditionReviews            SchoolAdditionRequest[]  @relation("SchoolAdditionReviewedBy")
   enrollmentCommentsAuthored       EnrollmentComment[]      @relation("EnrollmentCommentAuthor")
   groupAnnouncementsCreated        GroupAnnouncement[]      @relation("GroupAnnouncementAuthor")
   subscriptionsValidated           Subscription[]           @relation("SubscriptionValidatedBy")
@@ -453,6 +459,23 @@ model LoginHistory {
   @@map("login_history")
 }
 
+/// RM-SEC-013/014/022/031/032/038 : appareils/adresses IP connus d'un utilisateur — réservé aux
+/// fins de sécurité (détection de nouvel appareil, calcul indicatif du score de risque à la volée
+/// dans `AuthService`). Ne constitue jamais, à lui seul, une preuve d'usage frauduleux et n'est
+/// jamais exploité à des fins commerciales (RM-SEC-022/032/038).
+model UserDevice {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  user        User     @relation(fields: [userId], references: [id])
+  ipAddress   String?  @map("ip_address")
+  userAgent   String?  @map("user_agent")
+  firstSeenAt DateTime @default(now()) @map("first_seen_at")
+  lastSeenAt  DateTime @default(now()) @map("last_seen_at")
+
+  @@unique([userId, ipAddress, userAgent])
+  @@map("user_device")
+}
+
 /// Professeur — hérite de User (RM-ACC-*, Ch. 5)
 model TeacherProfile {
   id                String               @id @db.Uuid
@@ -464,6 +487,9 @@ model TeacherProfile {
   bio               String?
   photo             String?
   experience        String?
+  /// RM-TPR-013 : disponibilités déclaratives en texte libre (ex. "Lundi/Mercredi soir, weekend") —
+  /// information publique complémentaire, non structurée en V1.
+  availability      String?
   completenessScore Int                  @default(0) @map("completeness_score")
   status            TeacherProfileStatus
 
@@ -473,6 +499,8 @@ model TeacherProfile {
   teachingLocations TeachingLocation[]
   preEnrollments    PreEnrollment[]
   subscriptions     Subscription[]
+  /// RM-TPR-012 : dépôt de diplôme disponible dès la V1, facultatif et non vérifié.
+  diplomas          Diploma[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -560,6 +588,8 @@ model Subject {
   preEnrollments  PreEnrollment[]
 
   createdAt DateTime @default(now()) @map("created_at")
+  /// RM-REF-012 : date de dernière modification (activation/désactivation, renommage...).
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("subject")
 }
@@ -578,6 +608,8 @@ model SchoolLevel {
   studentSchoolSituations StudentSchoolSituation[]
 
   createdAt DateTime @default(now()) @map("created_at")
+  /// RM-REF-012 : date de dernière modification.
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("school_level")
 }
@@ -591,6 +623,9 @@ model SubjectLevel {
   schoolLevel   SchoolLevel @relation(fields: [schoolLevelId], references: [id])
   isAllowed     Boolean     @map("is_allowed")
   isActive      Boolean     @map("is_active")
+  /// RM-REF-012 : dates de création/modification — absentes jusqu'ici sur ce modèle.
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
 
   @@unique([subjectId, schoolLevelId])
   @@map("subject_level")
@@ -601,14 +636,15 @@ model City {
   name     String  @unique
   isActive Boolean @default(true) @map("is_active")
 
-  schools School[]
+  schools                School[]
   schoolAdditionRequests SchoolAdditionRequest[]
 
   createdAt DateTime @default(now()) @map("created_at")
+  /// RM-REF-012 : date de dernière modification.
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("city")
 }
-
 
 /// Ch.6.7 : demande d'ajout d'un établissement scolaire par un Parent, validée/refusée par un Admin.
 model SchoolAdditionRequest {
@@ -634,6 +670,7 @@ model SchoolAdditionRequest {
   @@index([status, createdAt])
   @@map("school_addition_request")
 }
+
 model School {
   id                    String     @id @default(uuid()) @db.Uuid
   sourceKey             String?    @unique @map("source_key")
@@ -656,9 +693,11 @@ model School {
   isActive              Boolean    @default(true) @map("is_active")
 
   studentSchoolSituations StudentSchoolSituation[]
-  additionRequests         SchoolAdditionRequest[]
+  additionRequests        SchoolAdditionRequest[]
 
   createdAt DateTime @default(now()) @map("created_at")
+  /// RM-REF-012 : date de dernière modification.
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("school")
 }
@@ -669,6 +708,11 @@ model TeacherSubject {
   teacherProfile   TeacherProfile @relation(fields: [teacherProfileId], references: [id])
   subjectId        String         @map("subject_id") @db.Uuid
   subject          Subject        @relation(fields: [subjectId], references: [id])
+  /// RM-TPR-003/005 : statut de validation propre à CETTE ligne (et non plus au profil entier) —
+  /// `true` par défaut (matières déclarées avant la première validation globale du profil, couvertes
+  /// par cette validation initiale) ; mis à `false` uniquement lorsqu'une matière est ajoutée à un
+  /// profil déjà VALIDATED, le temps d'une nouvelle validation administrative dédiée à cette ligne.
+  isValidated      Boolean        @default(true) @map("is_validated")
 
   @@id([teacherProfileId, subjectId])
   @@map("teacher_subject")
@@ -680,9 +724,27 @@ model TeacherSchoolLevel {
   teacherProfile   TeacherProfile @relation(fields: [teacherProfileId], references: [id])
   schoolLevelId    String         @map("school_level_id") @db.Uuid
   schoolLevel      SchoolLevel    @relation(fields: [schoolLevelId], references: [id])
+  /// RM-TPR-004/005 : symétrique de TeacherSubject.isValidated.
+  isValidated      Boolean        @default(true) @map("is_validated")
 
   @@id([teacherProfileId, schoolLevelId])
   @@map("teacher_school_level")
+}
+
+/// RM-TPR-012 : dépôt de diplôme — disponible dès la V1, facultatif, sans vérification (la
+/// vérification officielle est une évolution future). Pas de traitement de fichier binaire : le
+/// projet ne dispose d'aucune infrastructure d'upload à ce jour (le champ `photo` du profil suit le
+/// même principe, une simple chaîne fournie par le client), donc ce modèle se contente d'enregistrer
+/// un nom et/ou une URL de fichier déjà hébergé ailleurs.
+model Diploma {
+  id               String         @id @default(uuid()) @db.Uuid
+  teacherProfileId String         @map("teacher_profile_id") @db.Uuid
+  teacherProfile   TeacherProfile @relation(fields: [teacherProfileId], references: [id])
+  fileName         String         @map("file_name")
+  fileUrl          String?        @map("file_url")
+  uploadedAt       DateTime       @default(now()) @map("uploaded_at")
+
+  @@map("diploma")
 }
 
 // ---------------------------------------------------------------------------
@@ -760,6 +822,17 @@ model Group {
   startDate                  DateTime             @map("start_date") @db.Date
   endDate                    DateTime?            @map("end_date") @db.Date
   status                     GroupStatus
+  /// RM-PRE-005/015 : le Professeur pilote librement l'ouverture/fermeture des préinscriptions
+  /// pour ce groupe — n'affecte jamais les inscriptions classiques.
+  preEnrollmentsOpen         Boolean              @default(true) @map("pre_enrollments_open")
+  /// RM-GRP-009/030, RM-SES-007/008/028 : interruption temporaire de la génération automatique de
+  /// séances sur cette période (ex. vacances du Professeur) — ne modifie jamais le planning
+  /// hebdomadaire ni les inscriptions actives ; la reprise après la période n'est jamais rétroactive.
+  generationPausedFrom       DateTime?            @map("generation_paused_from") @db.Date
+  generationPausedUntil      DateTime?            @map("generation_paused_until") @db.Date
+  /// RM-ATT-031 : seuil de retards au-delà duquel une alerte est générée, paramétrable par le
+  /// Professeur (défaut : pas d'alerte si non renseigné).
+  latenessAlertThreshold     Int?                 @map("lateness_alert_threshold")
 
   schedules                   GroupSchedule[]
   sessions                    Session[]
@@ -787,6 +860,9 @@ model GroupSchedule {
   durationMinutes    Int               @map("duration_minutes")
   teachingLocationId String?           @map("teaching_location_id") @db.Uuid
   teachingLocation   TeachingLocation? @relation(fields: [teachingLocationId], references: [id])
+  /// RM-GRP-007 : mode d'enseignement propre à ce créneau ; `null` = hérite de `Group.teachingMode`
+  /// (permet un groupe multi-modal, ex. un créneau en présentiel et un autre en ligne).
+  teachingMode       TeachingMode?     @map("teaching_mode")
 
   @@map("group_schedule")
 }
@@ -811,17 +887,33 @@ model TeachingLocation {
 
 /// Séance — occurrence ponctuelle rattachée à un Groupe (Ch. 13)
 model Session {
-  id                 String            @id @default(uuid()) @db.Uuid
-  groupId            String            @map("group_id") @db.Uuid
-  group              Group             @relation(fields: [groupId], references: [id])
-  date               DateTime          @db.Date
-  startTime          String            @map("start_time")
-  durationMinutes    Int               @map("duration_minutes")
-  teachingMode       TeachingMode      @map("teaching_mode")
-  teachingLocationId String?           @map("teaching_location_id") @db.Uuid
-  teachingLocation   TeachingLocation? @relation(fields: [teachingLocationId], references: [id])
-  status             SessionStatus
-  lockedAt           DateTime?         @map("locked_at")
+  id                       String            @id @default(uuid()) @db.Uuid
+  groupId                  String            @map("group_id") @db.Uuid
+  group                    Group             @relation(fields: [groupId], references: [id])
+  date                     DateTime          @db.Date
+  startTime                String            @map("start_time")
+  durationMinutes          Int               @map("duration_minutes")
+  teachingMode             TeachingMode      @map("teaching_mode")
+  teachingLocationId       String?           @map("teaching_location_id") @db.Uuid
+  teachingLocation         TeachingLocation? @relation(fields: [teachingLocationId], references: [id])
+  status                   SessionStatus
+  lockedAt                 DateTime?         @map("locked_at")
+  /// RM-SES-036 : après un déverrouillage exceptionnel Super Admin, empêche `computeLockDeadline()`
+  /// de reverrouiller silencieusement la séance avant que cette échéance (fenêtre de correction) ne
+  /// soit atteinte — sans ce champ, l'échéance de 48h recalculée depuis la fin théorique (déjà
+  /// passée) rendait `isLockable()` vrai immédiatement après le déverrouillage.
+  unlockOverrideUntil      DateTime?         @map("unlock_override_until")
+  /// RM-SES-009/010 : `true` quand cette séance a exceptionnellement basculé de mode par rapport
+  /// au mode habituel du groupe/créneau — ne modifie jamais ce mode habituel.
+  teachingModeException    Boolean           @default(false) @map("teaching_mode_exception")
+  /// RM-SES-041 : commentaire pédagogique du Professeur pour cette séance, modifiable (l'historique
+  /// des modifications passe par AuditLog, cf. RM-ACC-020).
+  teacherComment           String?           @map("teacher_comment")
+  /// RM-SES-034 : conserve la traçabilité d'un report (`postpone()`) — la nouvelle séance référence
+  /// l'originale ; jamais réutilisé pour un autre usage.
+  rescheduledFromSessionId String?           @unique @map("rescheduled_from_session_id") @db.Uuid
+  rescheduledFromSession   Session?          @relation("SessionReschedule", fields: [rescheduledFromSessionId], references: [id])
+  rescheduledToSession     Session?          @relation("SessionReschedule")
 
   attendances       Attendance[]
   /// Ch.15.9 : écritures SESSION (facturation) et ADJUSTMENT (correction de présence) référençant cette séance.
@@ -937,21 +1029,24 @@ model PreEnrollment {
 /// déduit de `Session.status`/`lockedAt` (fenêtre alignée sur celle des séances, Ch.14.7), ce qui
 /// évite de perdre le statut réel (Présent/Absent excusé/…) au moment du verrouillage.
 model Attendance {
-  id           String           @id @default(uuid()) @db.Uuid
-  sessionId    String           @map("session_id") @db.Uuid
-  session      Session          @relation(fields: [sessionId], references: [id])
-  studentId    String           @map("student_id") @db.Uuid
-  student      Student          @relation(fields: [studentId], references: [id])
+  id                    String           @id @default(uuid()) @db.Uuid
+  sessionId             String           @map("session_id") @db.Uuid
+  session               Session          @relation(fields: [sessionId], references: [id])
+  studentId             String           @map("student_id") @db.Uuid
+  student               Student          @relation(fields: [studentId], references: [id])
   /// RM-ATT-022 : une présence appartient définitivement à une seule inscription.
-  enrollmentId String           @map("enrollment_id") @db.Uuid
-  enrollment   Enrollment       @relation(fields: [enrollmentId], references: [id])
-  status       AttendanceStatus
-  lateDuration Int?             @map("late_duration")
-  comment      String?
-  recordedAt   DateTime         @map("recorded_at")
-  recordedById String           @map("recorded_by_id") @db.Uuid
-  recordedBy   User             @relation("AttendanceRecordedBy", fields: [recordedById], references: [id])
-  modifiedAt   DateTime?        @map("modified_at")
+  enrollmentId          String           @map("enrollment_id") @db.Uuid
+  enrollment            Enrollment       @relation(fields: [enrollmentId], references: [id])
+  status                AttendanceStatus
+  lateDuration          Int?             @map("late_duration")
+  /// RM-ATT-019 : durée effective de connexion pour une séance en ligne (facultatif, non renseigné
+  /// pour une séance en présentiel).
+  onlineDurationMinutes Int?             @map("online_duration_minutes")
+  comment               String?
+  recordedAt            DateTime         @map("recorded_at")
+  recordedById          String           @map("recorded_by_id") @db.Uuid
+  recordedBy            User             @relation("AttendanceRecordedBy", fields: [recordedById], references: [id])
+  modifiedAt            DateTime?        @map("modified_at")
 
   history AttendanceHistory[]
 
@@ -1017,6 +1112,7 @@ model Activity {
   @@index([userId, readAt])
   @@map("activity")
 }
+
 /// D�duplication des jobs temporels : une cl� m�tier = un �v�nement pouss� une seule fois, m�me si
 /// le cron repasse sur la m�me fen�tre (NOT-SES-009, NOT-ABO-002, etc.).
 model ScheduledNotificationMarker {

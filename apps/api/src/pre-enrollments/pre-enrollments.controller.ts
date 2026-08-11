@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { PreEnrollmentsService } from './pre-enrollments.service';
 import { CreatePreEnrollmentDto } from './dto/create-pre-enrollment.dto';
+import { UpdatePreEnrollmentDto } from './dto/update-pre-enrollment.dto';
 import { ProposePreEnrollmentDto } from './dto/propose-pre-enrollment.dto';
 import { ListMineQueryDto } from './dto/list-mine-query.dto';
 import { EligibleTeachersQueryDto } from './dto/eligible-teachers-query.dto';
@@ -41,6 +42,17 @@ export class PreEnrollmentsController {
     return this.service.create(user.id, dto);
   }
 
+  /** RM-PRE-031/ERR-PRE-018 : modification par le Parent tant qu'aucune proposition n'a été envoyée. */
+  @Patch(':id')
+  @Roles(Role.PARENT)
+  update(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: UpdatePreEnrollmentDto,
+  ) {
+    return this.service.update(user.id, id, dto);
+  }
+
   @Post(':id/cancel')
   @Roles(Role.PARENT)
   cancel(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
@@ -51,6 +63,14 @@ export class PreEnrollmentsController {
   @Roles(Role.PARENT)
   confirm(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.service.confirm(user.id, id);
+  }
+
+  /** RM-PRE-026 : le Parent retire sa confirmation tant que la demande d'inscription résultante
+   *  n'a pas été traitée par le Professeur. */
+  @Post(':id/withdraw-confirmation')
+  @Roles(Role.PARENT)
+  withdrawConfirmation(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.service.withdrawConfirmation(user.id, id);
   }
 
   @Post(':id/reject')

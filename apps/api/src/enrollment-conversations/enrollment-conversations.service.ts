@@ -7,6 +7,17 @@ import { UpdateCommentDto } from './dto/update-comment.dto';
 
 const EDIT_WINDOW_MS = 48 * 60 * 60 * 1000;
 
+/** RM-COM-016 : conservation légale de 7 ans à compter de la clôture de l'inscription. */
+const RETENTION_YEARS = 7;
+
+/**
+ * Ch.19.7/RM-COM-016 : statuts "clôturés" d'une inscription, point de départ du délai de
+ * conservation de 7 ans. `EnrollmentStatus` ne compte pas de valeur `CLOSED` (à la différence de
+ * `GroupStatus`/`AccountingAccountStatus`) : les statuts terminaux réels sont REJECTED, ARCHIVED,
+ * CANCELLED, EXPIRED (ACTIVE/SUSPENDED/PENDING_VALIDATION restent "vivants").
+ */
+const CLOSED_ENROLLMENT_STATUSES = ['REJECTED', 'ARCHIVED', 'CANCELLED', 'EXPIRED'] as const;
+
 /**
  * Ch.19.3, ERR-COM-002 : un nouveau commentaire ne peut être ajouté que sur une inscription dont
  * la relation pédagogique est encore vivante. Le référentiel n'énumère pas les statuts exacts
@@ -127,5 +138,27 @@ export class EnrollmentConversationsService {
       throw new BadRequestException('Commentaire figé : suppression refusée (ERR-COM-004)');
     }
     return this.prisma.enrollmentComment.update({ where: { id: commentId }, data: { deletedAt: new Date() } });
+  }
+
+  /**
+   * RM-COM-016 : politique de conservation légale de 7 ans — passé ce délai, suppression physique
+   * (seule dérogation à RM-COM-014, qui interdit la suppression physique en usage courant/métier).
+   * `Enrollment` ne porte pas de champ `closedAt` dédié : `updatedAt` est utilisé comme meilleure
+   * approximation disponible de la date de bascule vers un statut clôturé (`decidedAt` n'est pas
+   * renseigné de façon homogène selon le chemin de clôture — cf. enrollments/group-change/etc.).
+   * Appelée mensuellement par `TemporalJobsService`.
+   */
+  async purgeOldComments(now = new Date()): Promise<number> {
+    const cutoff = new Date(now);
+    cutoff.setFullYear(cutoff.getFullYear() - RETENTION_YEARS);
+    const { count } = await this.prisma.enrollmentComment.deleteMany({
+      where: {
+        enrollment: {
+          status: { in: [...CLOSED_ENROLLMENT_STATUSES] },
+          updatedAt: { lte: cutoff },
+        },
+      },
+    });
+    return count;
   }
 }

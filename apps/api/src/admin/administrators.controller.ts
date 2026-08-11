@@ -1,9 +1,10 @@
-import { Body, Controller, HttpCode, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, HttpCode, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { AdministratorsService } from './administrators.service';
 import { InviteAdministratorDto } from './dto/invite-administrator.dto';
 import { PromoteAdministratorDto } from './dto/promote-administrator.dto';
 import { AcceptAdministratorInvitationDto } from './dto/accept-administrator-invitation.dto';
+import { UpdateAdministratorPermissionsDto } from './dto/update-administrator-permissions.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -32,6 +33,19 @@ export class AdministratorsController {
     @Req() req: any,
   ) {
     return this.administrators.promote(actor.id, userId, dto, { ipAddress: req.ip });
+  }
+
+  /** RM-ACC-013 : permissions modifiables après création — RM-ACC-012 : jamais sur son propre compte. */
+  @Patch(':userId/permissions')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.SUPER_ADMIN)
+  updatePermissions(
+    @Param('userId') userId: string,
+    @Body() dto: UpdateAdministratorPermissionsDto,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() req: any,
+  ) {
+    return this.administrators.updatePermissions(actor.id, userId, dto, { ipAddress: req.ip });
   }
 
   /** Public : atteint uniquement via le lien reçu par e-mail, pas de session requise pour l'utiliser. */

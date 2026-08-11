@@ -6,6 +6,8 @@ import { AuthService } from './auth.service';
 import { PasswordService } from './password.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { TeacherProfileService } from '../teacher-profile/teacher-profile.service';
 
 /**
  * Unit tests for AuthService. PrismaService, JwtService, PasswordService and EmailService are
@@ -75,6 +77,14 @@ function makePrismaMock() {
     },
     loginHistory: {
       create: jest.fn(),
+      count: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    userDevice: {
+      findFirst: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      count: jest.fn(),
     },
     $transaction: jest.fn(),
   };
@@ -87,6 +97,8 @@ describe('AuthService', () => {
   let config: { get: jest.Mock; getOrThrow: jest.Mock };
   let password: { hash: jest.Mock; verify: jest.Mock };
   let email: { sendPasswordResetEmail: jest.Mock; sendEmailVerification: jest.Mock };
+  let notifications: { notify: jest.Mock };
+  let teacherProfile: { assertSubjectLevelSelectionValid: jest.Mock };
 
   const configDefaults: Record<string, unknown> = {
     LOGIN_MAX_ATTEMPTS: 5,
@@ -116,6 +128,8 @@ describe('AuthService', () => {
       sendPasswordResetEmail: jest.fn().mockResolvedValue(undefined),
       sendEmailVerification: jest.fn().mockResolvedValue(undefined),
     };
+    notifications = { notify: jest.fn().mockResolvedValue({}) };
+    teacherProfile = { assertSubjectLevelSelectionValid: jest.fn().mockResolvedValue(undefined) };
 
     service = new AuthService(
       prisma as unknown as PrismaService,
@@ -123,6 +137,8 @@ describe('AuthService', () => {
       config as unknown as ConfigService,
       password as unknown as PasswordService,
       email as unknown as EmailService,
+      notifications as unknown as NotificationsService,
+      teacherProfile as unknown as TeacherProfileService,
     );
   });
 
@@ -460,15 +476,37 @@ describe('AuthService', () => {
   // logout / logoutAll
   // ---------------------------------------------------------------------
   describe('logout', () => {
-    it('revokes the session matching the refresh token', async () => {
-      prisma.userSession.updateMany.mockResolvedValue({ count: 1 });
+    it('revokes the session and bumps tokenVersion (RM-SEC-036)', async () => {
+      prisma.userSession.findUnique.mockResolvedValue({
+        id: 'session-1',
+        userId: 'user-1',
+        revokedAt: null,
+      });
+      prisma.userSession.update.mockResolvedValue({});
+      prisma.user.update.mockResolvedValue({});
 
       await service.logout('some-refresh-token');
 
-      expect(prisma.userSession.updateMany).toHaveBeenCalledWith({
-        where: { refreshTokenHash: hashToken('some-refresh-token'), revokedAt: null },
+      expect(prisma.userSession.findUnique).toHaveBeenCalledWith({
+        where: { refreshTokenHash: hashToken('some-refresh-token') },
+      });
+      expect(prisma.userSession.update).toHaveBeenCalledWith({
+        where: { id: 'session-1' },
         data: { revokedAt: expect.any(Date) },
       });
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        data: { tokenVersion: { increment: 1 } },
+      });
+    });
+
+    it('is a no-op for an unknown or already-revoked refresh token', async () => {
+      prisma.userSession.findUnique.mockResolvedValue(null);
+
+      await service.logout('unknown-token');
+
+      expect(prisma.userSession.update).not.toHaveBeenCalled();
+      expect(prisma.user.update).not.toHaveBeenCalled();
     });
   });
 

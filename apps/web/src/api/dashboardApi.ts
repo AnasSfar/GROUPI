@@ -59,6 +59,9 @@ export interface TeacherDashboard {
     upcomingSessions: DashboardSessionSummary[];
     pendingEnrollmentsCount: number;
     pendingGroupChangesCount: number;
+    /** RM-COM-019 : compteurs distincts, en plus du total global des notifications non lues. */
+    unreadCommentsCount: number;
+    unreadAnnouncementsCount: number;
   };
   presences: {
     absencesToday: number;
@@ -81,7 +84,9 @@ export interface TeacherDashboard {
     pendingAdminValidation: boolean;
   };
   statistics: TeacherStatistics;
-  export: { available: boolean; message?: string };
+  /** RM-DSH-012 : disponibilité de l'export du tableau de bord — la génération elle-même passe par
+   *  `POST /exports` (`type: 'DASHBOARD_INDICATORS'`), voir `exportsApi.createExport`. */
+  export: { available: boolean; message?: string; exportType?: 'DASHBOARD_INDICATORS' };
   preEnrollments: {
     receivedCount: number;
     pendingCount: number;
@@ -117,6 +122,9 @@ export interface ParentDashboard {
   multipleChildren: boolean;
   children: ParentChildDashboard[];
   alerts: DashboardAlert[];
+  /** RM-COM-019 : compteurs distincts, en plus du total global des notifications non lues. */
+  unreadCommentsCount: number;
+  unreadAnnouncementsCount: number;
 }
 
 export interface AdminDashboard {

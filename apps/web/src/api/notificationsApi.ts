@@ -17,7 +17,7 @@ export interface Activity {
 }
 
 /** Ch.18.3 : centre d'activités personnel — toujours filtré par l'utilisateur du JWT côté API. */
-export function listMine(accessToken: string, filter?: 'all' | 'unread'): Promise<Activity[]> {
+export function listMine(accessToken: string, filter?: 'all' | 'unread' | 'archived'): Promise<Activity[]> {
   const query = filter ? `?filter=${filter}` : '';
   return apiRequest<Activity[]>(`/notifications/me${query}`, { accessToken });
 }
@@ -32,4 +32,9 @@ export function markRead(accessToken: string, id: string): Promise<Activity> {
 
 export function markAllRead(accessToken: string): Promise<{ count: number }> {
   return apiRequest<{ count: number }>('/notifications/me/read-all', { method: 'POST', accessToken });
+}
+
+/** RM-NOT-010 : archivage — la ligne n'est jamais supprimée, seul `archivedAt` est renseigné. */
+export function archive(accessToken: string, id: string): Promise<Activity> {
+  return apiRequest<Activity>(`/notifications/${id}/archive`, { method: 'PATCH', accessToken });
 }

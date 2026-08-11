@@ -1,7 +1,9 @@
-import { Body, Controller, Delete, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { SessionsService } from './sessions.service';
 import { PostponeSessionDto } from './dto/postpone-session.dto';
+import { SetTeachingModeDto } from './dto/set-teaching-mode.dto';
+import { UpdateSessionCommentDto } from './dto/update-session-comment.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -34,5 +36,25 @@ export class SessionsController {
   @Delete(':id')
   remove(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.service.remove(user.id, id);
+  }
+
+  /** Ch.13.6 : passage exceptionnel du mode d'enseignement — ne modifie jamais le mode habituel du groupe. */
+  @Patch(':id/teaching-mode')
+  setTeachingMode(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: SetTeachingModeDto,
+  ) {
+    return this.service.setTeachingMode(user.id, id, dto);
+  }
+
+  /** RM-SES-041 : commentaire pédagogique de la séance. */
+  @Patch(':id/comment')
+  setComment(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateSessionCommentDto,
+  ) {
+    return this.service.setComment(user.id, id, dto);
   }
 }

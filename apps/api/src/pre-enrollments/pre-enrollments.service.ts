@@ -1,12 +1,14 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { AcademicYear } from '@prisma/client';
+import { AcademicYear, PreEnrollmentStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { CreatePreEnrollmentDto } from './dto/create-pre-enrollment.dto';
+import { UpdatePreEnrollmentDto } from './dto/update-pre-enrollment.dto';
 import { ProposePreEnrollmentDto } from './dto/propose-pre-enrollment.dto';
 import { EligibleTeachersQueryDto } from './dto/eligible-teachers-query.dto';
+import { AdminListPreEnrollmentsQueryDto } from './dto/admin-list-pre-enrollments-query.dto';
 
 const INCLUDE_DETAILS = {
   student: { select: { id: true, firstName: true, lastName: true } },
@@ -58,6 +60,154 @@ export class PreEnrollmentsService {
         'Une préinscription ne peut concerner qu’une année académique future (RM-PRE-023/ERR-PRE-002)',
       );
     }
+  }
+
+  /**
+   * RM-PRE-005/015, ERR-PRE-003/006 : le champ `Group.preEnrollmentsOpen` (schema.prisma) est
+   * documenté « pour ce groupe », mais une préinscription précède par construction l'existence d'un
+   * groupe pour l'année visée (RM-PRE-007 : les préinscriptions ne créent jamais un groupe). Faute
+   * d'un réglage dédié au niveau du Professeur dans ce schéma, on utilise comme référence le groupe
+   * le plus pertinent déjà existant pour la même combinaison Professeur/Matière/Niveau : en priorité
+   * un groupe déjà ouvert pour l'année académique visée elle-même (le Professeur a alors déjà
+   * anticipé), sinon son groupe le plus récent hors archivé (signal courant "j'accepte/je
+   * n'accepte plus de nouvelles préinscriptions pour cette offre"). Si aucun groupe de référence
+   * n'existe encore, les préinscriptions restent ouvertes par défaut (valeur par défaut du champ).
+   */
+  private async assertPreEnrollmentsOpenForTeacher(criteria: {
+    teacherId: string;
+    schoolLevelId: string;
+    subjectId?: string;
+    academicYearId: string;
+  }): Promise<void> {
+    const baseWhere = {
+      teacherId: criteria.teacherId,
+      schoolLevelId: criteria.schoolLevelId,
+      status: { not: 'ARCHIVED' as const },
+      ...(criteria.subjectId ? { subjectId: criteria.subjectId } : {}),
+    };
+    const referenceGroup =
+      (await this.prisma.group.findFirst({
+        where: { ...baseWhere, academicYearId: criteria.academicYearId },
+        orderBy: { createdAt: 'desc' },
+        select: { preEnrollmentsOpen: true },
+      })) ??
+      (await this.prisma.group.findFirst({
+        where: baseWhere,
+        orderBy: { createdAt: 'desc' },
+        select: { preEnrollmentsOpen: true },
+      }));
+    if (referenceGroup && !referenceGroup.preEnrollmentsOpen) {
+      throw new BadRequestException(
+        'Les préinscriptions sont actuellement fermées par ce Professeur pour ce niveau/matière (RM-PRE-005/015, ERR-PRE-003/006)',
+      );
+    }
+  }
+
+  /**
+   * RM-PRE-005/015, PERM-PRE-006 : le Professeur ouvre/ferme les préinscriptions sur l'un de ses
+   * groupes — n'affecte jamais les inscriptions classiques sur ce même groupe.
+   */
+  async setPreEnrollmentsOpen(teacherId: string, groupId: string, open: boolean) {
+    const group = await this.prisma.group.findUnique({ where: { id: groupId } });
+    if (!group) {
+      throw new NotFoundException('Groupe introuvable');
+    }
+    if (group.teacherId !== teacherId) {
+      throw new ForbiddenException("Ce groupe n'appartient pas à votre compte");
+    }
+    return this.prisma.group.update({
+      where: { id: groupId },
+      data: { preEnrollmentsOpen: open },
+      select: { id: true, name: true, preEnrollmentsOpen: true },
+    });
+  }
+
+  /**
+   * RM-CYC-025-like : Administrateurs habilités à consulter/être alertés sur les préinscriptions —
+   * le Super Administrateur (accès total implicite) et tout Administrateur actif titulaire de la
+   * permission `ACC_VALIDATE` (aucun code plus spécifique au domaine PRE n'existe dans ce projet,
+   * même principe que `TemporalJobsService.eligibleAccountValidators`, dupliqué ici pour ne pas
+   * coupler ce module à `temporal-jobs`).
+   */
+  private async eligibleAdminValidators(): Promise<{ id: string }[]> {
+    const [superAdmins, delegatedAdmins] = await Promise.all([
+      this.prisma.user.findMany({
+        where: { roles: { has: 'SUPER_ADMIN' }, status: 'ACTIVE' },
+        select: { id: true },
+      }),
+      this.prisma.administrator.findMany({
+        where: { permissions: { has: 'ACC_VALIDATE' }, disabledAt: null, user: { status: 'ACTIVE' } },
+        select: { id: true },
+      }),
+    ]);
+    const ids = new Set<string>([...superAdmins.map((a) => a.id), ...delegatedAdmins.map((a) => a.id)]);
+    return [...ids].map((id) => ({ id }));
+  }
+
+  /**
+   * RM-PRE-027/ERR-PRE-013 : jamais bloquant — si l'élève a une situation scolaire ACTIVE dont le
+   * niveau ne correspond pas à la progression naturelle (niveau visé = niveau actuel + 1) vers le
+   * niveau visé par la préinscription, une alerte (priorité INFORMATION) est envoyée au Parent et
+   * aux Administrateurs habilités (ACC_VALIDATE).
+   */
+  private async alertIfLevelProgressionIncoherent(
+    pe: { id: string; parentId: string },
+    studentId: string,
+    targetSchoolLevelId: string,
+  ): Promise<void> {
+    const student = await this.prisma.student.findUnique({
+      where: { id: studentId },
+      select: {
+        firstName: true,
+        lastName: true,
+        currentSchoolSituation: {
+          select: { status: true, schoolLevel: { select: { order: true, name: true } } },
+        },
+      },
+    });
+    const currentLevel =
+      student?.currentSchoolSituation && student.currentSchoolSituation.status === 'ACTIVE'
+        ? student.currentSchoolSituation.schoolLevel
+        : null;
+    if (!student || !currentLevel) {
+      return; // Pas de situation scolaire active connue : rien à comparer (non bloquant).
+    }
+
+    const targetLevel = await this.prisma.schoolLevel.findUnique({
+      where: { id: targetSchoolLevelId },
+      select: { order: true, name: true },
+    });
+    if (!targetLevel || targetLevel.order === currentLevel.order + 1) {
+      return; // Progression naturelle (ou niveau visé introuvable) : rien à signaler.
+    }
+
+    const studentName = `${student.firstName} ${student.lastName}`;
+    const body = `Le niveau "${targetLevel.name}" visé par la préinscription de ${studentName} ne correspond pas à la progression naturelle depuis son niveau actuel "${currentLevel.name}" (RM-PRE-027/ERR-PRE-013).`;
+
+    await this.notifications.notify({
+      recipientUserId: pe.parentId,
+      type: 'PRE_LEVEL_PROGRESSION_MISMATCH',
+      priority: 'INFORMATION',
+      title: 'Niveau scolaire à vérifier',
+      body,
+      refType: 'PreEnrollment',
+      refId: pe.id,
+    });
+
+    const admins = await this.eligibleAdminValidators();
+    await Promise.all(
+      admins.map((admin) =>
+        this.notifications.notify({
+          recipientUserId: admin.id,
+          type: 'PRE_LEVEL_PROGRESSION_MISMATCH',
+          priority: 'INFORMATION',
+          title: 'Incohérence de progression scolaire détectée',
+          body,
+          refType: 'PreEnrollment',
+          refId: pe.id,
+        }),
+      ),
+    );
   }
 
   /**
@@ -120,6 +270,15 @@ export class PreEnrollmentsService {
 
   /** Ch.11.4, RM-PRE-016/023/025, ERR-PRE-001/002/007/012 : création par le Parent. */
   async create(parentId: string, dto: CreatePreEnrollmentDto) {
+    // RM-CYC-008 : un Parent dont le compte n'est pas (ou plus) ACTIVE — en attente de validation,
+    // suspendu, désactivé... — ne peut engager aucune nouvelle démarche métier.
+    const parentUser = await this.prisma.user.findUnique({ where: { id: parentId }, select: { status: true } });
+    if (!parentUser || parentUser.status !== 'ACTIVE') {
+      throw new ForbiddenException(
+        'Votre compte doit être validé et actif pour créer une préinscription (RM-CYC-008)',
+      );
+    }
+
     const student = await this.prisma.student.findUnique({ where: { id: dto.studentId } });
     if (!student) {
       throw new NotFoundException('Élève introuvable');
@@ -154,6 +313,14 @@ export class PreEnrollmentsService {
     }
     this.assertFutureAcademicYear(academicYear);
 
+    // RM-PRE-005/015/ERR-PRE-003/006 : le Professeur a pu fermer les préinscriptions.
+    await this.assertPreEnrollmentsOpenForTeacher({
+      teacherId: dto.teacherId,
+      schoolLevelId: dto.schoolLevelId,
+      subjectId: dto.subjectId,
+      academicYearId: dto.academicYearId,
+    });
+
     // RM-PRE-025/ERR-PRE-001/012 : une seule préinscription active par élève/professeur/année.
     const duplicate = await this.prisma.preEnrollment.findFirst({
       where: {
@@ -169,7 +336,7 @@ export class PreEnrollmentsService {
       );
     }
 
-    return this.prisma.preEnrollment.create({
+    const created = await this.prisma.preEnrollment.create({
       data: {
         parentId,
         studentId: dto.studentId,
@@ -181,6 +348,55 @@ export class PreEnrollmentsService {
       },
       include: INCLUDE_DETAILS,
     });
+
+    // RM-PRE-027 : jamais bloquant, hors chemin critique de la création.
+    await this.alertIfLevelProgressionIncoherent(created, dto.studentId, dto.schoolLevelId);
+
+    return created;
+  }
+
+  /** RM-PRE-031/ERR-PRE-018 : le Parent modifie sa préinscription tant qu'aucune proposition n'a
+   *  été envoyée (statut encore PENDING). */
+  async update(parentId: string, id: string, dto: UpdatePreEnrollmentDto) {
+    const pe = await this.loadOwned(id);
+    if (pe.parentId !== parentId) {
+      throw new ForbiddenException("Cette préinscription n'appartient pas à votre compte");
+    }
+    if (pe.status !== 'PENDING') {
+      throw new BadRequestException(
+        'Modification impossible : une proposition a déjà été envoyée ou traitée (RM-PRE-031/ERR-PRE-018)',
+      );
+    }
+
+    const targetSchoolLevelId = dto.schoolLevelId ?? pe.schoolLevelId;
+    if (dto.schoolLevelId) {
+      const schoolLevel = await this.prisma.schoolLevel.findUnique({ where: { id: dto.schoolLevelId } });
+      if (!schoolLevel || !schoolLevel.isActive) {
+        throw new BadRequestException('Niveau scolaire introuvable ou inactif');
+      }
+    }
+    if (dto.subjectId) {
+      const subject = await this.prisma.subject.findUnique({ where: { id: dto.subjectId } });
+      if (!subject || !subject.isActive) {
+        throw new BadRequestException('Matière introuvable ou inactive');
+      }
+    }
+
+    const updated = await this.prisma.preEnrollment.update({
+      where: { id },
+      data: {
+        ...(dto.schoolLevelId ? { schoolLevelId: dto.schoolLevelId } : {}),
+        ...(dto.subjectId ? { subjectId: dto.subjectId } : {}),
+      },
+      include: INCLUDE_DETAILS,
+    });
+
+    // RM-PRE-027 : la modification du niveau visé peut introduire une nouvelle incohérence.
+    if (dto.schoolLevelId) {
+      await this.alertIfLevelProgressionIncoherent(updated, pe.studentId, targetSchoolLevelId);
+    }
+
+    return updated;
   }
 
   /** RM-PRE-020/ERR-PRE-017 : annulation par le Parent, uniquement avant toute proposition. */
@@ -241,6 +457,11 @@ export class PreEnrollmentsService {
       throw new BadRequestException('Aucun groupe associé à cette proposition');
     }
 
+    // RM-PRE-024 : la capacité de l'ABONNEMENT du Professeur est revérifiée ici, en plus de la
+    // capacité du GROUPE revérifiée ci-dessous — elle a pu se réduire depuis l'envoi de la
+    // proposition (ex. autres inscriptions actives entre-temps, changement d'offre).
+    await this.subscriptions.assertActiveEnrollmentCapacity(pe.teacherId, 1, 'ERR-PRE-010');
+
     return this.prisma.$transaction(async (tx) => {
       const group = await tx.group.findUnique({
         where: { id: pe.proposedGroupId! },
@@ -275,6 +496,46 @@ export class PreEnrollmentsService {
       return tx.preEnrollment.update({
         where: { id },
         data: { status: 'TRANSFORMED' },
+        include: INCLUDE_DETAILS,
+      });
+    });
+  }
+
+  /**
+   * RM-PRE-026 : le Parent peut retirer sa confirmation tant que la demande d'inscription qui en
+   * est issue (Enrollment PENDING_VALIDATION) n'a pas encore été traitée par le Professeur. Annule
+   * cette demande — même effet que `EnrollmentsService.cancel`, réappliqué ici directement en base :
+   * `EnrollmentsModule` n'exporte pas `EnrollmentsService` et est hors périmètre de ce chantier, donc
+   * ce module ne peut pas l'injecter proprement — puis remet la préinscription en `PROPOSAL_SENT`
+   * pour permettre une nouvelle décision du Parent (confirmer à nouveau ou refuser).
+   */
+  async withdrawConfirmation(parentId: string, id: string) {
+    const pe = await this.loadOwned(id);
+    if (pe.parentId !== parentId) {
+      throw new ForbiddenException("Cette préinscription n'appartient pas à votre compte");
+    }
+    if (pe.status !== 'TRANSFORMED') {
+      throw new BadRequestException('Aucune confirmation à retirer pour cette préinscription');
+    }
+    if (!pe.proposedGroupId) {
+      throw new BadRequestException('Aucun groupe associé à cette préinscription');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const enrollment = await tx.enrollment.findFirst({
+        where: { studentId: pe.studentId, groupId: pe.proposedGroupId!, status: 'PENDING_VALIDATION' },
+        orderBy: { requestedAt: 'desc' },
+      });
+      if (!enrollment) {
+        throw new BadRequestException(
+          'La demande d’inscription associée a déjà été traitée par le Professeur : retrait impossible (RM-PRE-026)',
+        );
+      }
+      await tx.enrollment.update({ where: { id: enrollment.id }, data: { status: 'CANCELLED' } });
+
+      return tx.preEnrollment.update({
+        where: { id },
+        data: { status: 'PROPOSAL_SENT' },
         include: INCLUDE_DETAILS,
       });
     });
@@ -340,6 +601,29 @@ export class PreEnrollmentsService {
     return updated;
   }
 
+  /**
+   * Ch.11.7/11.8, RM-PRE-008/009/010 : envoi groupé, en un clic, d'une proposition à TOUTES les
+   * préinscriptions compatibles avec ce groupe — réduit la friction du parcours "une par une"
+   * (RM-PRE-008/010 imposent un rapprochement/une notification automatiques que ce module ne peut
+   * pas déclencher lui-même à la création du groupe, cf. rapport). Réutilise entièrement `propose()`
+   * pour chaque préinscription compatible (mêmes vérifications : compatibilité, capacité
+   * d'abonnement, date limite) ; un échec isolé (ex. capacité d'abonnement épuisée en cours de
+   * route) n'interrompt jamais l'envoi des suivantes.
+   */
+  async proposeAllForGroup(teacherId: string, groupId: string, expiresAt: string) {
+    const compatible = await this.listCompatibleForGroup(teacherId, groupId);
+    const sent: Awaited<ReturnType<PreEnrollmentsService['propose']>>[] = [];
+    const failed: { id: string; reason: string }[] = [];
+    for (const pe of compatible) {
+      try {
+        sent.push(await this.propose(teacherId, pe.id, { groupId, expiresAt }));
+      } catch (err) {
+        failed.push({ id: pe.id, reason: err instanceof Error ? err.message : 'Erreur inconnue' });
+      }
+    }
+    return { sentCount: sent.length, failedCount: failed.length, sent, failed };
+  }
+
   /** Ch.11.7, RM-PRE-008 : préinscriptions compatibles avec un groupe (à sa création/consultation). */
   async listCompatibleForGroup(teacherId: string, groupId: string) {
     const group = await this.prisma.group.findUnique({ where: { id: groupId } });
@@ -379,10 +663,62 @@ export class PreEnrollmentsService {
         firstName: true,
         lastName: true,
         city: true,
+        // RM-TPR-013 : informations publiques du profil Professeur (téléphone/historique/abonnement
+        // restent privés, jamais sélectionnés ici).
+        bio: true,
+        photo: true,
+        experience: true,
+        availability: true,
+        teachingLocations: true,
         subjects: { include: { subject: true } },
         schoolLevels: { include: { schoolLevel: true } },
       },
       orderBy: { lastName: 'asc' },
+    });
+  }
+
+  /**
+   * RM-PRE-028/EVT-PRE-008 : clôture automatique de toute préinscription encore active (PENDING/
+   * PROPOSAL_SENT/CONFIRMED) dont l'année académique visée est désormais entamée (`startDate <=
+   * now`) sans avoir été transformée à temps — le Professeur n'a pas créé de groupe correspondant
+   * avant le début de l'année. Appelée depuis `TemporalJobsService.runDailyCron()` (ce module ne
+   * dépend d'aucune brique de scheduling). Idempotente par construction : seules les lignes encore
+   * dans un statut actif sont sélectionnées, une exécution répétée ne referme jamais deux fois la
+   * même ligne — la notification (NOT-PRE-008) et sa déduplication via `markOnce` restent du ressort
+   * de l'appelant, comme pour les autres jobs de ce fichier.
+   */
+  async closeStaleForOpenedAcademicYear(
+    now = new Date(),
+  ): Promise<{ id: string; teacherId: string; academicYearLabel: string }[]> {
+    const stale = await this.prisma.preEnrollment.findMany({
+      where: {
+        status: { in: [...ACTIVE_STATUSES] },
+        academicYear: { startDate: { lte: now } },
+      },
+      select: { id: true, teacherId: true, academicYear: { select: { label: true } } },
+    });
+    if (stale.length === 0) {
+      return [];
+    }
+
+    await this.prisma.preEnrollment.updateMany({
+      where: { id: { in: stale.map((s) => s.id) } },
+      data: { status: 'CLOSED' },
+    });
+
+    return stale.map((s) => ({ id: s.id, teacherId: s.teacherId, academicYearLabel: s.academicYear.label }));
+  }
+
+  /** RM-PRE-029 : consultation Administrateur de l'ensemble des préinscriptions, filtrable par
+   *  statut et année académique (ACC_VALIDATE, cf. controller). */
+  async listAllForAdmin(query: AdminListPreEnrollmentsQueryDto) {
+    return this.prisma.preEnrollment.findMany({
+      where: {
+        ...(query.status ? { status: query.status as PreEnrollmentStatus } : {}),
+        ...(query.academicYearId ? { academicYearId: query.academicYearId } : {}),
+      },
+      include: INCLUDE_DETAILS,
+      orderBy: { createdAt: 'desc' },
     });
   }
 }

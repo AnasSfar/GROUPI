@@ -90,6 +90,9 @@ export function TeacherSessionsPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<SessionStatus | ''>('');
   const [postponeTargetId, setPostponeTargetId] = useState<string | null>(null);
+  const [modeTargetId, setModeTargetId] = useState<string | null>(null);
+  const [commentTargetId, setCommentTargetId] = useState<string | null>(null);
+  const [commentDraft, setCommentDraft] = useState('');
 
   const [date, setDate] = useState('');
   const [startTime, setStartTime] = useState('18:00');
@@ -222,6 +225,43 @@ export function TeacherSessionsPage() {
     }
   }
 
+  /** Ch.13.6 : passage exceptionnel du mode d'enseignement d'une séance précise. */
+  async function handleSetTeachingMode(sessionId: string, newMode: TeachingMode) {
+    const token = getAccessToken();
+    if (!token) return;
+    setError(null);
+    setNotice(null);
+    setModeTargetId(null);
+    try {
+      await sessionsApi.setSessionTeachingMode(token, sessionId, newMode);
+      showToast('Mode d’enseignement modifié pour cette séance');
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Changement de mode impossible.');
+    }
+  }
+
+  function startCommentEdit(session: Session) {
+    setCommentTargetId(session.id);
+    setCommentDraft(session.teacherComment ?? '');
+  }
+
+  /** RM-SES-041 : commentaire pédagogique de la séance. */
+  async function handleSaveComment(sessionId: string) {
+    const token = getAccessToken();
+    if (!token) return;
+    setError(null);
+    setNotice(null);
+    try {
+      await sessionsApi.setSessionComment(token, sessionId, commentDraft);
+      setCommentTargetId(null);
+      showToast('Commentaire enregistré');
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Enregistrement du commentaire impossible.');
+    }
+  }
+
   async function handleDelete(sessionId: string) {
     const token = getAccessToken();
     if (!token) return;
@@ -314,6 +354,7 @@ export function TeacherSessionsPage() {
                   <th>Mode</th>
                   <th>Lieu</th>
                   <th>Statut</th>
+                  <th>Commentaire</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -330,12 +371,47 @@ export function TeacherSessionsPage() {
                     </td>
                     <td data-label="Heure">{session.startTime}</td>
                     <td data-label="Durée">{formatDuration(session.durationMinutes)}</td>
-                    <td data-label="Mode">{MODE_LABELS[session.teachingMode]}</td>
+                    <td data-label="Mode">
+                      {MODE_LABELS[session.teachingMode]}
+                      {session.teachingModeException && (
+                        <span className="badge badge-warning" title="Mode exceptionnel pour cette séance">
+                          {' '}
+                          exceptionnel
+                        </span>
+                      )}
+                    </td>
                     <td data-label="Lieu">{session.teachingLocation?.label ?? '—'}</td>
                     <td data-label="Statut">
                       <span className={`badge ${STATUS_BADGE[session.status]}`}>
                         {STATUS_LABELS[session.status]}
                       </span>
+                    </td>
+                    <td data-label="Commentaire">
+                      {commentTargetId === session.id ? (
+                        <div className="reason-prompt">
+                          <textarea
+                            value={commentDraft}
+                            onChange={(e) => setCommentDraft(e.target.value)}
+                            rows={2}
+                            autoFocus
+                          />
+                          <button type="button" onClick={() => handleSaveComment(session.id)}>
+                            Enregistrer
+                          </button>
+                          <button type="button" className="ghost" onClick={() => setCommentTargetId(null)}>
+                            Annuler
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <span>{session.teacherComment || '—'}</span>{' '}
+                          {session.status !== 'LOCKED' && (
+                            <button type="button" className="ghost" onClick={() => startCommentEdit(session)}>
+                              {session.teacherComment ? 'Modifier' : 'Ajouter'}
+                            </button>
+                          )}
+                        </>
+                      )}
                     </td>
                     <td className="admin-actions">
                       {(session.status === 'COMPLETED' ||
@@ -360,6 +436,28 @@ export function TeacherSessionsPage() {
                             <button type="button" onClick={() => setPostponeTargetId(session.id)}>
                               Reporter
                             </button>
+                            {modeTargetId === session.id ? (
+                              <>
+                                {(['PRESENTIAL', 'ONLINE'] as TeachingMode[])
+                                  .filter((m) => m !== session.teachingMode)
+                                  .map((m) => (
+                                    <button
+                                      key={m}
+                                      type="button"
+                                      onClick={() => handleSetTeachingMode(session.id, m)}
+                                    >
+                                      Confirmer {MODE_LABELS[m]}
+                                    </button>
+                                  ))}
+                                <button type="button" className="ghost" onClick={() => setModeTargetId(null)}>
+                                  Fermer
+                                </button>
+                              </>
+                            ) : (
+                              <button type="button" onClick={() => setModeTargetId(session.id)}>
+                                Changer le mode
+                              </button>
+                            )}
                             <button type="button" onClick={() => handleCancel(session.id)}>
                               Annuler
                             </button>

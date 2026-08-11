@@ -7,6 +7,7 @@ import { EmailService } from '../email/email.service';
 import { InviteAdministratorDto } from './dto/invite-administrator.dto';
 import { PromoteAdministratorDto } from './dto/promote-administrator.dto';
 import { AcceptAdministratorInvitationDto } from './dto/accept-administrator-invitation.dto';
+import { UpdateAdministratorPermissionsDto } from './dto/update-administrator-permissions.dto';
 
 interface ActionMeta {
   ipAddress?: string;
@@ -120,6 +121,49 @@ export class AdministratorsService {
           targetId: targetUserId,
           oldValues: { roles: target.roles },
           newValues: { roles: updated.roles, permissions: dto.permissions },
+          ipAddress: meta.ipAddress,
+        },
+      });
+
+      return updated;
+    });
+  }
+
+  /**
+   * RM-ACC-013 : les permissions d'un Administrateur restent modifiables après sa création
+   * (contrairement à `invite`/`promote`, qui ne les fixent qu'une fois). RM-ACC-012 : un
+   * Administrateur ne modifie jamais ses propres permissions — y compris le Super Administrateur
+   * visé par erreur sur son propre compte.
+   */
+  async updatePermissions(
+    actorUserId: string,
+    targetUserId: string,
+    dto: UpdateAdministratorPermissionsDto,
+    meta: ActionMeta = {},
+  ) {
+    if (actorUserId === targetUserId) {
+      throw new BadRequestException('Vous ne pouvez pas modifier vos propres permissions (RM-ACC-012)');
+    }
+
+    const administrator = await this.prisma.administrator.findUnique({ where: { id: targetUserId } });
+    if (!administrator) {
+      throw new NotFoundException('Administrateur introuvable');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.administrator.update({
+        where: { id: targetUserId },
+        data: { permissions: dto.permissions },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: actorUserId,
+          action: 'ADMINISTRATOR_PERMISSIONS_UPDATED',
+          targetType: 'User',
+          targetId: targetUserId,
+          oldValues: { permissions: administrator.permissions },
+          newValues: { permissions: dto.permissions },
           ipAddress: meta.ipAddress,
         },
       });

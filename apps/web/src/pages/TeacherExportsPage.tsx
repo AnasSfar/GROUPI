@@ -187,6 +187,11 @@ export function TeacherExportsPage() {
           Réservé aux offres Intermédiaire et Pro (RM-EXP-001). Les commentaires pédagogiques sont réservés à l’offre Pro
           (Ch.17.4). Fichier conservé 7 jours, puis supprimé automatiquement (RM-EXP-008).
         </p>
+        {/* RM-EXP-005 : avertissement affiché avant/pendant le téléchargement. */}
+        <p className="form-notice" role="status">
+          Une fois téléchargé, vous êtes seul responsable de la conservation et de la confidentialité de ce fichier
+          (RM-EXP-005).
+        </p>
       </section>
 
       <section className="card-section">
@@ -208,7 +213,12 @@ export function TeacherExportsPage() {
         {jobs.length === 0 ? (
           <p>Aucun export généré pour le moment.</p>
         ) : (
-          <div className="table-wrap">
+          <>
+            <p className="table-hint">
+              Rappel (RM-EXP-005) : après téléchargement, vous êtes seul responsable de la conservation et de la
+              confidentialité du fichier.
+            </p>
+            <div className="table-wrap">
             <table className="admin-table">
               <thead>
                 <tr>
@@ -243,7 +253,8 @@ export function TeacherExportsPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         )}
       </section>
     </>

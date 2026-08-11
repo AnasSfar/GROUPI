@@ -11,17 +11,22 @@ import * as enrollmentsApi from '../api/enrollmentsApi';
 import * as groupChangeApi from '../api/groupChangeApi';
 import type { Subject, SchoolLevel, SubjectLevelPair } from '../api/referentialsApi';
 import { formatDuration } from '../api/groupsApi';
-import type { PublicGroup, DayOfWeek } from '../api/groupsApi';
+import type { PublicGroup, DayOfWeek, TeachingMode } from '../api/groupsApi';
+
+const TEACHING_MODE_LABELS: Record<TeachingMode, string> = {
+  PRESENTIAL: 'Présentiel',
+  ONLINE: 'En ligne',
+};
 import type { Student } from '../api/parentProfileApi';
 
 const DAY_LABELS: Record<DayOfWeek, string> = {
+  SUNDAY: 'Dim',
   MONDAY: 'Lun',
   TUESDAY: 'Mar',
   WEDNESDAY: 'Mer',
   THURSDAY: 'Jeu',
   FRIDAY: 'Ven',
   SATURDAY: 'Sam',
-  SUNDAY: 'Dim',
 };
 
 function formatSchedule(group: PublicGroup): string {
@@ -40,6 +45,8 @@ export function ParentGroupSearchPage() {
   const [subjectId, setSubjectId] = useState('');
   const [schoolLevelId, setSchoolLevelId] = useState('');
   const [city, setCity] = useState('');
+  const [teacherName, setTeacherName] = useState('');
+  const [teachingMode, setTeachingMode] = useState<TeachingMode | ''>('');
   const [results, setResults] = useState<PublicGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +65,8 @@ export function ParentGroupSearchPage() {
         subjectId: subjectId || undefined,
         schoolLevelId: schoolLevelId || undefined,
         city: city || undefined,
+        teacherName: teacherName || undefined,
+        teachingMode: teachingMode || undefined,
       });
       setResults(groups);
     } catch (err) {
@@ -65,7 +74,7 @@ export function ParentGroupSearchPage() {
     } finally {
       setLoading(false);
     }
-  }, [getAccessToken, subjectId, schoolLevelId, city]);
+  }, [getAccessToken, subjectId, schoolLevelId, city, teacherName, teachingMode]);
 
   useEffect(() => {
     const token = getAccessToken();
@@ -151,7 +160,7 @@ export function ParentGroupSearchPage() {
       <div className="page-header">
         <div>
           <h1>Rechercher un groupe</h1>
-          <p>Filtrez par matière, niveau scolaire ou ville du professeur.</p>
+          <p>Filtrez par matière, niveau scolaire, ville, nom du professeur ou mode d'enseignement.</p>
         </div>
         <div className="page-actions">
           <Link to="/parent/enrollments">Mes demandes d'inscription</Link>
@@ -203,6 +212,21 @@ export function ParentGroupSearchPage() {
           <label>
             Ville du professeur
             <input type="text" value={city} onChange={(e) => setCity(e.target.value)} />
+          </label>
+          <label>
+            Nom du professeur
+            <input type="text" value={teacherName} onChange={(e) => setTeacherName(e.target.value)} />
+          </label>
+          <label>
+            Mode d'enseignement
+            <Select value={teachingMode} onChange={(e) => setTeachingMode(e.target.value as TeachingMode | '')}>
+              <option value="">Tous</option>
+              {(Object.keys(TEACHING_MODE_LABELS) as TeachingMode[]).map((mode) => (
+                <option key={mode} value={mode}>
+                  {TEACHING_MODE_LABELS[mode]}
+                </option>
+              ))}
+            </Select>
           </label>
         </div>
       </section>

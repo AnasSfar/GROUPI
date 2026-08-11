@@ -16,6 +16,16 @@ export class SetAttendanceDto {
   @Min(1)
   lateDuration?: number;
 
+  /**
+   * RM-ATT-019 : durée effective de connexion (minutes), pertinente uniquement pour une séance en
+   * ligne (`Session.teachingMode = ONLINE`) — purement informatif, ignorée en service pour une
+   * séance en présentiel plutôt que rejetée (aucun ERR-ATT dédié dans le référentiel).
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  onlineDurationMinutes?: number;
+
   @IsOptional()
   @IsString()
   @MaxLength(1000)

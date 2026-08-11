@@ -9,5 +9,8 @@ import { EnrollmentConversationsService } from './enrollment-conversations.servi
   imports: [AuthModule, NotificationsModule, SubscriptionsModule],
   controllers: [EnrollmentConversationsController],
   providers: [EnrollmentConversationsService],
+  // RM-COM-016 : exporté pour que TemporalJobsService puisse appeler purgeOldComments() (purge de
+  // rétention mensuelle).
+  exports: [EnrollmentConversationsService],
 })
 export class EnrollmentConversationsModule {}

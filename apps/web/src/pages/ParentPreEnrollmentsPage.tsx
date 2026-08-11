@@ -31,6 +31,51 @@ const STATUS_BADGE: Record<PreEnrollmentStatus, string> = {
   CLOSED: 'badge-neutral',
 };
 
+/** RM-PRE-031/ERR-PRE-018 : formulaire inline de modification (niveau visé / matière), affiché
+ *  tant qu'aucune proposition n'a été envoyée (statut encore PENDING). */
+function EditPreEnrollmentForm({
+  preEnrollment,
+  schoolLevels,
+  subjects,
+  onSubmit,
+  onCancel,
+}: {
+  preEnrollment: PreEnrollment;
+  schoolLevels: SchoolLevel[];
+  subjects: Subject[];
+  onSubmit: (schoolLevelId: string, subjectId: string) => void;
+  onCancel: () => void;
+}) {
+  const [schoolLevelId, setSchoolLevelId] = useState(preEnrollment.schoolLevelId);
+  const [subjectId, setSubjectId] = useState(preEnrollment.subjectId ?? '');
+
+  return (
+    <div className="reason-prompt">
+      <Select value={schoolLevelId} onChange={(e) => setSchoolLevelId(e.target.value)}>
+        {schoolLevels.map((l) => (
+          <option key={l.id} value={l.id}>
+            {l.name}
+          </option>
+        ))}
+      </Select>
+      <Select value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
+        <option value="">Non précisée</option>
+        {subjects.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.name}
+          </option>
+        ))}
+      </Select>
+      <button type="button" onClick={() => onSubmit(schoolLevelId, subjectId)}>
+        Enregistrer
+      </button>
+      <button type="button" className="ghost" onClick={onCancel}>
+        Annuler
+      </button>
+    </div>
+  );
+}
+
 /** Ch.11 : espace Parent — manifester son intérêt pour une future année et répondre aux
  *  propositions envoyées par les Professeurs (préinscription, pas encore une inscription). */
 export function ParentPreEnrollmentsPage() {
@@ -43,6 +88,7 @@ export function ParentPreEnrollmentsPage() {
   const [eligibleTeachers, setEligibleTeachers] = useState<EligibleTeacher[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editingFor, setEditingFor] = useState<string | null>(null);
 
   const [studentId, setStudentId] = useState('');
   const [teacherId, setTeacherId] = useState('');
@@ -121,6 +167,23 @@ export function ParentPreEnrollmentsPage() {
     }
   }
 
+  /** RM-PRE-031/ERR-PRE-018 : modification tant qu'aucune proposition n'a été envoyée. */
+  async function handleUpdate(id: string, newSchoolLevelId: string, newSubjectId: string) {
+    const token = getAccessToken();
+    if (!token) return;
+    setError(null);
+    try {
+      const updated = await preEnrollmentsApi.updatePreEnrollment(token, id, {
+        schoolLevelId: newSchoolLevelId,
+        subjectId: newSubjectId || undefined,
+      });
+      setPreEnrollments((prev) => prev.map((pe) => (pe.id === updated.id ? updated : pe)));
+      setEditingFor(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Impossible de modifier cette préinscription.');
+    }
+  }
+
   if (loading) {
     return <p>Chargement...</p>;
   }
@@ -191,17 +254,33 @@ export function ParentPreEnrollmentsPage() {
                       )}
                     </td>
                     <td className="admin-actions">
-                      {pe.status === 'PENDING' && (
-                        <button
-                          type="button"
-                          className="danger"
-                          onClick={() =>
-                            runAction(() => preEnrollmentsApi.cancelPreEnrollment(getAccessToken()!, pe.id))
-                          }
-                        >
-                          Annuler
-                        </button>
-                      )}
+                      {pe.status === 'PENDING' &&
+                        (editingFor === pe.id ? (
+                          <EditPreEnrollmentForm
+                            preEnrollment={pe}
+                            schoolLevels={schoolLevels}
+                            subjects={subjects}
+                            onSubmit={(newSchoolLevelId, newSubjectId) =>
+                              handleUpdate(pe.id, newSchoolLevelId, newSubjectId)
+                            }
+                            onCancel={() => setEditingFor(null)}
+                          />
+                        ) : (
+                          <>
+                            <button type="button" onClick={() => setEditingFor(pe.id)}>
+                              Modifier
+                            </button>
+                            <button
+                              type="button"
+                              className="danger"
+                              onClick={() =>
+                                runAction(() => preEnrollmentsApi.cancelPreEnrollment(getAccessToken()!, pe.id))
+                              }
+                            >
+                              Annuler
+                            </button>
+                          </>
+                        ))}
                       {pe.status === 'PROPOSAL_SENT' && (
                         <>
                           <button
@@ -222,6 +301,19 @@ export function ParentPreEnrollmentsPage() {
                             Refuser
                           </button>
                         </>
+                      )}
+                      {pe.status === 'TRANSFORMED' && (
+                        <button
+                          type="button"
+                          className="danger"
+                          onClick={() =>
+                            runAction(() =>
+                              preEnrollmentsApi.withdrawPreEnrollmentConfirmation(getAccessToken()!, pe.id),
+                            )
+                          }
+                        >
+                          Retirer ma confirmation
+                        </button>
                       )}
                     </td>
                   </tr>

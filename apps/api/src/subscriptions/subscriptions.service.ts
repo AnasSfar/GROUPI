@@ -5,6 +5,7 @@ import { EmailService } from '../email/email.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { SuspendSubscriptionDto } from './dto/suspend-subscription.dto';
+import { ChangePlanDto } from './dto/change-plan.dto';
 
 function addDays(d: Date, days: number): Date {
   const copy = new Date(d);
@@ -116,6 +117,28 @@ export class SubscriptionsService {
       if (trialAlreadyUsed) {
         throw new BadRequestException("L'offre Découverte a déjà été utilisée (ERR-SUB-004/RM-SUB-005)");
       }
+
+      // RM-SUB-019 : anti-fraude multi-comptes — bloque aussi le contournement via un AUTRE compte
+      // (même Professeur, numéro de téléphone identique) qui a déjà consommé un essai par le passé.
+      const teacherProfile = await this.prisma.teacherProfile.findUnique({
+        where: { id: teacherId },
+        select: { phone: true },
+      });
+      if (teacherProfile?.phone) {
+        const sameNumberOtherAccount = await this.prisma.teacherProfile.findFirst({
+          where: {
+            id: { not: teacherId },
+            phone: teacherProfile.phone,
+            subscriptions: { some: { plan: { isTrial: true } } },
+          },
+          select: { id: true },
+        });
+        if (sameNumberOtherAccount) {
+          throw new BadRequestException(
+            "Un autre compte utilisant ce même numéro de téléphone a déjà bénéficié de l'offre Découverte : souscription refusée (ERR-SUB-004/RM-SUB-019)",
+          );
+        }
+      }
     }
 
     const now = new Date();
@@ -151,6 +174,86 @@ export class SubscriptionsService {
     }
 
     return created;
+  }
+
+  /**
+   * RM-SUB-012/013 : changement d'offre en cours d'année pour l'abonnement ACTIVE du Professeur sur
+   * l'année académique en cours — met à jour la ligne existante (jamais de nouvelle `Subscription` :
+   * la contrainte `@@unique([teacherId, academicYearId])` l'interdirait de toute façon, et RM-ABO-004
+   * proscrit toute reconduction/duplication implicite). `activatedAt`/`expiresAt` ne changent pas.
+   * Montée de gamme toujours autorisée ; descente refusée si la capacité actuelle (inscriptions
+   * `ACTIVE`) dépasse la nouvelle limite (RM-SUB-013/ERR-SUB-003). La Découverte n'est jamais une
+   * destination de changement, elle n'est accessible qu'à la 1ère souscription (RM-SUB-005).
+   */
+  async changePlan(teacherId: string, dto: ChangePlanDto): Promise<SubscriptionView> {
+    const newPlan = await this.prisma.subscriptionPlan.findUnique({ where: { id: dto.newPlanId } });
+    if (!newPlan) {
+      throw new NotFoundException('Offre introuvable');
+    }
+    if (newPlan.isTrial) {
+      throw new BadRequestException(
+        "L'offre Découverte n'est accessible qu'à la première souscription, jamais en changement d'offre (ERR-SUB-003/RM-SUB-005)",
+      );
+    }
+
+    const subs = await this.prisma.subscription.findMany({
+      where: { teacherId, status: 'ACTIVE', academicYear: { status: 'OPEN' } },
+      include: INCLUDE_VIEW,
+    });
+    // Expiration paresseuse (RM-ABO-002/RM-SUB-024) avant de choisir l'abonnement à faire évoluer.
+    const usable = (await this.expireManyIfDue(subs)).find((s) => s.status === 'ACTIVE');
+    if (!usable) {
+      throw new ForbiddenException(
+        "Aucun abonnement actif pour l'année académique en cours : changement d'offre impossible (ERR-PERM-001)",
+      );
+    }
+
+    if (usable.planId === newPlan.id) {
+      throw new BadRequestException('Cette offre est déjà celle actuellement souscrite');
+    }
+
+    const currentMax = usable.plan.maxActiveEnrollments;
+    const newMax = newPlan.maxActiveEnrollments;
+    const isDowngrade = newMax !== null && (currentMax === null || newMax < currentMax);
+
+    if (isDowngrade) {
+      const activeEnrollments = await this.prisma.enrollment.count({
+        where: { status: 'ACTIVE', group: { teacherId } },
+      });
+      if (activeEnrollments > newMax) {
+        throw new BadRequestException(
+          `Retour vers une offre inférieure refusé : ${activeEnrollments} inscription(s) active(s) dépasse(nt) la capacité de la nouvelle offre "${newPlan.name}" (${newMax}) (ERR-SUB-003/RM-SUB-013)`,
+        );
+      }
+    }
+
+    const oldPlan = usable.plan;
+    await this.prisma.subscription.update({ where: { id: usable.id }, data: { planId: newPlan.id } });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: teacherId,
+        action: 'SUBSCRIPTION_PLAN_CHANGED',
+        targetType: 'Subscription',
+        targetId: usable.id,
+        oldValues: { planId: oldPlan.id, planCode: oldPlan.code },
+        newValues: { planId: newPlan.id, planCode: newPlan.code },
+      },
+    });
+
+    const updated = await this.loadById(usable.id);
+    // Information — pas d'e-mail, RM-NOT-008/009.
+    await this.notifications.notify({
+      recipientUserId: teacherId,
+      type: 'SUBSCRIPTION_PLAN_CHANGED',
+      priority: 'INFORMATION',
+      title: 'Offre modifiée',
+      body: `Votre abonnement est passé de "${oldPlan.name}" à "${newPlan.name}".`,
+      refType: 'Subscription',
+      refId: usable.id,
+    });
+
+    return updated;
   }
 
   /** PERM-ABO-005 : validation manuelle du paiement (espèces, V1). */
@@ -257,6 +360,7 @@ export class SubscriptionsService {
   async assertCanWrite(teacherId: string): Promise<void> {
     const subs = await this.prisma.subscription.findMany({
       where: { teacherId, academicYear: { status: 'OPEN' } },
+      include: { plan: true },
     });
 
     if (subs.length === 0) {
@@ -278,12 +382,19 @@ export class SubscriptionsService {
         return;
       }
       if (status === 'EXPIRED' && sub.expiresAt) {
-        // RM-PERM-008/ERR-PERM-006 : délai de grâce de 7 jours, modification encore autorisée.
-        const graceDeadline = new Date(sub.expiresAt.getTime() + 7 * 86_400_000);
-        if (now <= graceDeadline) {
-          return;
+        if (sub.plan.isTrial) {
+          // RM-SUB-020 : contrairement aux offres payantes, la Découverte bascule en lecture seule
+          // IMMÉDIATEMENT à `expiresAt` — pas de délai de grâce de 7 jours (celui-ci, RM-PERM-008,
+          // ne concerne que Intermédiaire/Pro).
+          sawExpiredPastGrace = true;
+        } else {
+          // RM-PERM-008/ERR-PERM-006 : délai de grâce de 7 jours, modification encore autorisée.
+          const graceDeadline = new Date(sub.expiresAt.getTime() + 7 * 86_400_000);
+          if (now <= graceDeadline) {
+            return;
+          }
+          sawExpiredPastGrace = true;
         }
-        sawExpiredPastGrace = true;
       }
       if (status === 'SUSPENDED') {
         sawSuspended = true;
@@ -291,11 +402,20 @@ export class SubscriptionsService {
     }
 
     if (sawSuspended) {
+      // RM-SUB-022 : la suspension pour impayé bloque l'écriture IMMÉDIATEMENT, sans délai de grâce
+      // (déjà correct ici). La fenêtre de "consultation" de 7 jours mentionnée par RM-SUB-022 ne
+      // concerne que la lecture, qui n'est de toute façon jamais coupée dans ce projet (GET toujours
+      // autorisé, cf. `SubscriptionGuard`) — il n'existe donc aucune borne à implémenter au-delà de
+      // ce qui est déjà en place, et on n'invente pas de mécanisme de coupure de lecture.
       throw new ForbiddenException('Abonnement suspendu : aucune nouvelle opération autorisée (ERR-PERM-003)');
     }
     if (sawExpiredPastGrace) {
+      // RM-PERM-004 : le message doit nommer l'offre qui débloquerait l'action plutôt que de rester
+      // générique — ici aucune fonctionnalité précise n'est connue de cette méthode (elle est appelée
+      // de façon générique par `SubscriptionGuard`/les services métier, sans contexte de fonctionnalité),
+      // donc on reste générique mais on nomme explicitement les offres payantes qui débloquent l'accès.
       throw new ForbiddenException(
-        'Abonnement expiré (délai de grâce dépassé) : passage en lecture seule, souscrivez un nouvel abonnement (ERR-PERM-001/RM-SUB-020)',
+        "Abonnement expiré (délai de grâce dépassé) : passage en lecture seule. Souscrivez ou renouvelez une offre Intermédiaire ou Pro pour retrouver les droits de modification (ERR-PERM-001/RM-SUB-020/RM-PERM-004)",
       );
     }
     // PENDING_PAYMENT : aucun droit tant que le paiement n'est pas validé.
@@ -327,7 +447,9 @@ export class SubscriptionsService {
       if (status === 'ACTIVE') {
         return sub.plan;
       }
-      if (status === 'EXPIRED' && sub.expiresAt) {
+      if (status === 'EXPIRED' && sub.expiresAt && !sub.plan.isTrial) {
+        // RM-SUB-020 : la Découverte n'a pas de délai de grâce (cf. `assertCanWrite`) — seules les
+        // offres payantes restent exploitables 7 jours après expiration.
         const graceDeadline = new Date(sub.expiresAt.getTime() + 7 * 86_400_000);
         if (now <= graceDeadline) {
           return sub.plan;

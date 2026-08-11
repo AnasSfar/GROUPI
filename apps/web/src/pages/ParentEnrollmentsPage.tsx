@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
@@ -60,6 +60,14 @@ export function ParentEnrollmentsPage() {
   const [expandedComments, setExpandedComments] = useState<string | null>(null);
   const [expandedAnnouncements, setExpandedAnnouncements] = useState<string | null>(null);
   const [expandedAccounting, setExpandedAccounting] = useState<string | null>(null);
+  const commentsRowRef = useRef<HTMLTableRowElement | null>(null);
+
+  // RM-COM-020 : quand le fil de commentaires d'une inscription s'ouvre (notamment via le lien
+  // "Voir la conversation" d'une annonce), on l'amène dans le champ de vision du Parent.
+  useEffect(() => {
+    if (!expandedComments) return;
+    commentsRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [expandedComments]);
 
   const load = useCallback(async () => {
     const token = getAccessToken();
@@ -104,6 +112,34 @@ export function ParentEnrollmentsPage() {
       showToast('Demande de changement de groupe annulée');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "L'annulation a échoué.");
+    }
+  }
+
+  // RM-CHG-002/003 (Ch.20.3) : confirmation/refus d'une proposition de changement de groupe émise
+  // par le Professeur — le Parent est ici le décideur, symétrique du Professeur pour ses propres demandes.
+  async function handleConfirmProposal(id: string) {
+    const token = getAccessToken();
+    if (!token) return;
+    setError(null);
+    try {
+      const updated = await groupChangeApi.confirmGroupChangeProposal(token, id);
+      setGroupChanges((prev) => prev.map((g) => (g.id === updated.id ? updated : g)));
+      showToast('Changement de groupe confirmé');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'La confirmation a échoué.');
+    }
+  }
+
+  async function handleDeclineProposal(id: string) {
+    const token = getAccessToken();
+    if (!token) return;
+    setError(null);
+    try {
+      const updated = await groupChangeApi.declineGroupChangeProposal(token, id);
+      setGroupChanges((prev) => prev.map((g) => (g.id === updated.id ? updated : g)));
+      showToast('Proposition déclinée');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Le refus a échoué.');
     }
   }
 
@@ -223,7 +259,7 @@ export function ParentEnrollmentsPage() {
                     </td>
                   </tr>
                   {expandedComments === enrollment.id && (
-                    <tr>
+                    <tr ref={commentsRowRef}>
                       <td colSpan={10}>
                         <EnrollmentCommentThread enrollmentId={enrollment.id} />
                       </td>
@@ -232,7 +268,12 @@ export function ParentEnrollmentsPage() {
                   {expandedAnnouncements === enrollment.group.id && (
                     <tr>
                       <td colSpan={10}>
-                        <GroupAnnouncementsFeed groupId={enrollment.group.id} />
+                        {/* RM-COM-020 : lien vers le fil de commentaires de CETTE inscription — pas
+                            du groupe, qui peut être partagé par plusieurs enfants/inscriptions. */}
+                        <GroupAnnouncementsFeed
+                          groupId={enrollment.group.id}
+                          onViewConversation={() => setExpandedComments(enrollment.id)}
+                        />
                       </td>
                     </tr>
                   )}
@@ -262,6 +303,7 @@ export function ParentEnrollmentsPage() {
                   <th>Enfant</th>
                   <th>Groupe actuel</th>
                   <th>Groupe cible</th>
+                  <th>Initiateur</th>
                   <th>Date effective</th>
                   <th>Statut</th>
                   <th>Actions</th>
@@ -278,6 +320,9 @@ export function ParentEnrollmentsPage() {
                       {change.targetGroup.name} ({change.targetGroup.teacher.firstName}{' '}
                       {change.targetGroup.teacher.lastName})
                     </td>
+                    <td data-label="Initiateur">
+                      {change.initiatedBy === 'TEACHER' ? 'Proposition du Professeur' : 'Vous'}
+                    </td>
                     <td data-label="Date effective">{change.effectiveDate ? new Date(change.effectiveDate).toLocaleDateString('fr-FR') : '—'}</td>
                     <td data-label="Statut">
                       <span className={`badge ${CHANGE_STATUS_BADGE[change.status]}`}>
@@ -288,7 +333,20 @@ export function ParentEnrollmentsPage() {
                       )}
                     </td>
                     <td className="admin-actions">
-                      {(change.status === 'PENDING' ||
+                      {/* RM-CHG-002/003 (Ch.20.3) : une proposition du Professeur se confirme ou se
+                          décline — une demande initiée par vous-même s'annule (statuts symétriques
+                          mais décideur différent, cf. GroupChangeService.confirmTeacherProposal). */}
+                      {change.status === 'PENDING' && change.initiatedBy === 'TEACHER' && (
+                        <>
+                          <button type="button" onClick={() => handleConfirmProposal(change.id)}>
+                            Confirmer
+                          </button>
+                          <button type="button" className="danger" onClick={() => handleDeclineProposal(change.id)}>
+                            Décliner
+                          </button>
+                        </>
+                      )}
+                      {((change.status === 'PENDING' && change.initiatedBy === 'PARENT') ||
                         (change.status === 'ACCEPTED' && !change.appliedAt)) && (
                         <button type="button" className="danger" onClick={() => handleCancelGroupChange(change.id)}>
                           Annuler

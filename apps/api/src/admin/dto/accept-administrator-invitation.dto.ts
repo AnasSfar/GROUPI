@@ -5,7 +5,8 @@ export class AcceptAdministratorInvitationDto {
   @IsString()
   token!: string;
 
-  @MinLength(8)
+  // RM-SEC-012 : mot de passe Administrateur — exigence renforcée à 16 caractères minimum.
+  @MinLength(16)
   password!: string;
 
   @IsString()

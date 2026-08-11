@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { DataPortabilityRequest, ExportFormat, ExportJob, ExportType, Prisma } from '@prisma/client';
@@ -71,6 +72,8 @@ function toJson(value: unknown): Prisma.InputJsonValue {
  */
 @Injectable()
 export class ExportsService {
+  private readonly logger = new Logger(ExportsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly subscriptions: SubscriptionsService,
@@ -159,12 +162,13 @@ export class ExportsService {
   }
 
   /**
-   * Point d'entrée unique de génération. RM-EXP-009/17.10 : le statut transite bien
-   * PROCESSING -> READY/FAILED (pollable via `GET /exports/:id`), mais la génération a lieu ici même,
-   * de façon synchrone — ce projet n'a ni scheduler ni worker séparé (voir `ExportJobStatus` dans
-   * schema.prisma). NOT-EXP-001 n'est envoyée que lorsque le nombre de lignes dépasse le seuil
-   * (avant rendu, pour rester utile) ; le drapeau `isAsync` final tient aussi compte de la taille du
-   * fichier généré.
+   * Point d'entrée unique de génération. RM-EXP-009/17.10 : au-delà de `ROW_THRESHOLD`, la requête
+   * HTTP ne bloque plus le temps du rendu — le job est créé en `PENDING`, la notification
+   * NOT-EXP-001 est envoyée, puis on répond immédiatement à l'appelant (`toJobView(job)`) pendant
+   * que `generateAndFinalize` se poursuit en arrière-plan via `setImmediate` (voir son commentaire
+   * pour les limites de cette approche — ce n'est toujours PAS une vraie file de tâches). En dessous
+   * du seuil, le comportement reste inchangé : génération synchrone, la réponse HTTP attend le job
+   * `READY`/`FAILED`.
    */
   private async finalizeExport(
     requestedById: string,
@@ -179,13 +183,13 @@ export class ExportsService {
     const fileName = this.buildFileName(type, format, scopeLabel);
     const likelyAsync = rowCount > ROW_THRESHOLD;
 
-    let job = await this.prisma.exportJob.create({
+    const job = await this.prisma.exportJob.create({
       data: {
         requestedById,
         generatedById: generatedById ?? null,
         type,
         format,
-        status: 'PROCESSING',
+        status: likelyAsync ? 'PENDING' : 'PROCESSING',
         criteria: toJson(this.toCriteria(dto)),
         fileName,
         rowCount,
@@ -204,14 +208,51 @@ export class ExportsService {
         refType: 'ExportJob',
         refId: job.id,
       });
+
+      // RM-EXP-009 : ne pas attendre `generateAndFinalize` — le client reçoit déjà `job` (statut
+      // PENDING) juste après ce bloc, sans bloquer sur le rendu. `generateAndFinalize` gère déjà
+      // elle-même le statut FAILED + errorMessage en cas d'échec (voir son commentaire) ; le
+      // `.catch` ici n'est qu'un filet pour ne jamais laisser une rejection non gérée si cette
+      // gestion interne échouait à son tour.
+      setImmediate(() => {
+        void this.generateAndFinalize(job.id, requestedById, type, format, dto, table, fileName).catch((err: Error) => {
+          this.logger.error(`Génération différée en échec pour l'export ${job.id} : ${err.message}`);
+        });
+      });
+
+      return this.toJobView(job);
     }
+
+    return this.generateAndFinalize(job.id, requestedById, type, format, dto, table, fileName);
+  }
+
+  /**
+   * RM-EXP-009 : le rendu effectif (`render`) + la transition finale du job, appelée soit
+   * synchrone-ment depuis `finalizeExport` (petits volumes), soit en arrière-plan via
+   * `setImmediate` (gros volumes). Attention : ceci reste un simple callback JS différé dans le
+   * process Node en cours — PAS une vraie file de tâches persistante (pas de lib de queue dans ce
+   * projet). Un redémarrage du serveur pendant l'exécution perdrait le job, qui resterait bloqué en
+   * `PROCESSING` indéfiniment (aucun mécanisme de reprise). Le comportement perçu côté client (la
+   * requête HTTP ne bloque plus) est en revanche désormais conforme à l'esprit de RM-EXP-009.
+   */
+  private async generateAndFinalize(
+    jobId: string,
+    requestedById: string,
+    type: ExportType,
+    format: ExportFormat,
+    dto: Partial<CreateExportDto>,
+    table: ExportTableData,
+    fileName: string,
+  ): Promise<Omit<ExportJob, 'fileBytes'>> {
+    const rowCount = table.rows.length;
+    await this.prisma.exportJob.update({ where: { id: jobId }, data: { status: 'PROCESSING' } });
 
     let fileBytes: Buffer;
     try {
       fileBytes = await this.render(format, TYPE_LABEL[type], `${rowCount} ligne(s) — généré le ${new Date().toLocaleString('fr-FR')}`, table);
     } catch (err) {
       await this.prisma.exportJob.update({
-        where: { id: job.id },
+        where: { id: jobId },
         data: { status: 'FAILED', errorMessage: (err as Error).message },
       });
       // NOT-EXP-005 (Critique)
@@ -222,17 +263,17 @@ export class ExportsService {
         title: "Échec de génération d'export",
         body: `La génération de l'export "${TYPE_LABEL[type]}" a échoué. Merci de réessayer ou de contacter l'administration.`,
         refType: 'ExportJob',
-        refId: job.id,
+        refId: jobId,
         sendEmail: async () => this.email.sendExportFailed(await this.getUserEmail(requestedById), TYPE_LABEL[type]),
       });
-      await this.writeAudit(requestedById, type, format, this.toCriteria(dto), 'FAILED', (err as Error).message, job.id);
+      await this.writeAudit(requestedById, type, format, this.toCriteria(dto), 'FAILED', (err as Error).message, jobId);
       throw new InternalServerErrorException("Échec de génération de l'export (NOT-EXP-005)");
     }
 
-    const isAsync = likelyAsync || fileBytes.length > SIZE_THRESHOLD_BYTES;
+    const isAsync = rowCount > ROW_THRESHOLD || fileBytes.length > SIZE_THRESHOLD_BYTES;
     const readyAt = new Date();
-    job = await this.prisma.exportJob.update({
-      where: { id: job.id },
+    const job = await this.prisma.exportJob.update({
+      where: { id: jobId },
       data: {
         status: 'READY',
         fileBytes,
@@ -251,12 +292,12 @@ export class ExportsService {
       title: 'Export disponible',
       body: `Votre export "${fileName}" est prêt au téléchargement (conservé 7 jours, RM-EXP-008).`,
       refType: 'ExportJob',
-      refId: job.id,
+      refId: jobId,
     });
 
     // ERR-EXP-002 : un export sans donnée reste généré (fichier avec en-têtes uniquement /
     // message d'information), tracé distinctement dans le journal plutôt que refusé.
-    await this.writeAudit(requestedById, type, format, this.toCriteria(dto), rowCount === 0 ? 'EMPTY' : 'SUCCESS', undefined, job.id);
+    await this.writeAudit(requestedById, type, format, this.toCriteria(dto), rowCount === 0 ? 'EMPTY' : 'SUCCESS', undefined, jobId);
 
     return this.toJobView(job);
   }
@@ -468,6 +509,27 @@ export class ExportsService {
       refId: job.id,
     });
     return expired;
+  }
+
+  /**
+   * RM-EXP-008 : nettoyage réel des exports expirés, en plus de la suppression paresseuse à la
+   * lecture (`ensureCurrent`, ci-dessus). Sans ce job, un `ExportJob` `READY` jamais reconsulté par
+   * son auteur (ni `GET /exports`, ni `GET /exports/:id`) restait indéfiniment en base avec son
+   * `fileBytes` — la conservation "7 jours puis suppression automatique" n'avait alors jamais lieu
+   * en pratique. Réutilise `ensureCurrent` (même transition READY -> EXPIRED, même notification
+   * NOT-EXP-006) plutôt que de dupliquer la logique de purge ; idempotent comme `ensureCurrent`
+   * elle-même (un job déjà `EXPIRED`/`fileBytes: null` n'est pas re-traité, `markOnce` n'est donc
+   * pas nécessaire ici contrairement aux jobs de `TemporalJobsService`). Branché sur
+   * `TemporalJobsService.runDailyCron`.
+   */
+  async purgeExpiredExports(now = new Date()): Promise<{ purged: number }> {
+    const expired = await this.prisma.exportJob.findMany({
+      where: { status: 'READY', expiresAt: { lte: now } },
+    });
+    for (const job of expired) {
+      await this.ensureCurrent(job);
+    }
+    return { purged: expired.length };
   }
 
   /**

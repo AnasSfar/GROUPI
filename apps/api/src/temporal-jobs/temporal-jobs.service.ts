@@ -5,6 +5,12 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../email/email.service';
 import { theoreticalStart, theoreticalEnd } from '../sessions/sessions.service';
+import { SchoolSituationService } from '../school-situation/school-situation.service';
+import { PreEnrollmentsService } from '../pre-enrollments/pre-enrollments.service';
+import { ExportsService } from '../exports/exports.service';
+import { EnrollmentConversationsService } from '../enrollment-conversations/enrollment-conversations.service';
+import { GroupAnnouncementsService } from '../group-announcements/group-announcements.service';
+import { AuthService } from '../auth/auth.service';
 
 function addHours(date: Date, hours: number): Date {
   return new Date(date.getTime() + hours * 60 * 60 * 1000);
@@ -20,6 +26,12 @@ function dateOnly(date: Date): Date {
 
 function dayKey(date: Date): string {
   return date.toISOString().slice(0, 10);
+}
+
+/** RM-CYC-025 : bucket hebdomadaire grossier (pas besoin d'un vrai calcul de semaine ISO) utilisé
+ *  pour dédupliquer via `markOnce` — au plus une notification par compte concerné et par semaine. */
+function weekKey(date: Date): string {
+  return Math.floor(date.getTime() / (7 * 86_400_000)).toString();
 }
 
 function round3(n: number): number {
@@ -39,16 +51,46 @@ export class TemporalJobsService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly email: EmailService,
+    private readonly schoolSituation: SchoolSituationService,
+    private readonly preEnrollments: PreEnrollmentsService,
+    private readonly enrollmentConversations: EnrollmentConversationsService,
+    private readonly groupAnnouncements: GroupAnnouncementsService,
+    private readonly exports: ExportsService,
+    private readonly auth: AuthService,
   ) {}
 
   @Cron('0 * * * *')
   async runHourlyCron(): Promise<void> {
     await this.runHourlyJobs(new Date());
+    // RM-NOT-014 : tentative de réenvoi des notifications critiques dont l'e-mail initial a échoué.
+    await this.notifications.retryFailedCriticalEmails(new Date());
   }
 
   @Cron('15 6 * * *')
   async runDailyCron(): Promise<void> {
     await this.runDailyDigest(new Date());
+    await this.sendSubscriptionInactivitySuggestions(new Date());
+    await this.flagStalePendingAccounts(new Date());
+    // RM-SCH-008 : rappel de mise à jour de la situation scolaire en début d'année académique.
+    await this.schoolSituation.notifyPendingUpdatesForNewAcademicYear();
+    // RM-PRE-028 : clôture automatique des préinscriptions non transformées à temps.
+    await this.closeStalePreEnrollments(new Date());
+    // RM-COM-016 : purge de rétention légale (7 ans) des échanges — balayage mensuel (markOnce
+    // interne), pas besoin d'une fréquence quotidienne.
+    await this.purgeOldCommunications(new Date());
+    // RM-EXP-008 : nettoyage réel des exports expirés (vide `fileBytes`, conserve la ligne pour
+    // l'audit) — en complément de la suppression paresseuse à la lecture (`ExportsService.ensureCurrent`).
+    await this.exports.purgeExpiredExports(new Date());
+    // RM-TRS-013/RM-GEN-020 : anonymisation automatique des comptes désactivés depuis plus de 7 ans
+    // — balayage mensuel (markOnce interne), la requête elle-même exclut déjà les comptes déjà
+    // traités (email `@groupi.invalid`), donc idempotent sans nécessiter de marqueur dédié.
+    const monthKey = new Date().toISOString().slice(0, 7);
+    if (await this.markOnce(`RM-TRS-013:${monthKey}`, 'ACCOUNT_ANONYMIZATION_SWEEP')) {
+      const result = await this.auth.sweepStaleDisabledAccounts(new Date());
+      this.logger.log(
+        `Anonymisation automatique RM-TRS-013 : ${result.processed} compte(s) traité(s), ${result.failed} échec(s).`,
+      );
+    }
   }
 
   async runHourlyJobs(now = new Date()) {
@@ -298,6 +340,163 @@ export class TemporalJobsService {
       select: { id: true },
     });
     return usable !== null;
+  }
+
+  /**
+   * RM-SUB-021 : pour chaque abonnement `ACTIVE`, si le Professeur n'a enregistré aucune `Session`
+   * `COMPLETED` (tous groupes confondus) dans les 90 derniers jours, GROUPI lui suggère d'envisager
+   * la clôture — au plus une fois par mois (`markOnce` avec le mois courant dans la clé) et sans
+   * jamais clôturer quoi que ce soit automatiquement : la décision reste entièrement au Professeur.
+   */
+  async sendSubscriptionInactivitySuggestions(now = new Date()): Promise<JobResult> {
+    const cutoff = dateOnly(addDays(now, -90));
+    const monthKey = now.toISOString().slice(0, 7);
+    const subs = await this.prisma.subscription.findMany({
+      where: { status: 'ACTIVE' },
+      include: { plan: true, teacher: { select: { id: true, groups: { select: { id: true } } } } },
+    });
+    let sent = 0;
+    let skipped = 0;
+    for (const sub of subs) {
+      const key = `RM-SUB-021:${sub.teacherId}:${monthKey}`;
+      const groupIds = sub.teacher.groups.map((g) => g.id);
+      const recentCompleted = groupIds.length
+        ? await this.prisma.session.count({
+            where: { groupId: { in: groupIds }, status: 'COMPLETED', date: { gte: cutoff } },
+          })
+        : 0;
+      if (recentCompleted > 0) continue;
+      if (!(await this.markOnce(key, 'SUBSCRIPTION_INACTIVITY_SUGGESTION', 'Subscription', sub.id))) {
+        skipped++;
+        continue;
+      }
+      await this.notifications.notify({
+        recipientUserId: sub.teacherId,
+        type: 'SUBSCRIPTION_INACTIVITY_SUGGESTION',
+        priority: 'INFORMATION',
+        title: 'Aucune activité récente',
+        body: `Aucune séance réalisée depuis 3 mois sur votre abonnement "${sub.plan.name}". GROUPI vous suggère d'envisager la clôture de votre compte si votre activité n'est plus d'actualité — la décision finale vous appartient.`,
+        refType: 'Subscription',
+        refId: sub.id,
+      });
+      sent++;
+    }
+    return { sent, skipped };
+  }
+
+  /**
+   * RM-CYC-025 : Administrateurs "habilités" à valider un compte — le Super Administrateur (accès
+   * total implicite, même principe que `hasPermission` dans `DashboardService`) et tout
+   * Administrateur actif titulaire de la permission `ACC_VALIDATE`.
+   */
+  private async eligibleAccountValidators(): Promise<{ id: string }[]> {
+    const [superAdmins, delegatedAdmins] = await Promise.all([
+      this.prisma.user.findMany({
+        where: { roles: { has: 'SUPER_ADMIN' }, status: 'ACTIVE' },
+        select: { id: true },
+      }),
+      this.prisma.administrator.findMany({
+        where: { permissions: { has: 'ACC_VALIDATE' }, disabledAt: null, user: { status: 'ACTIVE' } },
+        select: { id: true },
+      }),
+    ]);
+    const ids = new Set<string>([...superAdmins.map((a) => a.id), ...delegatedAdmins.map((a) => a.id)]);
+    return [...ids].map((id) => ({ id }));
+  }
+
+  /**
+   * RM-CYC-025 : signale aux Administrateurs habilités (`ACC_VALIDATE`) tout compte
+   * `PENDING_VALIDATION` créé il y a plus de 30 jours — au plus une fois par semaine et par compte
+   * concerné (`markOnce`, clé incluant un bucket hebdomadaire) pour éviter un rappel quotidien.
+   */
+  async flagStalePendingAccounts(now = new Date()): Promise<JobResult> {
+    let sent = 0;
+    let skipped = 0;
+    const cutoff = addDays(now, -30);
+    const staleUsers = await this.prisma.user.findMany({
+      where: { status: 'PENDING_VALIDATION', createdAt: { lte: cutoff } },
+      select: { id: true, email: true, roles: true, createdAt: true },
+    });
+    if (staleUsers.length === 0) {
+      return { sent, skipped };
+    }
+
+    const validators = await this.eligibleAccountValidators();
+    const week = weekKey(now);
+    for (const user of staleUsers) {
+      for (const admin of validators) {
+        const key = `RM-CYC-025:${user.id}:${admin.id}:${week}`;
+        if (!(await this.markOnce(key, 'ACCOUNT_PENDING_STALE', 'User', user.id))) {
+          skipped++;
+          continue;
+        }
+        const daysWaiting = Math.floor((now.getTime() - user.createdAt.getTime()) / 86_400_000);
+        await this.notifications.notify({
+          recipientUserId: admin.id,
+          type: 'ACCOUNT_PENDING_STALE',
+          priority: 'IMPORTANT',
+          title: 'Compte en attente de validation depuis plus de 30 jours',
+          body: `Le compte ${user.email} (${user.roles.join(', ')}) attend une validation depuis ${daysWaiting} jours.`,
+          refType: 'User',
+          refId: user.id,
+        });
+        sent++;
+      }
+    }
+    return { sent, skipped };
+  }
+
+  /**
+   * RM-PRE-028/NOT-PRE-008/EVT-PRE-008 : clôture des préinscriptions non transformées à temps
+   * (`PreEnrollmentsService.closeStaleForOpenedAcademicYear`, idempotente) puis notification du
+   * Professeur concerné, dédupliquée via `markOnce` comme les autres jobs de ce fichier.
+   */
+  async closeStalePreEnrollments(now = new Date()): Promise<JobResult> {
+    const closed = await this.preEnrollments.closeStaleForOpenedAcademicYear(now);
+    let sent = 0;
+    let skipped = 0;
+    for (const pe of closed) {
+      const key = `NOT-PRE-008:${pe.id}`;
+      if (!(await this.markOnce(key, 'PRE_CLOSED_STALE', 'PreEnrollment', pe.id))) {
+        skipped++;
+        continue;
+      }
+      await this.notifications.notify({
+        recipientUserId: pe.teacherId,
+        type: 'PRE_CLOSED_STALE',
+        priority: 'INFORMATION',
+        title: 'Préinscription clôturée automatiquement',
+        body: `Une préinscription pour l'année ${pe.academicYearLabel} a été clôturée automatiquement : aucun groupe correspondant n'a été créé avant le début de l'année (RM-PRE-028).`,
+        refType: 'PreEnrollment',
+        refId: pe.id,
+      });
+      sent++;
+    }
+    return { sent, skipped };
+  }
+
+  /**
+   * RM-COM-016 : purge physique des échanges (commentaires de fil d'inscription + annonces de
+   * groupe) au-delà de la conservation légale de 7 ans — seule dérogation à RM-COM-014 (aucune
+   * suppression physique dans l'usage courant/métier). Un simple balayage mensuel suffit pour une
+   * politique de rétention pluriannuelle : dédupliqué via `markOnce` sur un bucket "mois courant"
+   * (même principe que `sendSubscriptionInactivitySuggestions`), pas de clé par entité.
+   */
+  async purgeOldCommunications(now = new Date()): Promise<JobResult> {
+    const monthKey = now.toISOString().slice(0, 7);
+    const key = `RM-COM-016:${monthKey}`;
+    if (!(await this.markOnce(key, 'COM_RETENTION_PURGE'))) {
+      return { sent: 0, skipped: 1 };
+    }
+    const [purgedComments, purgedAnnouncements] = await Promise.all([
+      this.enrollmentConversations.purgeOldComments(now),
+      this.groupAnnouncements.purgeOldAnnouncements(now),
+    ]);
+    const total = purgedComments + purgedAnnouncements;
+    this.logger.log(
+      `RM-COM-016 : purge de rétention légale (7 ans) - ${purgedComments} commentaire(s), ${purgedAnnouncements} annonce(s) supprimé(s) définitivement.`,
+    );
+    return { sent: total, skipped: 0 };
   }
 
   private async accountBalance(accountId: string): Promise<number> {

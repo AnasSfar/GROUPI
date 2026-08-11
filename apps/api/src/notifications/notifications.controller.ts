@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { ListNotificationsQueryDto } from './dto/list-notifications-query.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -33,5 +33,11 @@ export class NotificationsController {
   @Post(':id/read')
   markRead(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.notifications.markRead(user.id, id);
+  }
+
+  /** RM-NOT-010 : archivage — réservé au propriétaire de l'activité, jamais une suppression. */
+  @Patch(':id/archive')
+  archive(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.notifications.archive(user.id, id);
   }
 }

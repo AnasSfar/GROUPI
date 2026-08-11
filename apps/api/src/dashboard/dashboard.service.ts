@@ -54,6 +54,17 @@ export class DashboardService {
   // Professeur (Ch.16.3)
   // ===============================================================================================
 
+  /**
+   * RM-DSH-013 : le référentiel prévoit un recalcul "périodique" des statistiques historiques —
+   * ici, elles sont recalculées à CHAQUE appel (aucun cache/snapshot stocké nulle part dans ce
+   * service), ce qui satisfait déjà l'exigence de fraîcheur par construction et va même au-delà
+   * d'un recalcul différé (jamais de décalage entre l'affichage et l'état réel de la plateforme).
+   * Choix assumé pour ce chantier : ne PAS ajouter de mécanisme de snapshot/cache — aucun modèle de
+   * stockage n'est prévu à cet effet dans le schéma, et cela introduirait un risque de
+   * désynchronisation (et de bug de purge/invalidation) sans bénéfice de performance mesuré à ce
+   * stade. Si un besoin de performance apparaît un jour, il vaudra mieux memoiser côté HTTP
+   * (cache-control court) que dupliquer l'état ici.
+   */
   async getTeacherDashboard(teacherId: string) {
     const today = todayDateOnly();
 
@@ -109,6 +120,7 @@ export class DashboardService {
       this.prisma.groupChangeRequest.count({ where: { status: 'PENDING', targetGroupId: { in: groupIds } } }),
     ]);
 
+    const { unreadCommentsCount, unreadAnnouncementsCount } = await this.unreadCommentAndAnnouncementCounts(teacherId);
     const activity = {
       activeGroupsCount: groups.filter((g) => g.status === 'ACTIVE' || g.status === 'FULL').length,
       totalActiveStudents: activeStudentIds.size,
@@ -116,6 +128,8 @@ export class DashboardService {
       upcomingSessions: upcomingSessions.map((s) => this.sessionSummary(s)),
       pendingEnrollmentsCount,
       pendingGroupChangesCount,
+      unreadCommentsCount,
+      unreadAnnouncementsCount,
     };
 
     // --- Présences (Ch.16.3) --------------------------------------------------------------------
@@ -184,14 +198,18 @@ export class DashboardService {
           message:
             "Statistiques avancées disponibles à partir de l'offre Intermédiaire (RM-DSH-011) : passez à une offre supérieure pour les débloquer.",
         };
-    // Ch.17 (export PDF/Excel) est un autre chantier — voir progress.md : seul le point
-    // d'intégration (disponibilité selon abonnement) est exposé ici, pas la génération de fichier.
+    // RM-DSH-012 : la génération réelle (PDF/Excel) est déléguée à `ExportsService` — ce service ne
+    // duplique pas ce moteur, il expose seulement la disponibilité (droits d'abonnement) pour piloter
+    // le bouton d'export du tableau de bord. Le bouton appelle `POST /exports` avec
+    // `type: 'DASHBOARD_INDICATORS'` (`ExportsService.requestTeacherExport`), qui applique lui-même
+    // le contrôle d'abonnement (RM-EXP-001) — cette valeur ne fait donc que refléter côté UI le même
+    // droit, sans le dupliquer comme source de vérité.
     const exportInfo = {
       available: hasPaidActiveSubscription,
+      exportType: 'DASHBOARD_INDICATORS' as const,
       message: hasPaidActiveSubscription
         ? undefined
         : "L'offre Découverte ne permet pas l'export du tableau de bord (RM-DSH-012).",
-      // TODO(Ch.17) : brancher ici la génération réelle (PDF/Excel/CSV) une fois le module Export livré.
     };
 
     // --- Préinscriptions (Ch.16.3) ----------------------------------------------------------------
@@ -235,6 +253,27 @@ export class DashboardService {
       preEnrollments: preEnrollmentsView,
       alerts,
     };
+  }
+
+  /**
+   * RM-COM-019 : compteurs distincts "commentaires non lus" / "annonces non lues", en plus du
+   * compteur global toutes notifications confondues déjà exposé par `NotificationsService`.
+   * Réutilise directement `Activity.readAt` (même mécanisme que le centre d'activités, Ch.18) —
+   * aucun nouveau modèle : les deux couples de `type` déjà posés par `EnrollmentConversationsService`/
+   * `GroupAnnouncementsService` suffisent à distinguer les deux familles d'évènements.
+   */
+  private async unreadCommentAndAnnouncementCounts(
+    userId: string,
+  ): Promise<{ unreadCommentsCount: number; unreadAnnouncementsCount: number }> {
+    const [unreadCommentsCount, unreadAnnouncementsCount] = await Promise.all([
+      this.prisma.activity.count({
+        where: { userId, readAt: null, type: { in: ['COM_COMMENT_CREATED', 'COM_COMMENT_REPLIED'] } },
+      }),
+      this.prisma.activity.count({
+        where: { userId, readAt: null, type: { in: ['COM_ANNOUNCEMENT_CREATED', 'COM_ANNOUNCEMENT_UPDATED'] } },
+      }),
+    ]);
+    return { unreadCommentsCount, unreadAnnouncementsCount };
   }
 
   private sessionSummary(s: { id: string; date: Date; startTime: string; status: string; group: { id: string; name: string } }) {
@@ -395,8 +434,9 @@ export class DashboardService {
     );
 
     const alerts = this.computeParentAlerts(children, multipleChildren);
+    const { unreadCommentsCount, unreadAnnouncementsCount } = await this.unreadCommentAndAnnouncementCounts(parentId);
 
-    return { multipleChildren, children, alerts };
+    return { multipleChildren, children, alerts, unreadCommentsCount, unreadAnnouncementsCount };
   }
 
   private async buildChildDashboard(

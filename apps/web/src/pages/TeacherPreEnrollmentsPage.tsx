@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Select } from '../components/Select';
+import { useToast } from '../components/Toast';
 import { ApiError } from '../api/client';
 import * as referentialsApi from '../api/referentialsApi';
 import * as groupsApi from '../api/groupsApi';
@@ -8,6 +9,12 @@ import * as preEnrollmentsApi from '../api/preEnrollmentsApi';
 import type { AcademicYear } from '../api/referentialsApi';
 import type { Group } from '../api/groupsApi';
 import type { PreEnrollment, PreEnrollmentStatus } from '../api/preEnrollmentsApi';
+
+/** RM-PRE-005/015 : `Group.preEnrollmentsOpen` existe côté API mais n'est pas déclaré sur le type
+ *  `Group` partagé (apps/web/src/api/groupsApi.ts, hors périmètre de ce chantier) — la valeur est
+ *  bien présente dans la réponse JSON de `/groups/mine` (Prisma renvoie tous les scalaires par
+ *  défaut), on l'accède donc ici via ce type étendu local plutôt que de modifier ce fichier partagé. */
+type GroupWithPreEnrollmentsOpen = Group & { preEnrollmentsOpen: boolean };
 
 const STATUS_LABELS: Record<PreEnrollmentStatus, string> = {
   PENDING: 'Ouverte',
@@ -80,17 +87,43 @@ function ProposeForm({
   );
 }
 
+/** Formulaire inline : une seule date limite de réponse, envoyée à toutes les préinscriptions
+ *  compatibles avec le groupe en un clic (RM-PRE-008/009/010). */
+function BulkProposeForm({
+  onSubmit,
+  onCancel,
+}: {
+  onSubmit: (expiresAt: string) => void;
+  onCancel: () => void;
+}) {
+  const [expiresAt, setExpiresAt] = useState('');
+
+  return (
+    <div className="reason-prompt">
+      <input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
+      <button type="button" disabled={!expiresAt} onClick={() => onSubmit(expiresAt)}>
+        Envoyer à tous les compatibles
+      </button>
+      <button type="button" className="ghost" onClick={onCancel}>
+        Annuler
+      </button>
+    </div>
+  );
+}
+
 /** Ch.11.5/11.6/11.7 : espace Professeur — consulter les préinscriptions reçues et leur proposer
  *  un groupe compatible une fois la prochaine année académique préparée. */
 export function TeacherPreEnrollmentsPage() {
   const { getAccessToken } = useAuth();
+  const { showToast } = useToast();
   const [preEnrollments, setPreEnrollments] = useState<PreEnrollment[]>([]);
-  const [groups, setGroups] = useState<Group[]>([]);
+  const [groups, setGroups] = useState<GroupWithPreEnrollmentsOpen[]>([]);
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
   const [academicYearFilter, setAcademicYearFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [proposingFor, setProposingFor] = useState<string | null>(null);
+  const [bulkProposingFor, setBulkProposingFor] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const token = getAccessToken();
@@ -104,7 +137,7 @@ export function TeacherPreEnrollmentsPage() {
         referentialsApi.listAcademicYears(token),
       ]);
       setPreEnrollments(mine);
-      setGroups(myGroups);
+      setGroups(myGroups as GroupWithPreEnrollmentsOpen[]);
       setAcademicYears(allYears);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Impossible de charger les préinscriptions.');
@@ -130,6 +163,46 @@ export function TeacherPreEnrollmentsPage() {
       setProposingFor(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "L'envoi de la proposition a échoué.");
+    }
+  }
+
+  /** RM-PRE-008/009/010 : envoi groupé en un clic — remplace l'envoi préinscription par préinscription. */
+  async function handleProposeAll(groupId: string, expiresAt: string) {
+    const token = getAccessToken();
+    if (!token) return;
+    setError(null);
+    try {
+      const result = await preEnrollmentsApi.proposeAllCompatiblePreEnrollments(
+        token,
+        groupId,
+        new Date(expiresAt).toISOString(),
+      );
+      setBulkProposingFor(null);
+      showToast(
+        `${result.sentCount} proposition(s) envoyée(s)` +
+          (result.failedCount > 0 ? `, ${result.failedCount} échec(s).` : '.'),
+        result.failedCount > 0 ? 'info' : 'success',
+      );
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "L'envoi groupé a échoué.");
+    }
+  }
+
+  /** RM-PRE-005/015, PERM-PRE-006 : bascule l'ouverture des préinscriptions pour ce groupe. */
+  async function handleToggleOpen(groupId: string, currentlyOpen: boolean) {
+    const token = getAccessToken();
+    if (!token) return;
+    setError(null);
+    try {
+      const updated = await preEnrollmentsApi.setGroupPreEnrollmentsOpen(token, groupId, !currentlyOpen);
+      setGroups((prev) =>
+        prev.map((g) => (g.id === groupId ? { ...g, preEnrollmentsOpen: updated.preEnrollmentsOpen } : g)),
+      );
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? err.message : "Impossible de modifier l'ouverture des préinscriptions.",
+      );
     }
   }
 
@@ -175,6 +248,61 @@ export function TeacherPreEnrollmentsPage() {
           {error}
         </p>
       )}
+
+      <section className="card-section">
+        <h2>Mes groupes — préinscriptions</h2>
+        <p>
+          Ouvrez ou fermez librement les préinscriptions par groupe (RM-PRE-005/015), et envoyez en
+          un clic une proposition à toutes les préinscriptions compatibles trouvées (RM-PRE-008/009/010).
+        </p>
+        {groups.length === 0 && <p>Aucun groupe créé pour le moment.</p>}
+        {groups.length > 0 && (
+          <div className="table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Groupe</th>
+                  <th>Matière / Niveau</th>
+                  <th>Année</th>
+                  <th>Préinscriptions</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {groups.map((g) => (
+                  <tr key={g.id}>
+                    <td data-label="Groupe">{g.name}</td>
+                    <td data-label="Matière / Niveau">
+                      {g.subject.name} — {g.schoolLevel.name}
+                    </td>
+                    <td data-label="Année">{g.academicYear.label}</td>
+                    <td data-label="Préinscriptions">
+                      <span className={`badge ${g.preEnrollmentsOpen ? 'badge-success' : 'badge-neutral'}`}>
+                        {g.preEnrollmentsOpen ? 'Ouvertes' : 'Fermées'}
+                      </span>
+                    </td>
+                    <td className="admin-actions">
+                      <button type="button" className="ghost" onClick={() => handleToggleOpen(g.id, g.preEnrollmentsOpen)}>
+                        {g.preEnrollmentsOpen ? 'Fermer' : 'Ouvrir'}
+                      </button>
+                      {bulkProposingFor === g.id ? (
+                        <BulkProposeForm
+                          onSubmit={(expiresAt) => handleProposeAll(g.id, expiresAt)}
+                          onCancel={() => setBulkProposingFor(null)}
+                        />
+                      ) : (
+                        <button type="button" onClick={() => setBulkProposingFor(g.id)}>
+                          Proposer à tous les compatibles
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       <section className="card-section">
         <h2>Préinscriptions ({preEnrollments.length})</h2>

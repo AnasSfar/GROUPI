@@ -66,6 +66,12 @@ const INCLUDE_TEACHER_VIEW = {
 type ParentViewEnrollment = Prisma.EnrollmentGetPayload<{ include: typeof INCLUDE_PARENT_VIEW }>;
 type TeacherViewEnrollment = Prisma.EnrollmentGetPayload<{ include: typeof INCLUDE_TEACHER_VIEW }>;
 
+/** RM-INS-014/015 : indicateur synthétique — jamais de montant ni de détail (RM-INS-016). */
+type ParentPaymentBehavior = 'EXCELLENT' | 'MOYEN' | 'MAUVAIS' | 'NON_DISPONIBLE';
+type TeacherViewEnrollmentWithPaymentBehavior = TeacherViewEnrollment & {
+  parentPaymentBehavior: ParentPaymentBehavior;
+};
+
 const EXPIRY_DELAY_MS = 7 * 24 * 60 * 60 * 1000; // RM-INS-026 : délai de réponse de 7 jours
 
 @Injectable()
@@ -136,10 +142,14 @@ export class EnrollmentsService {
 
   /**
    * Ch.12.5/12.6 : vérifications automatiques avant création d'une demande d'inscription
-   * (ERR-INS-001 à 009, 016, 027, 028). Hors scope volontairement (voir mission) :
-   *  - capacité d'abonnement du Professeur (domaine Commercial non construit) ;
-   *  - compte de suivi comptable (pas de modèle AccountingAccount) ;
-   *  - comportement de paiement du Parent (domaine Comptable non construit).
+   * (ERR-INS-001 à 009, 016, 027, 028, RM-INS-011). La capacité d'abonnement du Professeur est
+   * désormais vérifiée ici aussi (RM-INS-011/RM-INS-025/ERR-INS-008), avec la même méthode que
+   * celle réutilisée à l'acceptation (`SubscriptionsService.assertActiveEnrollmentCapacity`) : si
+   * elle est déjà atteinte, la demande n'a de toute façon aucune chance d'être acceptée un jour, et
+   * ERR-INS-008 est un refus, jamais un simple avertissement. Restent hors scope volontairement :
+   *  - le compte de suivi comptable (RM-CPT-001/002 : créé uniquement à l'activation, en ACTIVE) ;
+   *  - le comportement de paiement du Parent, qui ne concerne que la décision du Professeur
+   *    (RM-INS-014/015, exposé par `listByGroup`, jamais côté création par le Parent).
    */
   async create(parentId: string, dto: CreateEnrollmentDto): Promise<ParentViewEnrollment> {
     // 1) L'élève appartient au Parent connecté et n'est pas archivé.
@@ -181,6 +191,10 @@ export class EnrollmentsService {
         'Professeur suspendu ou inactif : création de la demande impossible (ERR-INS-005)',
       );
     }
+
+    // 3bis) RM-INS-011/025/ERR-INS-008 : capacité d'abonnement du Professeur non déjà atteinte —
+    // même vérification que celle réutilisée à l'acceptation (voir `accept`/`reactivate`).
+    await this.subscriptions.assertActiveEnrollmentCapacity(group.teacherId, 1, 'ERR-INS-008');
 
     // 4) Le Parent est validé (compte actif).
     const parentUser = await this.prisma.user.findUnique({ where: { id: parentId } });
@@ -262,14 +276,85 @@ export class EnrollmentsService {
     return group;
   }
 
-  async listByGroup(teacherId: string, groupId: string): Promise<TeacherViewEnrollment[]> {
+  /**
+   * Ch.12.7/RM-INS-014/015/016 : c'est ici (liste consultée par le Professeur avant de décider)
+   * que l'indicateur de comportement de paiement du Parent est exposé — un label synthétique par
+   * ligne, jamais de détail chiffré.
+   */
+  async listByGroup(teacherId: string, groupId: string): Promise<TeacherViewEnrollmentWithPaymentBehavior[]> {
     await this.loadOwnedGroup(teacherId, groupId);
     const enrollments = await this.prisma.enrollment.findMany({
       where: { groupId },
       include: INCLUDE_TEACHER_VIEW,
       orderBy: { requestedAt: 'desc' },
     });
-    return this.expireManyIfDue(enrollments);
+    const expired = await this.expireManyIfDue(enrollments);
+
+    // Un seul calcul par Parent distinct (plusieurs enfants du même Parent peuvent être inscrits
+    // dans le même groupe) plutôt qu'un calcul par ligne.
+    const parentIds = [...new Set(expired.map((e) => e.student.parentId))];
+    const behaviorEntries = await Promise.all(
+      parentIds.map(async (parentId) => [parentId, await this.computeParentPaymentBehavior(parentId)] as const),
+    );
+    const behaviorByParent = new Map(behaviorEntries);
+
+    return expired.map((e) => ({
+      ...e,
+      parentPaymentBehavior: behaviorByParent.get(e.student.parentId) ?? 'NON_DISPONIBLE',
+    }));
+  }
+
+  /**
+   * RM-INS-014/029 : comportement de paiement du Parent — calculé à partir de l'historique de
+   * TOUTES ses inscriptions, tous enfants confondus (l'indicateur est attaché au Parent, pas à un
+   * seul enfant ni à un seul Professeur), toutes années confondues si l'année académique en cours
+   * n'a encore aucune séance facturée (RM-INS-029 : « en début d'année académique, le comportement
+   * de paiement est calculé sur l'année précédente si disponible »— généralisé ici à tout
+   * l'historique disponible plutôt qu'à la seule année précédente, faute d'un moyen fiable de
+   * désigner « l'année précédente » unique dans un projet qui autorise plusieurs années OPEN
+   * simultanées, cf. le commentaire de `SubscriptionsService.assertCanWrite`).
+   *
+   * Formule (Annexe 25.9/RM-CAL-012 — seuils par défaut du référentiel, aucune autre valeur
+   * paramétrée trouvée ailleurs dans le code, donc reprise telle quelle) : taux d'encaissement =
+   * montant réglé / montant facturé (écritures SESSION) sur l'historique retenu.
+   *   - Excellent : taux >= 90 %
+   *   - Moyen     : 50 % <= taux < 90 %
+   *   - Mauvais   : taux < 50 %
+   *   - Aucune séance jamais facturée (ni année en cours, ni historique) : 'NON_DISPONIBLE'.
+   *
+   * RM-INS-016 : seul ce label est renvoyé — jamais un solde, un montant ou le détail d'un compte,
+   * qui resteraient de toute façon invisibles à un autre Professeur que celui propriétaire du compte.
+   */
+  private async computeParentPaymentBehavior(parentId: string): Promise<ParentPaymentBehavior> {
+    const entries = await this.prisma.accountingEntry.findMany({
+      where: {
+        status: { not: 'CREATED' }, // RM-CPT-037 : jamais un brouillon.
+        account: { enrollment: { student: { parentId } } },
+      },
+      select: {
+        type: true,
+        direction: true,
+        amount: true,
+        account: { select: { period: { select: { academicYear: { select: { status: true } } } } } },
+      },
+    });
+    if (entries.length === 0) return 'NON_DISPONIBLE';
+
+    const paymentRateOf = (rows: typeof entries): number | null => {
+      const invoiced = rows.filter((e) => e.type === 'SESSION').reduce((sum, e) => sum + Number(e.amount), 0);
+      if (invoiced <= 0) return null;
+      const paid = rows
+        .filter((e) => e.type === 'PAYMENT')
+        .reduce((sum, e) => sum + (e.direction === 'CREDIT' ? Number(e.amount) : -Number(e.amount)), 0);
+      return (paid / invoiced) * 100;
+    };
+
+    const currentYearEntries = entries.filter((e) => e.account.period.academicYear.status === 'OPEN');
+    const rate = paymentRateOf(currentYearEntries) ?? paymentRateOf(entries);
+    if (rate === null) return 'NON_DISPONIBLE';
+    if (rate >= 90) return 'EXCELLENT';
+    if (rate >= 50) return 'MOYEN';
+    return 'MAUVAIS';
   }
 
   private async loadOwnedEnrollment(
@@ -319,6 +404,13 @@ export class EnrollmentsService {
       );
     }
 
+    // RM-GRP-022 : le tarif effectif est toujours figé par inscription au moment de l'activation,
+    // jamais recalculé depuis `group.publicPrice` après coup. Si le Professeur ne fixe pas de tarif
+    // personnalisé à l'acceptation, `customPrice` est explicitement figé à la valeur actuelle du
+    // tarif public du groupe — un changement ultérieur de ce tarif n'impacte donc plus jamais cette
+    // inscription déjà active.
+    const fixedCustomPrice = dto.customPrice !== undefined ? dto.customPrice : enrollment.customPrice ?? group.publicPrice;
+
     const updated = await this.prisma.$transaction(async (tx) => {
       await tx.enrollment.update({
         where: { id: enrollmentId },
@@ -326,7 +418,7 @@ export class EnrollmentsService {
           status: 'ACTIVE',
           decidedAt: new Date(),
           decidedById: teacherId,
-          ...(dto.customPrice !== undefined ? { customPrice: dto.customPrice } : {}),
+          customPrice: fixedCustomPrice,
         },
       });
 
@@ -336,6 +428,18 @@ export class EnrollmentsService {
       if (activeCount + 1 >= group.capacity) {
         await tx.group.update({ where: { id: groupId }, data: { status: 'FULL' } });
       }
+
+      // RM-ACC-019/020 : traçabilité centralisée de l'acceptation d'une demande d'inscription.
+      await tx.auditLog.create({
+        data: {
+          userId: teacherId,
+          action: 'ENROLLMENT_ACCEPTED',
+          targetType: 'Enrollment',
+          targetId: enrollmentId,
+          oldValues: { status: 'PENDING_VALIDATION' },
+          newValues: { status: 'ACTIVE', customPrice: Number(fixedCustomPrice) },
+        },
+      });
 
       // Relu après toutes les mutations : le `group` inclus doit refléter l'état final (ex. FULL),
       // pas un instantané capturé avant la mise à jour du groupe dans cette même transaction.
@@ -377,6 +481,19 @@ export class EnrollmentsService {
       include: INCLUDE_TEACHER_VIEW,
     });
 
+    // RM-ACC-019/020 : traçabilité du refus — pas de transaction Prisma existante ici (simple mise
+    // à jour), donc journalisation best-effort, non bloquante.
+    await this.prisma.auditLog.create({
+      data: {
+        userId: teacherId,
+        action: 'ENROLLMENT_REJECTED',
+        targetType: 'Enrollment',
+        targetId: enrollmentId,
+        oldValues: { status: 'PENDING_VALIDATION' },
+        newValues: { status: 'REJECTED' },
+      },
+    });
+
     // NOT-INS-003
     await this.notifications.notify({
       recipientUserId: updated.student.parentId,
@@ -396,7 +513,12 @@ export class EnrollmentsService {
     return updated;
   }
 
-  /** Ch.12.8/RM-INS-017/018/019 : le tarif personnalisé n'est modifiable que sur une inscription active. */
+  /**
+   * Ch.12.8/RM-INS-017/018/019 : le tarif personnalisé n'est modifiable que sur une inscription
+   * active, et seulement tant qu'aucune séance n'a déjà été facturée sur son compte de suivi
+   * comptable (RM-INS-019/ERR-INS-014) — au-delà, les séances déjà réalisées ne peuvent jamais
+   * être recalculées (RM-INS-018), donc le tarif qui les a facturées ne doit plus bouger non plus.
+   */
   async updatePrice(
     teacherId: string,
     groupId: string,
@@ -410,6 +532,22 @@ export class EnrollmentsService {
     if (enrollment.status !== 'ACTIVE') {
       throw new BadRequestException('Le tarif personnalisé ne peut être modifié que sur une inscription active');
     }
+
+    // RM-INS-019/ERR-INS-014 : lecture seule via Prisma (le compte est géré par AccountingService,
+    // hors périmètre d'édition ici) — au moins une écriture SESSION postée sur ce compte interdit
+    // toute modification ultérieure du tarif.
+    const account = await this.prisma.accountingAccount.findUnique({ where: { enrollmentId } });
+    if (account) {
+      const billedSessionCount = await this.prisma.accountingEntry.count({
+        where: { accountId: account.id, type: 'SESSION' },
+      });
+      if (billedSessionCount > 0) {
+        throw new BadRequestException(
+          'Au moins une séance a déjà été facturée sur cette inscription : le tarif personnalisé ne peut plus être modifié (ERR-INS-014)',
+        );
+      }
+    }
+
     return this.prisma.enrollment.update({
       where: { id: enrollmentId },
       data: { customPrice: dto.customPrice },
@@ -430,6 +568,17 @@ export class EnrollmentsService {
     return this.prisma.$transaction(async (tx) => {
       await tx.enrollment.update({ where: { id: enrollmentId }, data: { status: 'SUSPENDED' } });
       await this.reopenGroupIfBelowCapacity(tx, groupId);
+      // RM-ACC-019/020 : traçabilité centralisée de la suspension d'une inscription.
+      await tx.auditLog.create({
+        data: {
+          userId: teacherId,
+          action: 'ENROLLMENT_SUSPENDED',
+          targetType: 'Enrollment',
+          targetId: enrollmentId,
+          oldValues: { status: 'ACTIVE' },
+          newValues: { status: 'SUSPENDED' },
+        },
+      });
       return tx.enrollment.findUniqueOrThrow({ where: { id: enrollmentId }, include: INCLUDE_TEACHER_VIEW });
     });
   }

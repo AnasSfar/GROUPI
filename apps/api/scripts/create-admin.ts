@@ -11,8 +11,11 @@ import * as argon2 from 'argon2';
 
 const ALL_PERMISSIONS = [
   'ACC_VALIDATE',
+  'ACC_REASSIGN_STUDENT',
   'REF_CREATE',
   'SCH_VALIDATE',
+  'SCH_ADMIN_OVERRIDE',
+  'TPR_VALIDATE',
   'ABO_VALIDATE',
   'ABO_SUSPEND',
   'ABO_REACTIVATE',

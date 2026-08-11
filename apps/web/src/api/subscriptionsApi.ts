@@ -40,6 +40,15 @@ export function subscribe(
   return apiRequest<Subscription>('/subscriptions', { method: 'POST', accessToken, body: payload });
 }
 
+/** RM-SUB-012/013 — changement d'offre en cours d'année pour l'abonnement actif du Professeur. */
+export function changePlan(accessToken: string, newPlanId: string): Promise<Subscription> {
+  return apiRequest<Subscription>('/subscriptions/change-plan', {
+    method: 'POST',
+    accessToken,
+    body: { newPlanId },
+  });
+}
+
 /** PERM-ABO-005/006/007 — réservé Super Admin / Admin délégué. */
 export function listAll(accessToken: string, status?: SubscriptionStatus): Promise<Subscription[]> {
   const query = status ? `?status=${status}` : '';

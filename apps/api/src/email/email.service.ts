@@ -151,6 +151,21 @@ export class EmailService implements OnModuleDestroy {
     );
   }
 
+  /** NOT-SES-004 : passage exceptionnel du mode d'enseignement d'une séance (Ch.13.6). */
+  async sendSessionTeachingModeChanged(
+    to: string,
+    groupName: string,
+    date: Date,
+    startTime: string,
+    newModeLabel: string,
+  ): Promise<void> {
+    await this.send(
+      to,
+      'GROUPI — Changement exceptionnel du mode d’enseignement',
+      `La séance du groupe "${groupName}" du ${date.toLocaleDateString('fr-FR')} à ${startTime} passe exceptionnellement en ${newModeLabel}. Merci de confirmer ou non la participation de votre enfant.`,
+    );
+  }
+
   /** NOT-SES-003 */
   async sendSessionCancelled(to: string, groupName: string, date: Date, startTime: string): Promise<void> {
     await this.send(
@@ -272,5 +287,34 @@ export class EmailService implements OnModuleDestroy {
       'GROUPI - Dernier d�lai pour signaler une absence',
       `La s�ance de ${studentName} dans le groupe "${groupName}" commence le ${date.toLocaleDateString('fr-FR')} � ${startTime}. C'est le dernier moment pour signaler une absence pr�visible.`,
     );
+  }
+
+  /**
+   * RM-CYC-014/032/033 : suspension/désactivation/archivage d'un compte — jusqu'ici seule l'activité
+   * en-app était créée (voir `AccountLifecycleService.transition`), sans e-mail malgré la priorité
+   * CRITICAL de la notification. Titre/corps déjà composés par l'appelant (mêmes textes que
+   * l'activité, cohérence garantie).
+   */
+  async sendAccountStatusChanged(to: string, title: string, body: string): Promise<void> {
+    await this.send(to, `GROUPI — ${title}`, body);
+  }
+
+  /** RM-SEC-009/016/037 : verrouillage temporaire du compte après échecs de connexion répétés. */
+  async sendAccountLocked(to: string, lockoutMinutes: number, maxAttempts: number): Promise<void> {
+    await this.send(
+      to,
+      'GROUPI — Compte temporairement verrouillé',
+      `Votre compte a été verrouillé ${lockoutMinutes} minutes après ${maxAttempts} tentatives de connexion échouées. Si ce n'était pas vous, changez votre mot de passe dès que possible.`,
+    );
+  }
+
+  /**
+   * RM-NOT-014 : réenvoi générique pour une `Activity` critique dont l'e-mail initial a échoué.
+   * `NotificationsService.retryFailedCriticalEmails` ne connaît plus le template métier d'origine
+   * (la closure `sendEmail` passée à `notify()` n'est jamais persistée) — ce message générique
+   * reprend donc le titre/corps déjà stockés sur l'Activity plutôt que de dupliquer chaque template.
+   */
+  async sendCriticalActivityRetry(to: string, title: string, body: string): Promise<void> {
+    await this.send(to, `GROUPI — ${title}`, body);
   }
 }

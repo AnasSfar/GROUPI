@@ -47,6 +47,8 @@ const SESSION_STATUS_LABELS: Record<string, string> = {
 interface PendingRow {
   status: AttendanceStatus | null;
   lateDuration: string;
+  /** RM-ATT-019 : n'a de sens que pour une séance en ligne. */
+  onlineDurationMinutes: string;
   comment: string;
 }
 
@@ -54,13 +56,20 @@ function pendingFromEntry(entry: AttendanceEntry): PendingRow {
   return {
     status: entry.attendance?.status ?? null,
     lateDuration: entry.attendance?.lateDuration != null ? String(entry.attendance.lateDuration) : '',
+    onlineDurationMinutes:
+      entry.attendance?.onlineDurationMinutes != null ? String(entry.attendance.onlineDurationMinutes) : '',
     comment: entry.attendance?.comment ?? '',
   };
 }
 
 function isRowDirty(entry: AttendanceEntry, row: PendingRow): boolean {
   const saved = pendingFromEntry(entry);
-  return saved.status !== row.status || saved.lateDuration !== row.lateDuration || saved.comment !== row.comment;
+  return (
+    saved.status !== row.status ||
+    saved.lateDuration !== row.lateDuration ||
+    saved.onlineDurationMinutes !== row.onlineDurationMinutes ||
+    saved.comment !== row.comment
+  );
 }
 
 export function TeacherAttendancePage() {
@@ -146,6 +155,10 @@ export function TeacherAttendancePage() {
           return attendanceApi.setAttendance(token, sessionId, entry.student.id, {
             status: row.status as AttendanceStatus,
             lateDuration: row.status === 'LATE' && row.lateDuration ? Number(row.lateDuration) : undefined,
+            onlineDurationMinutes:
+              view?.session.teachingMode === 'ONLINE' && row.onlineDurationMinutes
+                ? Number(row.onlineDurationMinutes)
+                : undefined,
             comment: row.comment || undefined,
           });
         }),
@@ -208,6 +221,8 @@ export function TeacherAttendancePage() {
   }
 
   const { session } = view;
+  /** RM-ATT-019 : la durée de connexion n'est saisissable que pour une séance en ligne. */
+  const isOnlineSession = session.teachingMode === 'ONLINE';
   const filledCount = entries.filter((e) => pending[e.student.id]?.status).length;
   const notYetStarted = session.status === 'PLANNED' && !hasSessionStarted(session.date, session.startTime);
   const canValidate =
@@ -295,6 +310,7 @@ export function TeacherAttendancePage() {
                       {col.label}
                     </th>
                   ))}
+                  {isOnlineSession && <th>Durée connexion (min)</th>}
                   <th>Commentaire</th>
                   <th>État</th>
                   <th>Actions</th>
@@ -329,6 +345,18 @@ export function TeacherAttendancePage() {
                           />
                         </td>
                       ))}
+                      {isOnlineSession && (
+                        <td data-label="Durée connexion (min)">
+                          <input
+                            type="number"
+                            min={0}
+                            placeholder="min (optionnel)"
+                            value={row.onlineDurationMinutes}
+                            onChange={(e) => updateRow(entry.student.id, { onlineDurationMinutes: e.target.value })}
+                            disabled={locked}
+                          />
+                        </td>
+                      )}
                       <td data-label="Commentaire">
                         <input
                           type="text"

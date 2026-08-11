@@ -29,7 +29,7 @@ export function NotificationsPage() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'all' | 'unread'>('all');
+  const [filter, setFilter] = useState<'all' | 'unread' | 'archived'>('all');
 
   const load = useCallback(async () => {
     const token = getAccessToken();
@@ -73,6 +73,23 @@ export function NotificationsPage() {
     }
   }
 
+  /** RM-NOT-010 : archivage — jamais une suppression, l'activité reste consultable via le filtre "Archivées". */
+  async function handleArchive(id: string) {
+    const token = getAccessToken();
+    if (!token) return;
+    try {
+      await notificationsApi.archive(token, id);
+      showToast('Activité archivée');
+      if (filter === 'archived') {
+        await load();
+      } else {
+        setActivities((prev) => prev.filter((a) => a.id !== id));
+      }
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "L'archivage a échoué.");
+    }
+  }
+
   const unreadCount = activities.filter((a) => !a.readAt).length;
 
   if (loading) {
@@ -95,9 +112,10 @@ export function NotificationsPage() {
 
       <label className="status-filter">
         Afficher :
-        <Select value={filter} onChange={(e) => setFilter(e.target.value as 'all' | 'unread')}>
+        <Select value={filter} onChange={(e) => setFilter(e.target.value as 'all' | 'unread' | 'archived')}>
           <option value="all">Toutes</option>
           <option value="unread">Non lues uniquement</option>
+          <option value="archived">Archivées</option>
         </Select>
       </label>
 
@@ -119,11 +137,18 @@ export function NotificationsPage() {
                   <span className="activity-item-date">{formatDateTime(a.createdAt)}</span>
                 </div>
                 {a.body && <p>{a.body}</p>}
-                {!a.readAt && (
-                  <button type="button" className="ghost-link" onClick={() => handleMarkRead(a.id)}>
-                    Marquer comme lu
-                  </button>
-                )}
+                <div className="activity-item-actions">
+                  {!a.readAt && (
+                    <button type="button" className="ghost-link" onClick={() => handleMarkRead(a.id)}>
+                      Marquer comme lu
+                    </button>
+                  )}
+                  {!a.archivedAt && (
+                    <button type="button" className="ghost-link" onClick={() => handleArchive(a.id)}>
+                      Archiver
+                    </button>
+                  )}
+                </div>
               </li>
             ))}
           </ul>

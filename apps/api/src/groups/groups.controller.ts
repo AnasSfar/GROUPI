@@ -4,6 +4,8 @@ import { GroupsService } from './groups.service';
 import { CreateGroupDto } from './dto/create-group.dto';
 import { UpdateGroupDto } from './dto/update-group.dto';
 import { SearchGroupsQueryDto } from './dto/search-groups-query.dto';
+import { PauseGenerationDto } from './dto/pause-generation.dto';
+import { DuplicateGroupDto } from './dto/duplicate-group.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -50,6 +52,28 @@ export class GroupsController {
     @Body() dto: UpdateGroupDto,
   ) {
     return this.service.update(user.id, id, dto);
+  }
+
+  /** RM-GRP-015/027/037 : duplication — nouveau groupe indépendant, statut de départ DRAFT. */
+  @Post(':id/duplicate')
+  @Roles(Role.TEACHER)
+  duplicate(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: DuplicateGroupDto,
+  ) {
+    return this.service.duplicate(user.id, id, dto);
+  }
+
+  /** RM-GRP-009/030 : interruption temporaire de la génération automatique des séances. */
+  @Patch(':id/pause-generation')
+  @Roles(Role.TEACHER)
+  pauseGeneration(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: PauseGenerationDto,
+  ) {
+    return this.service.pauseGeneration(user.id, id, dto);
   }
 
   @Post(':id/open')

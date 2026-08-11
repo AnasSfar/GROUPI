@@ -2,6 +2,7 @@ import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { SubscriptionsService } from './subscriptions.service';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
+import { ChangePlanDto } from './dto/change-plan.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -29,5 +30,12 @@ export class SubscriptionsController {
   @Roles(Role.TEACHER)
   listMine(@CurrentUser() user: AuthenticatedUser) {
     return this.service.listMine(user.id);
+  }
+
+  /** RM-SUB-012/013 : changement d'offre en cours d'année (montée toujours possible, descente selon capacité). */
+  @Post('change-plan')
+  @Roles(Role.TEACHER)
+  changePlan(@CurrentUser() user: AuthenticatedUser, @Body() dto: ChangePlanDto) {
+    return this.service.changePlan(user.id, dto);
   }
 }

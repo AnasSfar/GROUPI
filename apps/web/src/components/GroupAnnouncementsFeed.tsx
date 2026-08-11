@@ -12,8 +12,17 @@ function formatDate(iso: string): string {
  * Ch.19.4 : fil de lecture des annonces d'un groupe, côté Parent — l'API ne renvoie déjà que les
  * annonces effectivement publiées et non expirées (visibilité paresseuse côté serveur). La
  * première consultation vaut lecture (RM-COM-011) : chaque annonce affichée est marquée lue.
+ * RM-COM-020 : `onViewConversation`, si fourni, affiche un lien "Voir la conversation" sur chaque
+ * annonce menant au fil de commentaires de l'inscription concernée (le Parent ne peut pas répondre
+ * à une annonce, RM-COM-010 — il ne peut réagir qu'en passant par le fil de commentaires).
  */
-export function GroupAnnouncementsFeed({ groupId }: { groupId: string }) {
+export function GroupAnnouncementsFeed({
+  groupId,
+  onViewConversation,
+}: {
+  groupId: string;
+  onViewConversation?: () => void;
+}) {
   const { getAccessToken } = useAuth();
   const [announcements, setAnnouncements] = useState<GroupAnnouncement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,6 +73,11 @@ export function GroupAnnouncementsFeed({ groupId }: { groupId: string }) {
           </div>
           <p>{a.body}</p>
           <p className="announcement-item-meta">Publiée le {formatDate(a.publishAt)}</p>
+          {onViewConversation && (
+            <button type="button" className="ghost-link" onClick={onViewConversation}>
+              Voir la conversation
+            </button>
+          )}
         </div>
       ))}
     </div>

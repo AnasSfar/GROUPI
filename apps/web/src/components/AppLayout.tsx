@@ -168,6 +168,7 @@ export function AppLayout() {
           { to: '/admin/school-situations', icon: <IconCalendarCheck />, label: 'Situations scolaires' },
           { to: '/admin/school-requests', icon: <IconSearch />, label: "Demandes d'établissement" },
           { to: '/admin/academic-years', icon: <IconCalendarCheck />, label: 'Années académiques' },
+          { to: '/admin/referentials', icon: <IconBookOpen />, label: 'Référentiels' },
           { to: '/admin/subscriptions', icon: <IconCreditCard />, label: 'Abonnements' },
           { to: '/admin/exports', icon: <IconDownload />, label: 'Exports' },
         ],

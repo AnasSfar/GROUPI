@@ -20,6 +20,7 @@ const ATTENDANCE_LABEL: Record<AttendanceStatus, string> = {
   LATE: 'Retard',
   EXCUSED_ABSENT: 'Absent excusé',
   UNEXCUSED_ABSENT: 'Absent non excusé',
+  NOT_SET: 'Non renseigné',
 };
 
 const INDICATOR_LABELS: Record<string, string> = {
@@ -184,7 +185,7 @@ export class ExportDataBuilder {
           },
         },
         ...(criteria.studentId ? { studentId: criteria.studentId } : {}),
-        ...(latenessOnly ? { status: 'LATE' as const } : {}),
+        ...(latenessOnly ? { status: 'LATE' as const } : { status: { not: 'NOT_SET' } }),
       },
       include: { student: true, session: { include: { group: { select: { name: true } } } } },
       orderBy: { session: { date: 'desc' } },
@@ -391,6 +392,7 @@ export class ExportDataBuilder {
     const attendances = await this.prisma.attendance.findMany({
       where: {
         studentId: { in: studentIds },
+        status: { not: 'NOT_SET' },
         ...(dateFrom ? { session: { date: { gte: dateFrom } } } : {}),
       },
       include: { student: true, session: { include: { group: { select: { name: true } } } } },

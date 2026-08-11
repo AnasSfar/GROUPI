@@ -19,10 +19,18 @@ import { SubscriptionGuard } from '../subscriptions/subscription.guard';
 export class GroupAnnouncementsController {
   constructor(private readonly service: GroupAnnouncementsService) {}
 
-  /** Même route, comportement différent selon le rôle (cf. PreEnrollmentsController.listMine). */
+  /**
+   * Même route, comportement différent selon le rôle (cf. PreEnrollmentsController.listMine).
+   * RM-COM-013 : le Super Administrateur peut consulter (jamais créer/modifier/supprimer) dans le
+   * cadre d'une procédure d'assistance/audit — même principe que
+   * `EnrollmentConversationsController.list` (`allowSuperAdminRead`).
+   */
   @Get()
-  @Roles(Role.TEACHER, Role.PARENT)
+  @Roles(Role.TEACHER, Role.PARENT, Role.SUPER_ADMIN)
   list(@CurrentUser() user: AuthenticatedUser, @Param('groupId') groupId: string) {
+    if (user.roles.includes(Role.SUPER_ADMIN)) {
+      return this.service.listForSuperAdmin(groupId);
+    }
     if (user.roles.includes(Role.TEACHER)) {
       return this.service.listForTeacher(user.id, groupId);
     }

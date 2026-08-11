@@ -1,11 +1,20 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { AcademicYearStatus, DayOfWeek, GroupStatus, SessionStatus } from '@prisma/client';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { AcademicYearStatus, ActivityPriority, DayOfWeek, GroupStatus, SessionStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { GroupsService } from '../groups/groups.service';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { PostponeSessionDto } from './dto/postpone-session.dto';
 import { ListSessionsQueryDto } from './dto/list-sessions-query.dto';
+import { SetTeachingModeDto } from './dto/set-teaching-mode.dto';
+import { UpdateSessionCommentDto } from './dto/update-session-comment.dto';
+
+const MODE_LABELS: Record<'PRESENTIAL' | 'ONLINE', string> = {
+  PRESENTIAL: 'présentiel',
+  ONLINE: 'en ligne',
+};
 
 /**
  * Ch.13.3 : « GROUPI limite la génération automatique des séances dans le futur à la durée de
@@ -46,20 +55,27 @@ function sessionKey(date: Date, startTime: string): string {
   return `${date.toISOString().slice(0, 10)}|${startTime}`;
 }
 
+// RM-SES-007/008/028 : la détection de pause de génération vit désormais uniquement dans
+// `GroupsService.isDateInGenerationPause()` (canonique, exportée par `GroupsModule`) — appelée
+// ci-dessous plutôt que dupliquée ici, pour éviter la divergence de sémantique constatée entre les
+// deux implémentations initiales (bornes ouvertes d'un seul côté vs. bornes obligatoirement
+// symétriques).
+
 interface LockableSession {
   status: SessionStatus;
   date: Date;
   startTime: string;
   durationMinutes: number;
   lockedAt: Date | null;
+  unlockOverrideUntil?: Date | null;
 }
 
 /**
  * Toutes les heures de séance (`startTime`) sont saisies et affichées comme heure murale
- * française. On les ancre explicitement sur ce fuseau (plutôt que sur UTC ou l'heure du serveur)
- * pour que le calcul reste correct été comme hiver (CET/CEST).
+ * tunisienne (RM-NAM-008). On les ancre explicitement sur ce fuseau (plutôt que sur UTC ou l'heure
+ * du serveur) — la Tunisie n'observe pas l'heure d'été (UTC+1 fixe toute l'année).
  */
-const SESSION_TIME_ZONE = 'Europe/Paris';
+const SESSION_TIME_ZONE = 'Africa/Tunis';
 
 const zonedPartsFormatter = new Intl.DateTimeFormat('en-US', {
   timeZone: SESSION_TIME_ZONE,
@@ -121,6 +137,12 @@ export function computeLockDeadline(session: LockableSession): Date | null {
   if (session.lockedAt) {
     return session.lockedAt;
   }
+  // RM-SES-036 : tant que la fenêtre de correction ouverte par un déverrouillage admin n'est pas
+  // expirée, elle prime sur l'échéance standard de 48h (déjà dépassée pour une vieille séance, ce
+  // qui aurait sinon reverrouillé la séance dès la requête suivante).
+  if (session.unlockOverrideUntil && session.unlockOverrideUntil.getTime() > Date.now()) {
+    return session.unlockOverrideUntil;
+  }
   return new Date(theoreticalEnd(session).getTime() + 48 * 60 * 60 * 1000);
 }
 
@@ -132,20 +154,29 @@ export function isLockable(session: LockableSession): boolean {
 
 @Injectable()
 export class SessionsService {
+  private readonly logger = new Logger(SessionsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly email: EmailService,
     private readonly notifications: NotificationsService,
+    private readonly subscriptions: SubscriptionsService,
+    private readonly groups: GroupsService,
   ) {}
 
   /**
    * Ch.13 : notifie chaque Parent ayant une inscription ACTIVE dans le groupe — NOT-SES-001
-   * (exceptionnelle), NOT-SES-003 (annulée), NOT-SES-007/018 (reportée). Même forme de requête que
-   * `AttendanceService.validate` (`enrollment.findMany({ status: 'ACTIVE' })` joint au Parent).
+   * (exceptionnelle), NOT-SES-003 (annulée), NOT-SES-004 (mode d'enseignement), NOT-SES-007/018
+   * (reportée), NOT-SES-016 (commentaire). Même forme de requête que `AttendanceService.validate`
+   * (`enrollment.findMany({ status: 'ACTIVE' })` joint au Parent).
    */
   private async notifyGroupParents(
     groupId: string,
-    build: (groupName: string, parentEmail: string) => { type: string; title: string; body: string; sendEmail: () => Promise<void> },
+    build: (
+      groupName: string,
+      parentEmail: string,
+    ) => { type: string; title: string; body: string; sendEmail?: () => Promise<void> },
+    priority: ActivityPriority = 'IMPORTANT',
   ): Promise<void> {
     const [group, enrollments] = await Promise.all([
       this.prisma.group.findUniqueOrThrow({ where: { id: groupId }, select: { name: true } }),
@@ -159,7 +190,7 @@ export class SessionsService {
       await this.notifications.notify({
         recipientUserId: e.student.parentId,
         type,
-        priority: 'IMPORTANT',
+        priority,
         title,
         body,
         refType: 'Group',
@@ -301,6 +332,29 @@ export class SessionsService {
       throw new BadRequestException('Groupe sans planning : génération impossible (ERR-SES-024)');
     }
 
+    // RM-SES-022/ERR-SES-013 : un groupe sans aucune inscription ACTIVE ne génère plus de séance
+    // (les séances déjà générées restent consultables) — écart de conformité corrigé, la génération
+    // est simplement sautée (pas d'erreur bloquante) plutôt que de créer des séances "orphelines".
+    const activeEnrollments = await this.prisma.enrollment.count({ where: { groupId, status: 'ACTIVE' } });
+    if (activeEnrollments === 0) {
+      this.logger.warn(
+        `Génération de séances suspendue pour le groupe ${groupId} : aucun élève inscrit (RM-SES-022).`,
+      );
+      return { count: 0, sessions: [], skippedReason: 'NO_ACTIVE_ENROLLMENT' as const };
+    }
+
+    // RM-SES-023/ERR-SES-011 : abonnement expiré/suspendu -> génération suspendue pour ce Professeur
+    // uniquement, sans jamais lever d'erreur bloquante globale (skip silencieux, journalisé).
+    try {
+      await this.subscriptions.assertCanWrite(teacherId);
+    } catch (err) {
+      this.logger.warn(
+        `Génération de séances suspendue pour le Professeur ${teacherId} : abonnement non exploitable ` +
+          `(RM-SES-023). ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return { count: 0, sessions: [], skippedReason: 'SUBSCRIPTION_INACTIVE' as const };
+    }
+
     const today = todayDateOnly();
     const groupStart = dateOnly(group.startDate);
     const start = groupStart > today ? groupStart : today;
@@ -323,6 +377,8 @@ export class SessionsService {
 
     const plan: { date: Date; schedule: (typeof group.schedules)[number] }[] = [];
     for (let cursor = start; cursor <= end; cursor = addDays(cursor, 1)) {
+      // RM-SES-007/008/028 : aucune séance générée pour une date en pause — jamais rattrapée après coup.
+      if (this.groups.isDateInGenerationPause(group, cursor)) continue;
       const dow = DAY_BY_JS_INDEX[cursor.getUTCDay()];
       for (const schedule of group.schedules) {
         if (schedule.dayOfWeek !== dow) continue;
@@ -410,6 +466,24 @@ export class SessionsService {
       },
     });
 
+    // RM-SES-035 : traçabilité de la création d'une séance exceptionnelle (hors planning habituel).
+    await this.prisma.auditLog.create({
+      data: {
+        userId: teacherId,
+        action: 'SESSION_CREATED_EXCEPTIONAL',
+        targetType: 'Session',
+        targetId: session.id,
+        newValues: {
+          groupId,
+          date: session.date,
+          startTime: session.startTime,
+          durationMinutes: session.durationMinutes,
+          teachingMode: session.teachingMode,
+          teachingLocationId: session.teachingLocationId,
+        },
+      },
+    });
+
     // NOT-SES : hors transaction — un échec de notification ne doit jamais annuler la création.
     await this.warnScheduleConflicts(teacherId, groupId, [
       { date, startTime: dto.startTime, durationMinutes: dto.durationMinutes },
@@ -488,9 +562,9 @@ export class SessionsService {
       throw new BadRequestException('Créneau déjà occupé : report refusé (ERR-SES-029)');
     }
 
-    const [, created] = await this.prisma.$transaction([
-      this.prisma.session.update({ where: { id: session.id }, data: { status: 'POSTPONED' } }),
-      this.prisma.session.create({
+    const created = await this.prisma.$transaction(async (tx) => {
+      await tx.session.update({ where: { id: session.id }, data: { status: 'POSTPONED' } });
+      const newSession = await tx.session.create({
         data: {
           groupId: session.groupId,
           date: newDate,
@@ -499,9 +573,30 @@ export class SessionsService {
           teachingMode: session.teachingMode,
           teachingLocationId: session.teachingLocationId,
           status: 'PLANNED',
+          // RM-SES-034 : conserve la traçabilité de la séance d'origine du report.
+          rescheduledFromSessionId: session.id,
         },
-      }),
-    ]);
+      });
+
+      // RM-ACC-019/020 : traçabilité centralisée du report d'une séance.
+      await tx.auditLog.create({
+        data: {
+          userId: teacherId,
+          action: 'SESSION_POSTPONED',
+          targetType: 'Session',
+          targetId: session.id,
+          oldValues: { status: session.status, date: session.date, startTime: session.startTime },
+          newValues: {
+            status: 'POSTPONED',
+            newSessionId: newSession.id,
+            date: newSession.date,
+            startTime: newSession.startTime,
+          },
+        },
+      });
+
+      return newSession;
+    });
 
     // NOT-SES-007+018 : fusionnées en une seule notification par parent pour cette action atomique
     // (voir le commentaire de `EmailService.sendSessionPostponed`).
@@ -534,6 +629,19 @@ export class SessionsService {
       data: { status: 'CANCELLED' },
     });
 
+    // RM-ACC-019/020 : traçabilité de l'annulation — pas de transaction Prisma existante ici
+    // (simple mise à jour), donc journalisation best-effort, non bloquante.
+    await this.prisma.auditLog.create({
+      data: {
+        userId: teacherId,
+        action: 'SESSION_CANCELLED',
+        targetType: 'Session',
+        targetId: sessionId,
+        oldValues: { status: session.status },
+        newValues: { status: 'CANCELLED' },
+      },
+    });
+
     // NOT-SES-003 : hors chemin critique — un échec de notification ne doit jamais annuler l'annulation.
     await this.notifyGroupParents(session.groupId, (groupName, parentEmail) => ({
       type: 'SES_CANCELLED',
@@ -553,7 +661,169 @@ export class SessionsService {
         'Suppression impossible : seule une séance planifiée peut être supprimée (ERR-SES-015)',
       );
     }
-    await this.prisma.session.delete({ where: { id: sessionId } });
+
+    // RM-SES-039 : la suppression d'une séance future ne supprime jamais son historique d'audit —
+    // le log est créé AVANT la suppression physique pour que `targetId` référence encore une séance
+    // qui existait bien (le champ `AuditLog.targetId` n'a pas de contrainte FK, donc l'entrée reste
+    // consultable même une fois la séance supprimée).
+    await this.prisma.$transaction([
+      this.prisma.auditLog.create({
+        data: {
+          userId: teacherId,
+          action: 'SESSION_DELETED',
+          targetType: 'Session',
+          targetId: session.id,
+          oldValues: {
+            groupId: session.groupId,
+            status: session.status,
+            date: session.date,
+            startTime: session.startTime,
+            durationMinutes: session.durationMinutes,
+            teachingMode: session.teachingMode,
+          },
+        },
+      }),
+      this.prisma.session.delete({ where: { id: sessionId } }),
+    ]);
+
     return { id: sessionId, deleted: true };
+  }
+
+  /**
+   * Ch.13.6/RM-SES-009/010/011/012 : passage exceptionnel du mode d'enseignement d'une séance
+   * précise. Ne modifie jamais le mode d'enseignement habituel du groupe/créneau — seule cette
+   * occurrence est affectée (`teachingModeException: true`). Le refus d'un Parent (élève considéré
+   * Absent excusé, hors décompte abandon) est traité par le mécanisme `AbsenceNotice` existant
+   * (`dashboard/absence-notice.service.ts`, hors périmètre de ce chantier).
+   */
+  async setTeachingMode(teacherId: string, sessionId: string, dto: SetTeachingModeDto) {
+    const session = await this.loadOwnedSession(teacherId, sessionId);
+
+    if (session.status === 'LOCKED') {
+      throw new BadRequestException('Séance verrouillée : modification impossible (ERR-SES-001/ERR-SES-012)');
+    }
+    if (session.status === 'CANCELLED') {
+      throw new BadRequestException('Séance annulée : modification impossible (ERR-SES-001)');
+    }
+    if (session.status === 'COMPLETED') {
+      throw new BadRequestException('Séance déjà réalisée : modification impossible (ERR-SES-001)');
+    }
+    if (session.teachingMode === dto.teachingMode) {
+      throw new BadRequestException("Mode d'enseignement identique : aucune modification effectuée (ERR-SES-019)");
+    }
+
+    const updated = await this.prisma.session.update({
+      where: { id: sessionId },
+      data: { teachingMode: dto.teachingMode, teachingModeException: true },
+    });
+
+    // RM-SES-035 : traçabilité de la modification exceptionnelle du mode d'enseignement.
+    await this.prisma.auditLog.create({
+      data: {
+        userId: teacherId,
+        action: 'SESSION_TEACHING_MODE_CHANGED',
+        targetType: 'Session',
+        targetId: sessionId,
+        oldValues: { teachingMode: session.teachingMode, teachingModeException: session.teachingModeException },
+        newValues: { teachingMode: updated.teachingMode, teachingModeException: true },
+      },
+    });
+
+    // NOT-SES-004/RM-SES-011/044 : chaque Parent du groupe est immédiatement informé.
+    const newModeLabel = MODE_LABELS[dto.teachingMode];
+    await this.notifyGroupParents(session.groupId, (groupName, parentEmail) => ({
+      type: 'SES_TEACHING_MODE_CHANGED',
+      title: 'Changement exceptionnel du mode d’enseignement',
+      body: `La séance du groupe "${groupName}" du ${session.date.toLocaleDateString('fr-FR')} à ${session.startTime} passe exceptionnellement en ${newModeLabel}.`,
+      sendEmail: () =>
+        this.email.sendSessionTeachingModeChanged(parentEmail, groupName, session.date, session.startTime, newModeLabel),
+    }));
+
+    return this.toResponse(updated);
+  }
+
+  /**
+   * RM-SES-041 : commentaire pédagogique de la séance, modifiable tant que la séance n'est pas
+   * verrouillée. Chaque modification est historisée (oldValues/newValues) — NOT-SES-016 : les
+   * Parents du groupe sont informés (priorité Information, pas d'e-mail — cf. `NotificationsService`).
+   */
+  async setComment(teacherId: string, sessionId: string, dto: UpdateSessionCommentDto) {
+    const session = await this.loadOwnedSession(teacherId, sessionId);
+
+    if (isLockable(session)) {
+      throw new BadRequestException('Séance verrouillée : modification du commentaire impossible (ERR-SES-001/ERR-SES-012)');
+    }
+
+    const newComment = dto.teacherComment?.trim() || null;
+
+    const updated = await this.prisma.session.update({
+      where: { id: sessionId },
+      data: { teacherComment: newComment },
+    });
+
+    // RM-SES-041 : historisation de chaque modification du commentaire pédagogique.
+    await this.prisma.auditLog.create({
+      data: {
+        userId: teacherId,
+        action: 'SESSION_COMMENT_UPDATED',
+        targetType: 'Session',
+        targetId: sessionId,
+        oldValues: { teacherComment: session.teacherComment },
+        newValues: { teacherComment: newComment },
+      },
+    });
+
+    // NOT-SES-016 : hors chemin critique — un échec de notification ne doit jamais annuler la mise à jour.
+    await this.notifyGroupParents(
+      session.groupId,
+      (groupName) => ({
+        type: 'SES_COMMENT_UPDATED',
+        title: 'Commentaire pédagogique publié',
+        body: `Un commentaire pédagogique a été publié pour la séance du groupe "${groupName}" du ${session.date.toLocaleDateString('fr-FR')}.`,
+      }),
+      'INFORMATION',
+    );
+
+    return this.toResponse(updated);
+  }
+
+  /**
+   * RM-SES-036 : déverrouillage exceptionnel réservé au Super Administrateur — obligatoirement
+   * historisé (aucun déverrouillage automatique n'existe par ailleurs). Remet `lockedAt` à `null`
+   * et fait revenir le statut à TERMINEE (le seul état d'où une séance peut être verrouillée) afin
+   * que ce déverrouillage ait un effet réel sur `isLockable()`/`computeLockDeadline()` — sans cela,
+   * le statut LOCKED garderait la séance verrouillée quoi qu'il arrive à `lockedAt`. `unlockOverrideUntil`
+   * ouvre une fenêtre de correction de 48h (même durée que le verrouillage standard) pendant laquelle
+   * `computeLockDeadline()` ne recalcule plus l'échéance théorique déjà dépassée — passé ce délai, la
+   * séance se reverrouille automatiquement (comportement attendu, pas un bug résiduel).
+   */
+  async unlockAdmin(adminId: string, sessionId: string) {
+    const session = await this.prisma.session.findUnique({ where: { id: sessionId } });
+    if (!session) {
+      throw new NotFoundException('Séance introuvable');
+    }
+    if (session.status !== 'LOCKED') {
+      throw new BadRequestException('Séance non verrouillée : déverrouillage sans objet');
+    }
+
+    const unlockOverrideUntil = new Date(Date.now() + 48 * 60 * 60 * 1000);
+    const [, updated] = await this.prisma.$transaction([
+      this.prisma.auditLog.create({
+        data: {
+          userId: adminId,
+          action: 'SESSION_UNLOCKED_ADMIN',
+          targetType: 'Session',
+          targetId: sessionId,
+          oldValues: { status: session.status, lockedAt: session.lockedAt },
+          newValues: { status: 'COMPLETED', lockedAt: null, unlockOverrideUntil },
+        },
+      }),
+      this.prisma.session.update({
+        where: { id: sessionId },
+        data: { status: 'COMPLETED', lockedAt: null, unlockOverrideUntil },
+      }),
+    ]);
+
+    return this.toResponse(updated);
   }
 }

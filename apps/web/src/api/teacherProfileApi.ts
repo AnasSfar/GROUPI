@@ -13,6 +13,8 @@ export interface TeacherProfile {
   bio: string | null;
   photo: string | null;
   experience: string | null;
+  /** RM-TPR-013 : disponibilités déclaratives, texte libre. */
+  availability: string | null;
   completenessScore: number;
   status: TeacherProfileStatus;
   subjects: { subject: Subject }[];
@@ -23,6 +25,7 @@ export interface UpdateProfilePayload {
   bio?: string;
   photo?: string;
   experience?: string;
+  availability?: string;
 }
 
 export function getMyProfile(accessToken: string): Promise<TeacherProfile> {
@@ -100,6 +103,36 @@ export function createLocation(
 
 export function deactivateLocation(accessToken: string, locationId: string): Promise<TeachingLocation> {
   return apiRequest<TeachingLocation>(`/teacher-profile/me/locations/${locationId}`, {
+    method: 'DELETE',
+    accessToken,
+  });
+}
+
+/** RM-TPR-012 : dépôt de diplôme, facultatif et non vérifié en V1. */
+export interface Diploma {
+  id: string;
+  fileName: string;
+  fileUrl: string | null;
+  uploadedAt: string;
+}
+
+export function listDiplomas(accessToken: string): Promise<Diploma[]> {
+  return apiRequest<Diploma[]>('/teacher-profile/me/diplomas', { accessToken });
+}
+
+export function addDiploma(
+  accessToken: string,
+  payload: { fileName: string; fileUrl?: string },
+): Promise<Diploma> {
+  return apiRequest<Diploma>('/teacher-profile/me/diplomas', {
+    method: 'POST',
+    accessToken,
+    body: payload,
+  });
+}
+
+export function removeDiploma(accessToken: string, diplomaId: string): Promise<{ id: string; deleted: boolean }> {
+  return apiRequest<{ id: string; deleted: boolean }>(`/teacher-profile/me/diplomas/${diplomaId}`, {
     method: 'DELETE',
     accessToken,
   });

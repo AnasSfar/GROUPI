@@ -2,6 +2,13 @@ import { apiRequest } from './client';
 
 export type GroupChangeStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED';
 
+/**
+ * RM-CHG-002 (Ch.20.3) : `PARENT` pour une demande créée via `createGroupChangeRequest`, `TEACHER`
+ * pour une proposition créée via `teacherInitiateGroupChange` — détermine qui doit décider (l'autre
+ * partie) et donc quels boutons afficher (Accepter/Refuser vs Confirmer/Décliner).
+ */
+export type GroupChangeInitiator = 'PARENT' | 'TEACHER';
+
 export interface GroupChangeRequestView {
   id: string;
   status: GroupChangeStatus;
@@ -10,6 +17,7 @@ export interface GroupChangeRequestView {
   effectiveDate: string | null;
   appliedAt: string | null;
   rejectionReason: string | null;
+  initiatedBy: GroupChangeInitiator;
   originalEnrollment: {
     id: string;
     status: string;
@@ -31,6 +39,13 @@ export interface CreateGroupChangeRequestPayload {
   targetGroupId: string;
 }
 
+export interface TeacherInitiateGroupChangePayload {
+  enrollmentId: string;
+  targetGroupId: string;
+  effectiveDate: string;
+  note?: string;
+}
+
 // --- Vue Parent -------------------------------------------------------------
 
 export function createGroupChangeRequest(
@@ -48,10 +63,40 @@ export function cancelGroupChangeRequest(accessToken: string, id: string): Promi
   return apiRequest<GroupChangeRequestView>(`/group-changes/${id}/cancel`, { method: 'POST', accessToken });
 }
 
+/** RM-CHG-002/003 (Ch.20.3) : le Parent confirme une proposition émise par le Professeur. */
+export function confirmGroupChangeProposal(accessToken: string, id: string): Promise<GroupChangeRequestView> {
+  return apiRequest<GroupChangeRequestView>(`/group-changes/${id}/confirm`, { method: 'POST', accessToken });
+}
+
+/** RM-CHG-002/003 (Ch.20.3) : le Parent décline une proposition émise par le Professeur. */
+export function declineGroupChangeProposal(
+  accessToken: string,
+  id: string,
+  reason?: string,
+): Promise<GroupChangeRequestView> {
+  return apiRequest<GroupChangeRequestView>(`/group-changes/${id}/decline`, {
+    method: 'POST',
+    accessToken,
+    body: { reason },
+  });
+}
+
 // --- Vue Professeur (du groupe cible) ----------------------------------------
 
 export function listByTargetGroup(accessToken: string, groupId: string): Promise<GroupChangeRequestView[]> {
   return apiRequest<GroupChangeRequestView[]>(`/groups/${groupId}/group-changes`, { accessToken });
+}
+
+/** RM-CHG-002 (Ch.20.3) : le Professeur initie lui-même une demande pour un de ses élèves. */
+export function teacherInitiateGroupChange(
+  accessToken: string,
+  payload: TeacherInitiateGroupChangePayload,
+): Promise<GroupChangeRequestView> {
+  return apiRequest<GroupChangeRequestView>('/group-changes/teacher-initiate', {
+    method: 'POST',
+    accessToken,
+    body: payload,
+  });
 }
 
 export function acceptGroupChangeRequest(

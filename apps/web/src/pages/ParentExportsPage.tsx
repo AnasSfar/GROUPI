@@ -183,6 +183,12 @@ export function ParentExportsPage() {
         <p className="table-hint">
           Format PDF uniquement (RM-EXP-010) — données organisées par enfant. Fichier conservé 7 jours (RM-EXP-008).
         </p>
+        {/* RM-EXP-005 : avertissement affiché avant/pendant le téléchargement (règle transverse aux
+            exports Professeur et Parent — même flux de téléchargement). */}
+        <p className="form-notice" role="status">
+          Une fois téléchargé, vous êtes seul responsable de la conservation et de la confidentialité de ce fichier
+          (RM-EXP-005).
+        </p>
       </section>
 
       <section className="card-section">
@@ -204,40 +210,46 @@ export function ParentExportsPage() {
         {jobs.length === 0 ? (
           <p>Aucun export généré pour le moment.</p>
         ) : (
-          <div className="table-wrap">
-            <table className="admin-table">
-              <thead>
-                <tr>
-                  <th>Fichier</th>
-                  <th>Statut</th>
-                  <th>Lignes</th>
-                  <th>Généré le</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {jobs.map((job) => (
-                  <tr key={job.id}>
-                    <td data-label="Fichier">{job.fileName ?? '—'}</td>
-                    <td data-label="Statut">
-                      <span className={`badge ${STATUS_BADGE[job.status]}`}>{STATUS_LABELS[job.status]}</span>
-                    </td>
-                    <td data-label="Lignes">{job.rowCount ?? '—'}</td>
-                    <td data-label="Généré le">{new Date(job.createdAt).toLocaleString('fr-FR')}</td>
-                    <td className="admin-actions">
-                      {job.status === 'READY' ? (
-                        <button type="button" onClick={() => handleDownload(job)}>
-                          Télécharger
-                        </button>
-                      ) : (
-                        <span className="table-hint">{STATUS_LABELS[job.status]}</span>
-                      )}
-                    </td>
+          <>
+            <p className="table-hint">
+              Rappel (RM-EXP-005) : après téléchargement, vous êtes seul responsable de la conservation et de la
+              confidentialité du fichier.
+            </p>
+            <div className="table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Fichier</th>
+                    <th>Statut</th>
+                    <th>Lignes</th>
+                    <th>Généré le</th>
+                    <th>Action</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {jobs.map((job) => (
+                    <tr key={job.id}>
+                      <td data-label="Fichier">{job.fileName ?? '—'}</td>
+                      <td data-label="Statut">
+                        <span className={`badge ${STATUS_BADGE[job.status]}`}>{STATUS_LABELS[job.status]}</span>
+                      </td>
+                      <td data-label="Lignes">{job.rowCount ?? '—'}</td>
+                      <td data-label="Généré le">{new Date(job.createdAt).toLocaleString('fr-FR')}</td>
+                      <td className="admin-actions">
+                        {job.status === 'READY' ? (
+                          <button type="button" onClick={() => handleDownload(job)}>
+                            Télécharger
+                          </button>
+                        ) : (
+                          <span className="table-hint">{STATUS_LABELS[job.status]}</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </section>
     </>

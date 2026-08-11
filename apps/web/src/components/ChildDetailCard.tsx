@@ -128,12 +128,22 @@ export function ChildDetailCard({
                   </span>
                 </div>
                 <p>
+                  {/* RM-ATT-016/020 : le signalement reste accepté même après le début théorique de
+                      la séance (`canReportAbsence` ne reflète qu'une fenêtre d'usage recommandée,
+                      jamais un blocage — seul `absenceReported` empêche un nouveau signalement une
+                      fois qu'un signalement existe déjà pour cette séance). */}
                   {s.absenceReported ? (
                     <span className="badge badge-info">Absence signalée</span>
-                  ) : s.canReportAbsence ? (
-                    <AbsenceNoticeButton sessionId={s.id} studentId={child.student.id} onReported={onRefresh} />
                   ) : (
-                    <span className="table-hint">Délai de signalement dépassé</span>
+                    <>
+                      <AbsenceNoticeButton sessionId={s.id} studentId={child.student.id} onReported={onRefresh} />
+                      {!s.canReportAbsence && (
+                        <span className="table-hint" style={{ marginLeft: 8 }}>
+                          Séance déjà commencée — signalement transmis à titre informatif, à la discrétion du
+                          Professeur.
+                        </span>
+                      )}
+                    </>
                   )}
                 </p>
               </li>

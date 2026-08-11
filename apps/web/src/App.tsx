@@ -40,6 +40,7 @@ import { ParentExportsPage } from './pages/ParentExportsPage';
 import { AdminExportsPage } from './pages/AdminExportsPage';
 import { ParentSchoolRequestsPage } from './pages/ParentSchoolRequestsPage';
 import { AdminSchoolRequestsPage } from './pages/AdminSchoolRequestsPage';
+import { AdminReferentialsPage } from './pages/AdminReferentialsPage';
 import { AccountSettingsPage } from './pages/AccountSettingsPage';
 import { VerifyEmailPage } from './pages/VerifyEmailPage';
 import { AdminInvitationAcceptPage } from './pages/AdminInvitationAcceptPage';
@@ -225,6 +226,14 @@ function App() {
                 element={
                   <ProtectedRoute roles={['SUPER_ADMIN', 'ADMIN']}>
                     <AdminAcademicYearsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/referentials"
+                element={
+                  <ProtectedRoute roles={['SUPER_ADMIN', 'ADMIN']}>
+                    <AdminReferentialsPage />
                   </ProtectedRoute>
                 }
               />

@@ -17,6 +17,7 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
+import { AddRoleDto } from './dto/add-role.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { Roles } from './decorators/roles.decorator';
@@ -103,6 +104,28 @@ export class AuthController {
   deactivateMe(@CurrentUser() user: AuthenticatedUser) {
     return this.authService.deactivateMe(user.id);
   }
+
+  /** RM-CYC-013/018 : demande de suppression/anonymisation self-service (avec confirmation côté frontend). */
+  @Post('me/request-deletion')
+  @UseGuards(JwtAuthGuard)
+  requestDeletion(@CurrentUser() user: AuthenticatedUser) {
+    return this.authService.requestDeletion(user.id);
+  }
+
+  /** §9.10, RM-SEC-026/027/028 : journal des connexions du titulaire du compte. */
+  @Get('me/login-history')
+  @UseGuards(JwtAuthGuard)
+  loginHistory(@CurrentUser() user: AuthenticatedUser) {
+    return this.authService.listMyLoginHistory(user.id);
+  }
+
+  /** RM-ACC-002 : ajoute le second rôle métier (Professeur/Parent) au compte actif de l'appelant. */
+  @Post('me/add-role')
+  @UseGuards(JwtAuthGuard)
+  addRole(@CurrentUser() user: AuthenticatedUser, @Body() dto: AddRoleDto) {
+    return this.authService.addRole(user.id, dto);
+  }
+
   @Post('users/:id/force-logout')
   @HttpCode(204)
   @UseGuards(JwtAuthGuard, RolesGuard)

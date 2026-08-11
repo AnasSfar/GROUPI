@@ -48,6 +48,13 @@ export interface ParentEnrollment {
   };
 }
 
+/**
+ * Ch.12.7/RM-INS-014/015 : indicateur synthétique de comportement de paiement du Parent, calculé
+ * sur son historique complet (tous enfants, toutes années confondues si l'année en cours n'a pas
+ * encore d'historique - RM-INS-029). Jamais de montant ni de détail de compte (RM-INS-016).
+ */
+export type ParentPaymentBehavior = 'EXCELLENT' | 'MOYEN' | 'MAUVAIS' | 'NON_DISPONIBLE';
+
 /** Ch.12.7/RM-PAR-007/008 : vue Professeur — jamais le téléphone du Parent (donnée privée). */
 export interface TeacherEnrollment {
   id: string;
@@ -75,6 +82,7 @@ export interface TeacherEnrollment {
     status: string;
     schedules: EnrollmentGroupSchedule[];
   };
+  parentPaymentBehavior: ParentPaymentBehavior;
 }
 
 export interface CreateEnrollmentPayload {

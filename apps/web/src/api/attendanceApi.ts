@@ -1,5 +1,6 @@
 import { apiRequest } from './client';
 import type { SessionStatus } from './sessionsApi';
+import type { TeachingMode } from './groupsApi';
 
 export type AttendanceStatus = 'PRESENT' | 'LATE' | 'EXCUSED_ABSENT' | 'UNEXCUSED_ABSENT';
 export type AttendanceStatsPeriod = 'GROUP' | 'ACADEMIC_YEAR' | 'LAST_30_DAYS';
@@ -9,6 +10,8 @@ export interface AttendanceView {
   status: AttendanceStatus;
   statusLabel: string;
   lateDuration: number | null;
+  /** RM-ATT-019 : durée effective de connexion (minutes), pertinente uniquement pour une séance en ligne. */
+  onlineDurationMinutes: number | null;
   comment: string | null;
   recordedAt: string;
   recordedById: string;
@@ -22,6 +25,7 @@ export interface SessionAttendanceSummary {
   date: string;
   startTime: string;
   durationMinutes: number;
+  teachingMode: TeachingMode;
   status: SessionStatus;
   lockDeadline: string | null;
   locked: boolean;
@@ -41,6 +45,8 @@ export interface SessionAttendanceView {
 export interface SetAttendancePayload {
   status: AttendanceStatus;
   lateDuration?: number;
+  /** RM-ATT-019 : ignorée côté service si la séance n'est pas en mode ONLINE. */
+  onlineDurationMinutes?: number;
   comment?: string;
   reason?: string;
 }

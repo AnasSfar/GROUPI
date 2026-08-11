@@ -33,6 +33,8 @@ export function TeacherSubscriptionPage() {
 
   const [selectedPlanId, setSelectedPlanId] = useState('');
   const [selectedYearId, setSelectedYearId] = useState('');
+  const [newPlanId, setNewPlanId] = useState('');
+  const [changingPlan, setChangingPlan] = useState(false);
 
   const load = useCallback(async () => {
     const token = getAccessToken();
@@ -81,6 +83,29 @@ export function TeacherSubscriptionPage() {
       setError(err instanceof ApiError ? err.message : "La souscription a échoué.");
     }
   }
+
+  async function handleChangePlan() {
+    const token = getAccessToken();
+    if (!token || !newPlanId) return;
+    setError(null);
+    setNotice(null);
+    setChangingPlan(true);
+    try {
+      const updated = await subscriptionsApi.changePlan(token, newPlanId);
+      setNotice(`Votre offre a été changée pour "${updated.plan.name}".`);
+      setNewPlanId('');
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Le changement d'offre a échoué.");
+    } finally {
+      setChangingPlan(false);
+    }
+  }
+
+  const activeSubscription = subscriptions.find(
+    (s) => s.status === 'ACTIVE' && s.academicYear.status === 'OPEN',
+  );
+  const changePlanOptions = plans.filter((p) => !p.isTrial && p.id !== activeSubscription?.plan.id);
 
   if (loading) {
     return <p>Chargement...</p>;
@@ -166,6 +191,37 @@ export function TeacherSubscriptionPage() {
           </div>
         )}
       </section>
+
+      {activeSubscription && (
+        <section className="card-section">
+          <h2>Changer d'offre</h2>
+          <p>
+            Offre actuelle : <strong>{activeSubscription.plan.name}</strong>. La montée de gamme est toujours
+            possible ; la descente est refusée si vos inscriptions actives dépassent la capacité de la nouvelle
+            offre (RM-SUB-012/013).
+          </p>
+          {changePlanOptions.length === 0 ? (
+            <p>Aucune autre offre disponible pour un changement.</p>
+          ) : (
+            <div className="field-row">
+              <label>
+                Nouvelle offre
+                <Select value={newPlanId} onChange={(e) => setNewPlanId(e.target.value)}>
+                  <option value="">Choisir une offre</option>
+                  {changePlanOptions.map((plan) => (
+                    <option key={plan.id} value={plan.id}>
+                      {plan.name} ({plan.price === 0 ? 'gratuit' : `${plan.price} TND`})
+                    </option>
+                  ))}
+                </Select>
+              </label>
+              <button type="button" disabled={!newPlanId || changingPlan} onClick={handleChangePlan}>
+                Changer d'offre
+              </button>
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="card-section">
         <h2>Historique de mes abonnements</h2>

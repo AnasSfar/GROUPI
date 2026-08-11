@@ -20,21 +20,37 @@ export interface GroupScheduleInput {
   startTime: string;
   durationMinutes: number;
   teachingLocationId?: string;
+  /** RM-GRP-007 : mode d'enseignement propre à ce créneau ; omis = hérite du mode du groupe. */
+  teachingMode?: TeachingMode;
 }
 
-export interface GroupSchedule extends GroupScheduleInput {
+export interface GroupSchedule {
   id: string;
+  dayOfWeek: DayOfWeek;
+  startTime: string;
+  durationMinutes: number;
+  teachingLocationId?: string;
   teachingLocation: TeachingLocation | null;
+  /** RM-GRP-007 : `null` = hérite du mode d'enseignement du groupe (toujours renvoyé par l'API). */
+  teachingMode: TeachingMode | null;
+}
+
+/** RM-GRP-007 : mode effectif d'un créneau — l'override du créneau prime sur celui du groupe. */
+export function effectiveTeachingMode(
+  schedule: { teachingMode?: TeachingMode | null },
+  group: { teachingMode: TeachingMode },
+): TeachingMode {
+  return schedule.teachingMode ?? group.teachingMode;
 }
 
 export const DAY_LABELS: Record<DayOfWeek, string> = {
+  SUNDAY: 'Dimanche',
   MONDAY: 'Lundi',
   TUESDAY: 'Mardi',
   WEDNESDAY: 'Mercredi',
   THURSDAY: 'Jeudi',
   FRIDAY: 'Vendredi',
   SATURDAY: 'Samedi',
-  SUNDAY: 'Dimanche',
 };
 
 /** "90" -> "1h30", "60" -> "1h", "45" -> "45min" — durée lisible plutôt qu'un nombre brut de minutes. */
@@ -72,6 +88,9 @@ export interface Group {
   schoolLevel: SchoolLevel;
   academicYear: AcademicYear;
   schedules: GroupSchedule[];
+  /** RM-GRP-009/030 : interruption temporaire de la génération automatique des séances. */
+  generationPausedFrom: string | null;
+  generationPausedUntil: string | null;
   _count: { enrollments: number };
 }
 
@@ -111,6 +130,12 @@ export interface CreateGroupPayload {
 
 export interface UpdateGroupPayload {
   name?: string;
+  /** RM-GRP-016 : modifiable uniquement tant qu'aucune inscription n'existe encore (ERR-GRP-009). */
+  subjectId?: string;
+  /** RM-GRP-016 : modifiable uniquement tant qu'aucune inscription n'existe encore (ERR-GRP-009). */
+  schoolLevelId?: string;
+  /** RM-GRP-016 : modifiable uniquement tant qu'aucune inscription n'existe encore (ERR-GRP-009). */
+  academicYearId?: string;
   capacity?: number;
   publicPrice?: number;
   absenceBillingPolicy?: AbsenceBillingPolicy;
@@ -126,6 +151,18 @@ export interface UpdateGroupPayload {
    * conflit (voir le message d'erreur ERR-GRP-016/ERR-GRP-017 côté client).
    */
   keepFutureSessions?: boolean;
+}
+
+/** RM-GRP-009/030 : `null` efface la borne correspondante (annule tout ou partie de la pause). */
+export interface PauseGenerationPayload {
+  from?: string | null;
+  until?: string | null;
+}
+
+/** RM-GRP-015/027/037 : matière/niveau sont toujours ceux du groupe source. */
+export interface DuplicateGroupPayload {
+  academicYearId?: string;
+  name?: string;
 }
 
 export function listMine(accessToken: string): Promise<Group[]> {
@@ -160,18 +197,47 @@ export function reactivateGroup(accessToken: string, groupId: string): Promise<G
   return apiRequest<Group>(`/groups/${groupId}/reactivate`, { method: 'POST', accessToken });
 }
 
+export function duplicateGroup(
+  accessToken: string,
+  groupId: string,
+  payload: DuplicateGroupPayload,
+): Promise<Group> {
+  return apiRequest<Group>(`/groups/${groupId}/duplicate`, { method: 'POST', accessToken, body: payload });
+}
+
+export function pauseGeneration(
+  accessToken: string,
+  groupId: string,
+  payload: PauseGenerationPayload,
+): Promise<Group> {
+  return apiRequest<Group>(`/groups/${groupId}/pause-generation`, {
+    method: 'PATCH',
+    accessToken,
+    body: payload,
+  });
+}
+
 export function removeGroup(accessToken: string, groupId: string): Promise<{ id: string; deleted: boolean }> {
   return apiRequest(`/groups/${groupId}`, { method: 'DELETE', accessToken });
 }
 
 export function searchGroups(
   accessToken: string,
-  filters: { subjectId?: string; schoolLevelId?: string; city?: string },
+  filters: {
+    subjectId?: string;
+    schoolLevelId?: string;
+    city?: string;
+    // RM-INS-007 : recherche par nom de Professeur / mode d'enseignement.
+    teacherName?: string;
+    teachingMode?: TeachingMode;
+  },
 ): Promise<PublicGroup[]> {
   const params = new URLSearchParams();
   if (filters.subjectId) params.set('subjectId', filters.subjectId);
   if (filters.schoolLevelId) params.set('schoolLevelId', filters.schoolLevelId);
   if (filters.city) params.set('city', filters.city);
+  if (filters.teacherName) params.set('teacherName', filters.teacherName);
+  if (filters.teachingMode) params.set('teachingMode', filters.teachingMode);
   const query = params.toString();
   return apiRequest<PublicGroup[]>(`/groups/search${query ? `?${query}` : ''}`, { accessToken });
 }

@@ -80,6 +80,44 @@ export function deactivateMe(accessToken: string): Promise<void> {
   return apiRequest<void>('/auth/me/deactivate', { method: 'POST', accessToken });
 }
 
+export interface RequestDeletionResponse {
+  anonymized: boolean;
+  deleted: boolean;
+}
+
+/** RM-CYC-013/018 — suppression réelle si aucun historique métier, anonymisation sinon. */
+export function requestDeletion(accessToken: string): Promise<RequestDeletionResponse> {
+  return apiRequest<RequestDeletionResponse>('/auth/me/request-deletion', { method: 'POST', accessToken });
+}
+
+/** §9.6, RM-SEC-020/036 — déconnecte toutes les sessions du compte (tous appareils confondus). */
+export function logoutAll(accessToken: string): Promise<void> {
+  return apiRequest<void>('/auth/logout-all', { method: 'POST', accessToken });
+}
+
+export interface ChangePasswordPayload {
+  currentPassword: string;
+  newPassword: string;
+}
+
+/** RM-SEC-017/033 — déconnecte toutes les sessions en même temps que le changement de mot de passe. */
+export function changePassword(accessToken: string, payload: ChangePasswordPayload): Promise<void> {
+  return apiRequest<void>('/auth/change-password', { method: 'POST', accessToken, body: payload });
+}
+
+export interface LoginHistoryEntry {
+  id: string;
+  success: boolean;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
+}
+
+/** §9.10, RM-SEC-026/027/028 — journal des connexions du titulaire du compte, non modifiable. */
+export function fetchLoginHistory(accessToken: string): Promise<LoginHistoryEntry[]> {
+  return apiRequest<LoginHistoryEntry[]>('/auth/me/login-history', { accessToken });
+}
+
 /** Ch.9.5, ERR-SEC-012 — lien reçu par e-mail à l'inscription. */
 export function verifyEmail(token: string): Promise<void> {
   return apiRequest<void>('/auth/verify-email', { method: 'POST', body: { token } });
@@ -87,4 +125,28 @@ export function verifyEmail(token: string): Promise<void> {
 
 export function resendVerificationEmail(accessToken: string): Promise<void> {
   return apiRequest<void>('/auth/resend-verification', { method: 'POST', accessToken });
+}
+
+export interface AddRolePayload {
+  /** Le rôle métier à ajouter au compte actif (l'autre que celui déjà détenu). */
+  role: Role;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  city: string;
+  /** RM-TPR-001 : requis lorsque `role === 'TEACHER'`. */
+  subjectIds?: string[];
+  schoolLevelIds?: string[];
+}
+
+export interface AddRoleResponse {
+  id: string;
+  email: string;
+  status: string;
+  roles: string[];
+}
+
+/** RM-ACC-002 : cumul de rôles — ajoute Professeur ou Parent au compte déjà titulaire de l'autre. */
+export function addRole(accessToken: string, payload: AddRolePayload): Promise<AddRoleResponse> {
+  return apiRequest<AddRoleResponse>('/auth/me/add-role', { method: 'POST', accessToken, body: payload });
 }

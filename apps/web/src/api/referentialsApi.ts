@@ -1,9 +1,11 @@
-import { apiRequest } from './client';
+import { apiRequest, API_BASE_URL } from './client';
 
 export interface Subject {
   id: string;
   name: string;
   code: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface SchoolLevel {
@@ -11,6 +13,8 @@ export interface SchoolLevel {
   name: string;
   code: string;
   order: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /**
@@ -37,6 +41,8 @@ export function schoolLevelSection(code: string): SchoolLevelSection {
 export interface City {
   id: string;
   name: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface School {
@@ -45,10 +51,12 @@ export interface School {
   nameAr: string | null;
   type: string;
   cityId: string;
-  city: City;
+  city: { id: string; name: string };
   officialCode: string | null;
   latitude: string | null;
   longitude: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface AcademicYear {
@@ -149,5 +157,124 @@ export function createAcademicYear(
   payload: CreateAcademicYearPayload,
 ): Promise<AcademicYear> {
   return apiRequest<AcademicYear>('/referentials/academic-years', { method: 'POST', accessToken, body: payload });
+}
+
+// --- RM-REF-011 — création/modification directe des référentiels (Admin habilité, REF_CREATE) ----
+
+export interface CreateSubjectPayload {
+  name: string;
+  code: string;
+}
+
+export interface UpdateSubjectPayload {
+  name?: string;
+  code?: string;
+  isActive?: boolean;
+}
+
+/** Vue Administrateur (RM-REF-011) : toutes les entrées, actives ou non — contrairement aux
+ *  sélecteurs publics (`listSubjects`/`listSchoolLevels`/`listCities`) qui ne renvoient que les
+ *  entrées actives et n'exposent pas `isActive`. */
+export interface AdminReferentialEntry {
+  isActive: boolean;
+}
+
+export function listAllSubjects(accessToken: string): Promise<(Subject & AdminReferentialEntry)[]> {
+  return apiRequest<(Subject & AdminReferentialEntry)[]>('/admin/referentials/subjects', { accessToken });
+}
+
+export function listAllSchoolLevels(accessToken: string): Promise<(SchoolLevel & AdminReferentialEntry)[]> {
+  return apiRequest<(SchoolLevel & AdminReferentialEntry)[]>('/admin/referentials/school-levels', { accessToken });
+}
+
+export function listAllCities(accessToken: string): Promise<(City & AdminReferentialEntry)[]> {
+  return apiRequest<(City & AdminReferentialEntry)[]>('/admin/referentials/cities', { accessToken });
+}
+
+export function createSubject(accessToken: string, payload: CreateSubjectPayload): Promise<Subject> {
+  return apiRequest<Subject>('/admin/referentials/subjects', { method: 'POST', accessToken, body: payload });
+}
+
+export function updateSubject(
+  accessToken: string,
+  id: string,
+  payload: UpdateSubjectPayload,
+): Promise<Subject> {
+  return apiRequest<Subject>(`/admin/referentials/subjects/${id}`, { method: 'PATCH', accessToken, body: payload });
+}
+
+export interface CreateSchoolLevelPayload {
+  name: string;
+  code: string;
+  order: number;
+}
+
+export interface UpdateSchoolLevelPayload {
+  name?: string;
+  code?: string;
+  order?: number;
+  isActive?: boolean;
+}
+
+export function createSchoolLevel(
+  accessToken: string,
+  payload: CreateSchoolLevelPayload,
+): Promise<SchoolLevel> {
+  return apiRequest<SchoolLevel>('/admin/referentials/school-levels', { method: 'POST', accessToken, body: payload });
+}
+
+export function updateSchoolLevel(
+  accessToken: string,
+  id: string,
+  payload: UpdateSchoolLevelPayload,
+): Promise<SchoolLevel> {
+  return apiRequest<SchoolLevel>(`/admin/referentials/school-levels/${id}`, {
+    method: 'PATCH',
+    accessToken,
+    body: payload,
+  });
+}
+
+export interface CreateCityPayload {
+  name: string;
+}
+
+export interface UpdateCityPayload {
+  name?: string;
+  isActive?: boolean;
+}
+
+export function createCity(accessToken: string, payload: CreateCityPayload): Promise<City> {
+  return apiRequest<City>('/admin/referentials/cities', { method: 'POST', accessToken, body: payload });
+}
+
+export function updateCity(accessToken: string, id: string, payload: UpdateCityPayload): Promise<City> {
+  return apiRequest<City>(`/admin/referentials/cities/${id}`, { method: 'PATCH', accessToken, body: payload });
+}
+
+/** RM-REF-013 — export CSV synchrone des référentiels actifs (matières, niveaux, villes, établissements). */
+export async function downloadReferentialsCsv(accessToken: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/admin/referentials/export.csv`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!response.ok) {
+    let message = `Export impossible (${response.status}).`;
+    try {
+      const data = (await response.json()) as { message?: string | string[] };
+      if (data?.message) message = Array.isArray(data.message) ? data.message.join(' ') : data.message;
+    } catch {
+      // Réponse non-JSON : on garde le message générique.
+    }
+    throw new Error(message);
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'groupi-referentiels.csv';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 

@@ -5,6 +5,7 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { AddSubjectDto } from './dto/add-subject.dto';
 import { AddSchoolLevelDto } from './dto/add-school-level.dto';
 import { CreateTeachingLocationDto } from './dto/create-teaching-location.dto';
+import { CreateDiplomaDto } from './dto/create-diploma.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -66,5 +67,22 @@ export class TeacherProfileController {
     @Param('locationId') locationId: string,
   ) {
     return this.service.deactivateLocation(user.id, locationId);
+  }
+
+  // --- Diplômes (RM-TPR-012) ---
+
+  @Get('me/diplomas')
+  listDiplomas(@CurrentUser() user: AuthenticatedUser) {
+    return this.service.listDiplomas(user.id);
+  }
+
+  @Post('me/diplomas')
+  addDiploma(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateDiplomaDto) {
+    return this.service.addDiploma(user.id, dto);
+  }
+
+  @Delete('me/diplomas/:diplomaId')
+  removeDiploma(@CurrentUser() user: AuthenticatedUser, @Param('diplomaId') diplomaId: string) {
+    return this.service.removeDiploma(user.id, diplomaId);
   }
 }

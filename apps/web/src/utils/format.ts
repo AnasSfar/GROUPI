@@ -7,10 +7,11 @@ export function formatDateTime(date: string, startTime: string): string {
 }
 
 /**
- * `startTime` est saisie et affichée comme heure murale française : on l'ancre explicitement sur
- * Europe/Paris (plutôt que sur UTC ou le fuseau du navigateur) pour rester correct été comme hiver.
+ * `startTime` est saisie et affichée comme heure murale tunisienne : on l'ancre explicitement sur
+ * Africa/Tunis (plutôt que sur UTC ou le fuseau du navigateur) — RM-NAM-008. La Tunisie n'observe
+ * pas l'heure d'été (UTC+1 fixe toute l'année), contrairement à la France.
  */
-const SESSION_TIME_ZONE = 'Europe/Paris';
+const SESSION_TIME_ZONE = 'Africa/Tunis';
 
 const zonedPartsFormatter = new Intl.DateTimeFormat('en-US', {
   timeZone: SESSION_TIME_ZONE,

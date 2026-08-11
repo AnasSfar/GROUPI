@@ -9,5 +9,8 @@ import { GroupAnnouncementsService } from './group-announcements.service';
   imports: [AuthModule, NotificationsModule, SubscriptionsModule],
   controllers: [GroupAnnouncementsController],
   providers: [GroupAnnouncementsService],
+  // RM-COM-016 : exporté pour que TemporalJobsService puisse appeler purgeOldAnnouncements() (purge
+  // de rétention mensuelle).
+  exports: [GroupAnnouncementsService],
 })
 export class GroupAnnouncementsModule {}

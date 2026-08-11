@@ -8,7 +8,7 @@ import { ApiError } from '../api/client';
 import * as referentialsApi from '../api/referentialsApi';
 import * as teacherProfileApi from '../api/teacherProfileApi';
 import type { Subject, SchoolLevel, SubjectLevelPair } from '../api/referentialsApi';
-import type { TeacherProfile, TeacherProfileStatus, TeachingLocation } from '../api/teacherProfileApi';
+import type { TeacherProfile, TeacherProfileStatus, TeachingLocation, Diploma } from '../api/teacherProfileApi';
 
 const PROFILE_STATUS_LABELS: Record<TeacherProfileStatus, string> = {
   DRAFT: 'Profil brouillon',
@@ -73,6 +73,7 @@ export function TeacherProfilePage() {
   const [photo, setPhoto] = useState('');
   const [teachingInstitution, setTeachingInstitution] = useState('');
   const [experience, setExperience] = useState('');
+  const [availability, setAvailability] = useState('');
 
   const [subjectToAdd, setSubjectToAdd] = useState('');
   const [showSubjectPicker, setShowSubjectPicker] = useState(false);
@@ -81,27 +82,34 @@ export function TeacherProfilePage() {
   const [locationLabel, setLocationLabel] = useState('');
   const [locationAddress, setLocationAddress] = useState('');
 
+  const [diplomas, setDiplomas] = useState<Diploma[]>([]);
+  const [diplomaFileName, setDiplomaFileName] = useState('');
+  const [diplomaFileUrl, setDiplomaFileUrl] = useState('');
+
   const load = useCallback(async () => {
     const token = getAccessToken();
     if (!token) return;
     setLoading(true);
     setError(null);
     try {
-      const [me, allSubjects, allLevels, allSubjectLevels, allLocations] = await Promise.all([
+      const [me, allSubjects, allLevels, allSubjectLevels, allLocations, myDiplomas] = await Promise.all([
         teacherProfileApi.getMyProfile(token),
         referentialsApi.listSubjects(token),
         referentialsApi.listSchoolLevels(token),
         referentialsApi.listSubjectLevels(token),
         teacherProfileApi.listLocations(token),
+        teacherProfileApi.listDiplomas(token),
       ]);
       setProfile(me);
       setSubjects(allSubjects);
       setSchoolLevels(allLevels);
       setSubjectLevels(allSubjectLevels);
       setLocations(allLocations);
+      setDiplomas(myDiplomas);
       setDraftLevelIds(me.schoolLevels.map(({ schoolLevel }) => schoolLevel.id));
       setBio(me.bio ?? '');
       setPhoto(me.photo ?? '');
+      setAvailability(me.availability ?? '');
       const parsedExperience = parseExperience(me.experience);
       setTeachingInstitution(parsedExperience.institution);
       setExperience(parsedExperience.details);
@@ -143,6 +151,7 @@ export function TeacherProfilePage() {
         bio,
         photo,
         experience: formatExperience(teachingInstitution, experience),
+        availability,
       });
       updated = await saveDraftLevels(token, updated);
       setProfile(updated);
@@ -232,6 +241,45 @@ export function TeacherProfilePage() {
       showToast('Lieu retiré');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Impossible de retirer ce lieu.');
+    }
+  }
+
+  async function handleAddDiploma(event: FormEvent) {
+    event.preventDefault();
+    const token = getAccessToken();
+    if (!token || !diplomaFileName) return;
+    setError(null);
+    try {
+      const created = await teacherProfileApi.addDiploma(token, {
+        fileName: diplomaFileName,
+        fileUrl: diplomaFileUrl || undefined,
+      });
+      setDiplomas((prev) => [created, ...prev]);
+      setDiplomaFileName('');
+      setDiplomaFileUrl('');
+      showToast('Diplôme ajouté');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Impossible d'ajouter ce diplôme.");
+    }
+  }
+
+  async function handleRemoveDiploma(diploma: Diploma) {
+    const token = getAccessToken();
+    if (!token) return;
+    const ok = await confirm({
+      title: `Retirer « ${diploma.fileName} » ?`,
+      message: 'Ce diplôme ne sera plus listé sur votre profil.',
+      confirmLabel: 'Retirer',
+      danger: true,
+    });
+    if (!ok) return;
+    setError(null);
+    try {
+      await teacherProfileApi.removeDiploma(token, diploma.id);
+      setDiplomas((prev) => prev.filter((d) => d.id !== diploma.id));
+      showToast('Diplôme retiré');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Impossible de retirer ce diplôme.');
     }
   }
 
@@ -435,6 +483,51 @@ export function TeacherProfilePage() {
                 </button>
               </form>
             </section>
+
+            <section className="card-section">
+              <h2>Diplômes</h2>
+              <p className="form-hint">
+                Dépôt facultatif — les diplômes ne sont pas vérifiés dans cette version (RM-TPR-012), ils
+                restent une information privée non visible par les Parents.
+              </p>
+              <ul className="tag-list">
+                {diplomas.map((diploma) => (
+                  <li key={diploma.id} className="tag">
+                    {diploma.fileUrl ? (
+                      <a href={diploma.fileUrl} target="_blank" rel="noreferrer">
+                        {diploma.fileName}
+                      </a>
+                    ) : (
+                      diploma.fileName
+                    )}
+                    <button
+                      type="button"
+                      aria-label={`Retirer ${diploma.fileName}`}
+                      onClick={() => handleRemoveDiploma(diploma)}
+                    >
+                      &times;
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <form className="add-row" onSubmit={handleAddDiploma}>
+                <input
+                  type="text"
+                  placeholder="Nom du diplôme"
+                  value={diplomaFileName}
+                  onChange={(e) => setDiplomaFileName(e.target.value)}
+                />
+                <input
+                  type="text"
+                  placeholder="Lien vers le fichier (optionnel)"
+                  value={diplomaFileUrl}
+                  onChange={(e) => setDiplomaFileUrl(e.target.value)}
+                />
+                <button type="submit" disabled={!diplomaFileName}>
+                  Ajouter
+                </button>
+              </form>
+            </section>
           </div>
 <section className="card-section">
             <h2>Niveaux scolaires</h2>
@@ -495,6 +588,15 @@ export function TeacherProfilePage() {
             <label>
               Expérience
               <textarea value={experience} onChange={(e) => setExperience(e.target.value)} rows={3} />
+            </label>
+            <label>
+              Disponibilités
+              <textarea
+                value={availability}
+                onChange={(e) => setAvailability(e.target.value)}
+                rows={2}
+                placeholder="Ex. Lundi/Mercredi soir, weekend"
+              />
             </label>
             <button type="button" onClick={handleSaveInfo} disabled={savingLevels}>
               Enregistrer

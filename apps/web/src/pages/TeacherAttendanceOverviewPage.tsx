@@ -176,6 +176,7 @@ export function TeacherAttendanceOverviewPage() {
                   <th>Heure</th>
                   <th>Élève</th>
                   <th>Statut</th>
+                  <th>Durée connexion</th>
                   <th>Facturation</th>
                 </tr>
               </thead>
@@ -188,6 +189,9 @@ export function TeacherAttendanceOverviewPage() {
                       {entry.student.firstName} {entry.student.lastName}
                     </td>
                     <td data-label="Statut">{entry.statusLabel}</td>
+                    <td data-label="Durée connexion">
+                      {entry.onlineDurationMinutes != null ? `${entry.onlineDurationMinutes} min` : '—'}
+                    </td>
                     <td data-label="Facturation">{entry.billable ? 'Facturée' : 'Non facturée'}</td>
                   </tr>
                 ))}

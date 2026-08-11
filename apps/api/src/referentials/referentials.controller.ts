@@ -1,4 +1,16 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  NotFoundException,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
@@ -21,7 +33,8 @@ export class ReferentialsController {
   subjects() {
     return this.prisma.subject.findMany({
       where: { isActive: true },
-      select: { id: true, name: true, code: true },
+      // RM-REF-012 : date de création / dernière modification exposées avec chaque entrée.
+      select: { id: true, name: true, code: true, createdAt: true, updatedAt: true },
       orderBy: { name: 'asc' },
     });
   }
@@ -31,7 +44,8 @@ export class ReferentialsController {
   schoolLevels() {
     return this.prisma.schoolLevel.findMany({
       where: { isActive: true },
-      select: { id: true, name: true, code: true, order: true },
+      // RM-REF-012 : date de création / dernière modification exposées avec chaque entrée.
+      select: { id: true, name: true, code: true, order: true, createdAt: true, updatedAt: true },
       orderBy: { order: 'asc' },
     });
   }
@@ -52,7 +66,8 @@ export class ReferentialsController {
   cities() {
     return this.prisma.city.findMany({
       where: { isActive: true },
-      select: { id: true, name: true },
+      // RM-REF-012 : date de création / dernière modification exposées avec chaque entrée.
+      select: { id: true, name: true, createdAt: true, updatedAt: true },
       orderBy: { name: 'asc' },
     });
   }
@@ -72,6 +87,9 @@ export class ReferentialsController {
         officialCode: true,
         latitude: true,
         longitude: true,
+        // RM-REF-012 : date de création / dernière modification exposées avec chaque entrée.
+        createdAt: true,
+        updatedAt: true,
       },
       orderBy: [{ city: { name: 'asc' } }, { name: 'asc' }],
     });
@@ -182,6 +200,46 @@ export class ReferentialsController {
     return this.prisma.academicYear.create({
       data: { label: dto.label, startDate, endDate, status: 'OPEN' },
       select: { id: true, label: true, status: true, startDate: true, endDate: true },
+    });
+  }
+
+  /**
+   * RM-TRS-002 : les contrôles de verrouillage (groupes, inscriptions, séances, comptes comptables
+   * — `ensureAccountCurrent` et équivalents) sont déjà câblés partout sur `academicYear.status`, mais
+   * rien ne permettait jusqu'ici de déclencher réellement la clôture. Une fois `CLOSED`, plus aucune
+   * création n'est possible pour cette année (les vérifications existantes le garantissent) ; les
+   * données passées restent intégralement consultables (RM-TRS-003/RM-CYC-001, aucune suppression).
+   */
+  @Patch('academic-years/:id/close')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('REF_CREATE')
+  async closeAcademicYear(@Param('id') id: string, @CurrentUser() actor: AuthenticatedUser, @Req() req: any) {
+    const academicYear = await this.prisma.academicYear.findUnique({ where: { id } });
+    if (!academicYear) {
+      throw new NotFoundException('Année académique introuvable');
+    }
+    if (academicYear.status === 'CLOSED') {
+      throw new BadRequestException('Cette année académique est déjà clôturée');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.academicYear.update({
+        where: { id },
+        data: { status: 'CLOSED' },
+        select: { id: true, label: true, status: true, startDate: true, endDate: true },
+      });
+      await tx.auditLog.create({
+        data: {
+          userId: actor.id,
+          action: 'ACADEMIC_YEAR_CLOSED',
+          targetType: 'AcademicYear',
+          targetId: id,
+          oldValues: { status: academicYear.status },
+          newValues: { status: 'CLOSED' },
+          ipAddress: req.ip,
+        },
+      });
+      return updated;
     });
   }
 }

@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AccountingService } from '../accounting/accounting.service';
-import { computeLockDeadline, isLockable, theoreticalStart } from '../sessions/sessions.service';
+import { computeLockDeadline, isLockable, theoreticalStart, theoreticalEnd } from '../sessions/sessions.service';
 import { SetAttendanceDto } from './dto/set-attendance.dto';
 import type { AttendanceStatsPeriod } from './dto/attendance-stats-query.dto';
 
@@ -30,6 +30,7 @@ function addDays(date: Date, days: number): Date {
  * règle de facturation pour permettre à l'UI/aux futurs consommateurs de l'afficher dès maintenant.
  */
 function isBillable(status: AttendanceStatus, policy: AbsenceBillingPolicy): boolean {
+  if (status === 'NOT_SET') return false;
   if (status === 'PRESENT' || status === 'LATE') return true;
   if (policy === 'ALL_BILLED') return true;
   if (policy === 'NONE_BILLED') return false;
@@ -41,15 +42,18 @@ const STATUS_LABELS: Record<AttendanceStatus, string> = {
   LATE: 'Retard',
   EXCUSED_ABSENT: 'Absent excusé',
   UNEXCUSED_ABSENT: 'Absent non excusé',
+  NOT_SET: 'Non renseigné',
 };
 
 /** Annexe H : NOT-ATT-001/004 (Présent/Retard) sont Information — pas d'e-mail ; NOT-ATT-002/003
- *  (absences) sont Important — e-mail en plus du centre d'activités. */
+ *  (absences) sont Important — e-mail en plus du centre d'activités. NOT_SET n'est jamais notifié
+ *  (une ligne réinitialisée est filtrée avant validation, cf. `validate()`). */
 const ATT_PRIORITY: Record<AttendanceStatus, ActivityPriority> = {
   PRESENT: 'INFORMATION',
   LATE: 'INFORMATION',
   EXCUSED_ABSENT: 'IMPORTANT',
   UNEXCUSED_ABSENT: 'IMPORTANT',
+  NOT_SET: 'INFORMATION',
 };
 
 @Injectable()
@@ -114,6 +118,9 @@ export class AttendanceService {
       status: attendance.status,
       statusLabel: STATUS_LABELS[attendance.status],
       lateDuration: attendance.lateDuration,
+      /** RM-ATT-019 : durée effective de connexion (minutes), pertinente uniquement pour une
+       *  séance en ligne — `null` sinon (jamais saisie côté service pour une séance en présentiel). */
+      onlineDurationMinutes: attendance.onlineDurationMinutes,
       comment: attendance.comment,
       recordedAt: attendance.recordedAt,
       recordedById: attendance.recordedById,
@@ -129,6 +136,7 @@ export class AttendanceService {
       date: session.date,
       startTime: session.startTime,
       durationMinutes: session.durationMinutes,
+      teachingMode: session.teachingMode,
       status: session.status,
       lockDeadline: computeLockDeadline(session),
       locked: session.status === 'LOCKED',
@@ -161,10 +169,12 @@ export class AttendanceService {
       session: this.toSessionView(session),
       entries: enrollments.map((e) => {
         const a = byStudent.get(e.studentId);
+        // RM-ATT-011 : une ligne réinitialisée (NOT_SET) équivaut à "pas encore saisie" côté vue —
+        // seule la ligne survit en base (traçabilité), jamais son statut vide.
         return {
           enrollmentId: e.id,
           student: e.student,
-          attendance: a ? this.toAttendanceView(a, policy) : null,
+          attendance: a && a.status !== 'NOT_SET' ? this.toAttendanceView(a, policy) : null,
         };
       }),
     };
@@ -215,6 +225,10 @@ export class AttendanceService {
       }
     }
     const lateDuration = dto.status === 'LATE' ? dto.lateDuration! : null;
+    /** RM-ATT-019 : durée de connexion pertinente uniquement pour une séance en ligne — une valeur
+     *  fournie pour une séance en présentiel est simplement ignorée (purement informatif, pas
+     *  d'ERR-ATT dédié dans le référentiel pour ce cas). */
+    const onlineDurationMinutes = session.teachingMode === 'ONLINE' ? dto.onlineDurationMinutes : undefined;
 
     const group = await this.prisma.group.findUniqueOrThrow({ where: { id: session.groupId } });
 
@@ -229,6 +243,7 @@ export class AttendanceService {
             data: {
               status: dto.status,
               lateDuration,
+              onlineDurationMinutes,
               comment: dto.comment,
               modifiedAt: new Date(),
             },
@@ -240,6 +255,7 @@ export class AttendanceService {
               enrollmentId: enrollment.id,
               status: dto.status,
               lateDuration,
+              onlineDurationMinutes,
               comment: dto.comment,
               recordedAt: new Date(),
               recordedById: teacherId,
@@ -261,6 +277,41 @@ export class AttendanceService {
       return saved;
     });
 
+    // RM-ATT-014/RM-SES-014/RM-SES-044 : toute correction d'une présence déjà existante (par
+    // opposition à la toute première saisie) notifie immédiatement le Parent — même mécanisme que
+    // la notification de validation (NotificationsService.notify, cf. `validate()` ci-dessous),
+    // mais systématique et Important (NOT-ATT-005), quel que soit le nouveau statut. Une ligne
+    // réinitialisée (RM-ATT-011, `existing.status === 'NOT_SET'`) n'a jamais été vue du Parent :
+    // ce n'est pas une correction mais une première saisie effective.
+    if (existing && existing.status !== 'NOT_SET') {
+      const student = await this.prisma.student.findUniqueOrThrow({
+        where: { id: studentId },
+        select: {
+          firstName: true,
+          lastName: true,
+          parentId: true,
+          parent: { select: { user: { select: { email: true } } } },
+        },
+      });
+      const label = STATUS_LABELS[dto.status];
+      await this.notifications.notify({
+        recipientUserId: student.parentId,
+        type: `ATT_CORRECTED_${dto.status}`,
+        priority: 'IMPORTANT',
+        title: 'Présence corrigée',
+        body: `${student.firstName} ${student.lastName} : la présence à la séance du ${session.date.toLocaleDateString('fr-FR')} a été corrigée en "${label}" (NOT-ATT-005).`,
+        refType: 'Attendance',
+        refId: attendance.id,
+        sendEmail: () =>
+          this.email.sendAttendanceRecorded(
+            student.parent.user.email,
+            `${student.firstName} ${student.lastName}`,
+            label,
+            session.date,
+          ),
+      });
+    }
+
     return this.toAttendanceView(attendance, group.absenceBillingPolicy);
   }
 
@@ -268,6 +319,12 @@ export class AttendanceService {
    * EVT-ATT-018 : avant la validation définitive, le Professeur peut remettre une présence à
    * NON_RENSEIGNEE. Autorisé uniquement tant que la séance n'a pas été validée (PLANNED) — une fois
    * validée (COMPLETED/LOCKED), RM-ATT-011 s'applique et plus aucune présence n'est supprimée.
+   *
+   * RM-ATT-011 : "Toutes les présences sont conservées définitivement. Aucune présence n'est
+   * supprimée." — la ligne `Attendance` est donc désormais remise à `NOT_SET` (`AttendanceHistory`
+   * reçoit une entrée de transition normale, comme pour toute correction via `setOne()`) plutôt que
+   * supprimée. `list()`/`getGroupStats()`/`getStudentAttendanceForParent()` traitent une ligne
+   * `NOT_SET` comme "pas encore saisie" et `validate()` continue de l'exiger avant validation.
    */
   async reset(teacherId: string, sessionId: string, studentId: string) {
     const session = await this.loadOwnedSession(teacherId, sessionId);
@@ -283,8 +340,42 @@ export class AttendanceService {
       throw new NotFoundException('Présence inexistante (ERR-ATT-020)');
     }
     await this.prisma.$transaction([
-      this.prisma.attendanceHistory.deleteMany({ where: { attendanceId: attendance.id } }),
-      this.prisma.attendance.delete({ where: { id: attendance.id } }),
+      this.prisma.auditLog.create({
+        data: {
+          userId: teacherId,
+          action: 'ATTENDANCE_RESET',
+          targetType: 'Attendance',
+          targetId: attendance.id,
+          oldValues: {
+            sessionId: attendance.sessionId,
+            studentId: attendance.studentId,
+            status: attendance.status,
+            lateDuration: attendance.lateDuration,
+            comment: attendance.comment,
+          },
+          newValues: { status: 'NOT_SET' },
+        },
+      }),
+      this.prisma.attendanceHistory.create({
+        data: {
+          attendanceId: attendance.id,
+          previousStatus: attendance.status,
+          previousLateDuration: attendance.lateDuration,
+          newStatus: 'NOT_SET',
+          newLateDuration: null,
+          changedById: teacherId,
+        },
+      }),
+      this.prisma.attendance.update({
+        where: { id: attendance.id },
+        data: {
+          status: 'NOT_SET',
+          lateDuration: null,
+          onlineDurationMinutes: null,
+          comment: null,
+          modifiedAt: new Date(),
+        },
+      }),
     ]);
     return { studentId, reset: true };
   }
@@ -305,10 +396,22 @@ export class AttendanceService {
     if (theoreticalStart(session) > new Date()) {
       throw new BadRequestException('Séance non encore commencée : validation refusée (ERR-ATT-004)');
     }
+    // RM-SES-038 : passage à TERMINEE (COMPLETED) autorisé seulement si l'heure de fin théorique
+    // est atteinte ou dépassée — pas seulement l'heure de début (RM-SES-037, déjà vérifié ci-dessus).
+    if (theoreticalEnd(session) > new Date()) {
+      throw new BadRequestException(
+        'Séance non encore terminée : validation refusée (RM-SES-038/ERR-ATT-004)',
+      );
+    }
 
     const [eligible, attendances] = await Promise.all([
       this.prisma.enrollment.findMany({ where: { groupId: session.groupId, status: 'ACTIVE' } }),
-      this.prisma.attendance.findMany({ where: { sessionId }, select: { studentId: true } }),
+      // RM-ATT-011 : une ligne NOT_SET (réinitialisée par reset()) compte comme non couverte —
+      // même exigence de statut réel pour chaque élève actif qu'auparavant (RM-ATT-027).
+      this.prisma.attendance.findMany({
+        where: { sessionId, status: { not: 'NOT_SET' } },
+        select: { studentId: true },
+      }),
     ]);
     const covered = new Set(attendances.map((a) => a.studentId));
     const missing = eligible.filter((e) => !covered.has(e.studentId));
@@ -324,7 +427,9 @@ export class AttendanceService {
     // n'est envoyé que pour les absences (Important), pas pour Présent/Retard (Information) —
     // correction assumée par rapport au comportement précédent qui envoyait un e-mail systématique.
     const notified = await this.prisma.attendance.findMany({
-      where: { sessionId },
+      // RM-ATT-011 : exclut toute ligne NOT_SET résiduelle (élève réinitialisé puis retiré de
+      // l'inscription active avant validation) — jamais de notification pour un statut vide.
+      where: { sessionId, status: { not: 'NOT_SET' } },
       include: {
         student: {
           select: { firstName: true, lastName: true, parentId: true, parent: { select: { user: { select: { email: true } } } } },
@@ -409,6 +514,40 @@ export class AttendanceService {
       }
     }
 
+    // NOT-ATT-018/RM-ATT-031 : seuil de retards paramétrable par le Professeur (`Group.
+    // latenessAlertThreshold`, nullable — pas d'alerte tant qu'il n'est pas renseigné). Même
+    // pattern que l'alerte d'abandon ci-dessus : décompte cumulé sur les séances déjà
+    // COMPLETED/LOCKED du groupe, notification déclenchée uniquement au franchissement exact du
+    // seuil pour ne pas re-notifier à chaque retard suivant.
+    const newlyLate = notified.filter((a) => a.status === 'LATE');
+    if (newlyLate.length > 0 && session.group.latenessAlertThreshold != null) {
+      const latenessThreshold = session.group.latenessAlertThreshold;
+      const lateHistory = await this.prisma.attendance.findMany({
+        where: {
+          studentId: { in: newlyLate.map((a) => a.studentId) },
+          status: 'LATE',
+          session: { groupId: session.groupId, status: { in: ['COMPLETED', 'LOCKED'] } },
+        },
+        select: { studentId: true },
+      });
+      const lateCounts = new Map<string, number>();
+      for (const a of lateHistory) {
+        lateCounts.set(a.studentId, (lateCounts.get(a.studentId) ?? 0) + 1);
+      }
+      const toAlertLate = newlyLate.filter((a) => lateCounts.get(a.studentId) === latenessThreshold);
+      for (const a of toAlertLate) {
+        await this.notifications.notify({
+          recipientUserId: session.group.teacherId,
+          type: 'ATT_LATENESS_THRESHOLD',
+          priority: 'INFORMATION',
+          title: 'Seuil de retards atteint',
+          body: `${a.student.firstName} ${a.student.lastName} totalise ${latenessThreshold} retards (NOT-ATT-018).`,
+          refType: 'Student',
+          refId: a.studentId,
+        });
+      }
+    }
+
     return this.list(teacherId, sessionId);
   }
 
@@ -486,8 +625,11 @@ export class AttendanceService {
 
   private summarize(
     student: { id: string; firstName: string; lastName: string },
-    list: { status: AttendanceStatus }[],
+    rawList: { status: AttendanceStatus }[],
   ) {
+    // RM-ATT-011 : une ligne NOT_SET (réinitialisée avant validation, jamais vue du Parent) ne
+    // compte dans aucune statistique — filtré ici une fois pour tous les appelants de summarize().
+    const list = rawList.filter((a) => a.status !== 'NOT_SET');
     const totalSessions = list.length;
     const present = list.filter((a) => a.status === 'PRESENT').length;
     const late = list.filter((a) => a.status === 'LATE').length;

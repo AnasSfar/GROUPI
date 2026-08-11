@@ -148,6 +148,46 @@ export class AccountingService {
     });
   }
 
+  /**
+   * Ch.20.8/RM-CHG-013 : reporte le solde du compte de suivi comptable de l'inscription D'ORIGINE
+   * sur le NOUVEAU compte créé pour la nouvelle inscription lors d'un changement de groupe définitif
+   * (appelée par `GroupChangeService.finalizeAcceptance`, dans la même transaction que la création du
+   * nouveau compte). L'ancien compte n'est JAMAIS modifié (RM-CHG-007) : il reste intact et
+   * consultable tel quel. Le report est matérialisé par une écriture ADMIN_ADJUSTMENT sur le nouveau
+   * compte — crédit si le solde d'origine était créditeur (avance du Parent reportée), débit s'il
+   * était débiteur (dette reportée) — puisqu'aucune séance n'est associée à cette opération (donc
+   * hors du circuit normal d'ajustement Professeur sous 48h, RM-CPT-019). Ne poste rien si le solde
+   * d'origine est nul (RM-CPT-030 : un montant d'écriture est toujours strictement positif).
+   */
+  async carryOverBalanceForGroupChange(
+    tx: Tx,
+    params: {
+      originalEnrollmentId: string;
+      newAccount: Pick<AccountingAccount, 'id' | 'status' | 'periodId'>;
+      authorId: string;
+    },
+  ): Promise<AccountingEntry | null> {
+    const originalAccount = await tx.accountingAccount.findUnique({
+      where: { enrollmentId: params.originalEnrollmentId },
+      select: { id: true },
+    });
+    if (!originalAccount) return null; // RM-CPT-002 : ne devrait pas arriver pour une inscription ACTIVE
+
+    const balance = await this.computeBalance(originalAccount.id);
+    if (balance === 0) return null;
+
+    return this.postEntry(tx, {
+      account: params.newAccount,
+      type: 'ADMIN_ADJUSTMENT',
+      direction: balance > 0 ? 'CREDIT' : 'DEBIT',
+      amount: round3(Math.abs(balance)),
+      effectiveDate: new Date(),
+      authorId: params.authorId,
+      reason: 'ADMIN_CORRECTION',
+      reasonNote: `RM-CHG-013 : report du solde du compte de l'inscription d'origine ${params.originalEnrollmentId} suite à un changement de groupe.`,
+    });
+  }
+
   private async loadAccountForEnrollment(enrollmentId: string): Promise<AccountWithRelations> {
     const account = await this.prisma.accountingAccount.findUnique({
       where: { enrollmentId },
@@ -248,7 +288,10 @@ export class AccountingService {
   private async postEntry(
     tx: Tx,
     params: {
-      account: AccountWithRelations;
+      // Ch.20.8/RM-CHG-013 : `carryOverBalanceForGroupChange` poste sur un compte fraîchement créé
+      // (pas encore chargé avec ses relations `ACCOUNT_INCLUDE`) — seuls id/status/periodId sont
+      // réellement utilisés ici, d'où cette signature volontairement plus étroite que `AccountWithRelations`.
+      account: Pick<AccountingAccount, 'id' | 'status' | 'periodId'>;
       type: AccountingEntryType;
       direction: AccountingEntryDirection;
       amount: number;
@@ -418,8 +461,8 @@ export class AccountingService {
     }
 
     const effectiveDate = dto.effectiveDate ? new Date(dto.effectiveDate) : new Date();
-    const entry = await this.prisma.$transaction((tx) =>
-      this.postEntry(tx, {
+    const entry = await this.prisma.$transaction(async (tx) => {
+      const posted = await this.postEntry(tx, {
         account,
         type: 'PAYMENT',
         direction: 'CREDIT',
@@ -428,8 +471,27 @@ export class AccountingService {
         authorId: teacherId,
         sessionId: dto.sessionId,
         paymentMethod: dto.paymentMethod,
-      }),
-    );
+      });
+
+      // RM-ACC-019/020 : traçabilité centralisée d'un paiement enregistré manuellement par le Professeur.
+      await tx.auditLog.create({
+        data: {
+          userId: teacherId,
+          action: 'PAYMENT_RECORDED',
+          targetType: 'AccountingEntry',
+          targetId: posted.id,
+          newValues: {
+            accountId: account.id,
+            enrollmentId,
+            amount: dto.amount,
+            paymentMethod: dto.paymentMethod ?? null,
+            sessionId: dto.sessionId ?? null,
+          },
+        },
+      });
+
+      return posted;
+    });
 
     await this.notifications.notify({
       recipientUserId: account.enrollment.student.parentId,
@@ -622,6 +684,19 @@ export class AccountingService {
         reasonNote: `Annulation de l'écriture ${original.entryNumber}`,
       });
       await tx.accountingEntry.update({ where: { id: original.id }, data: { status: 'REVERSED' } });
+
+      // RM-ACC-019/020 : traçabilité centralisée de l'annulation d'un paiement par le Professeur.
+      await tx.auditLog.create({
+        data: {
+          userId: teacherId,
+          action: 'PAYMENT_CANCELLED',
+          targetType: 'AccountingEntry',
+          targetId: original.id,
+          oldValues: { status: 'POSTED', amount: Number(original.amount) },
+          newValues: { status: 'REVERSED', reversalEntryId: rev.id },
+        },
+      });
+
       return rev;
     });
 

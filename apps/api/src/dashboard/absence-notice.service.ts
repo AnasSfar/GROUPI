@@ -2,7 +2,6 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { theoreticalStart } from '../sessions/sessions.service';
 import { CreateAbsenceNoticeDto } from './dto/create-absence-notice.dto';
 
 /**
@@ -39,8 +38,21 @@ export class AbsenceNoticeService {
   }
 
   /**
-   * ERR-DSH-007 : refusé une fois le début théorique de la séance dépassé. Un second appel avant ce
-   * délai corrige le signalement précédent (upsert) plutôt que d'en créer un doublon.
+   * RM-ATT-016/020/ERR-ATT-007 : le référentiel prévoit un signalement "jusqu'à 24 heures avant" la
+   * séance comme USAGE PRÉVU, mais RM-ATT-020 est clair — ce signalement n'est qu'une information
+   * transmise au Professeur, jamais un acte bloquant. ERR-ATT-007 confirme explicitement qu'un
+   * signalement fait après le début théorique de la séance reste ACCEPTÉ ("Signalement accepté
+   * mais statut laissé à la discrétion du Professeur") : il n'y a donc ni rejet automatique après
+   * le début, ni fenêtre stricte de 24h imposée en amont (ça bloquerait un cas que le référentiel
+   * veut au contraire laisser passer). Ancien comportement corrigé : ce service rejetait tout
+   * signalement passé le début théorique de la séance (ERR-DSH-007, Annexe catalogue erreurs
+   * Ch.16) — ce code catalogue concerne le tableau de bord (Ch.16) et est en tension directe avec
+   * ERR-ATT-007/RM-ATT-016/020 (Ch.14) sur ce point précis ; on retient ici l'interprétation Ch.14,
+   * plus récente et plus spécifique à la présence. Seul reste un rejet si la séance n'existe plus
+   * "à signaler" (PLANNED est le seul statut qui accepte encore un signalement — COMPLETED/LOCKED/
+   * CANCELLED/POSTPONED en sont tous exclus, POSTPONED étant remplacée par une nouvelle séance et
+   * LOCKED n'étant atteignable qu'après COMPLETED). Un second appel avant ce point corrige le
+   * signalement précédent (upsert) plutôt que d'en créer un doublon.
    */
   async create(parentId: string, sessionId: string, dto: CreateAbsenceNoticeDto) {
     const session = await this.prisma.session.findUnique({
@@ -64,10 +76,7 @@ export class AbsenceNoticeService {
     }
 
     if (session.status !== 'PLANNED') {
-      throw new BadRequestException('Cette séance ne peut plus recevoir de signalement (ERR-DSH-007)');
-    }
-    if (theoreticalStart(session) <= new Date()) {
-      throw new BadRequestException('Signalement d’absence hors délai : la séance a déjà commencé (ERR-DSH-007)');
+      throw new BadRequestException('Cette séance ne peut plus recevoir de signalement (ERR-ATT-019)');
     }
 
     const notice = await this.prisma.absenceNotice.upsert({

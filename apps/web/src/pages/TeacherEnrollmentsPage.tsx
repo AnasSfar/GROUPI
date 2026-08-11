@@ -10,7 +10,7 @@ import * as enrollmentsApi from '../api/enrollmentsApi';
 import * as groupChangeApi from '../api/groupChangeApi';
 import { formatSchedules } from '../api/groupsApi';
 import type { Group } from '../api/groupsApi';
-import type { TeacherEnrollment, EnrollmentStatus } from '../api/enrollmentsApi';
+import type { TeacherEnrollment, EnrollmentStatus, ParentPaymentBehavior } from '../api/enrollmentsApi';
 import type { GroupChangeRequestView, GroupChangeStatus } from '../api/groupChangeApi';
 import { EnrollmentCommentThread } from '../components/EnrollmentCommentThread';
 import { EnrollmentAccountingPanel } from '../components/EnrollmentAccountingPanel';
@@ -21,6 +21,13 @@ const CHANGE_STATUS_LABELS: Record<GroupChangeStatus, string> = {
   REJECTED: 'Refusée',
   CANCELLED: 'Annulée',
 };
+
+/** RM-CHG-002 (Ch.20.3) : brouillon du formulaire "Proposer un changement de groupe" par inscription. */
+interface TeacherInitiateDraft {
+  targetGroupId: string;
+  effectiveDate: string;
+  note: string;
+}
 
 const CHANGE_STATUS_BADGE: Record<GroupChangeStatus, string> = {
   PENDING: 'badge-warning',
@@ -49,6 +56,21 @@ const STATUS_BADGE: Record<EnrollmentStatus, string> = {
   EXPIRED: 'badge-neutral',
 };
 
+/** RM-INS-014/015 : indicateur synthétique consulté par le Professeur avant de décider. */
+const PAYMENT_BEHAVIOR_LABELS: Record<ParentPaymentBehavior, string> = {
+  EXCELLENT: 'Excellent',
+  MOYEN: 'Moyen',
+  MAUVAIS: 'Mauvais',
+  NON_DISPONIBLE: 'Non disponible',
+};
+
+const PAYMENT_BEHAVIOR_BADGE: Record<ParentPaymentBehavior, string> = {
+  EXCELLENT: 'badge-success',
+  MOYEN: 'badge-warning',
+  MAUVAIS: 'badge-danger',
+  NON_DISPONIBLE: 'badge-neutral',
+};
+
 export function TeacherEnrollmentsPage() {
   const { getAccessToken } = useAuth();
   const { showToast } = useToast();
@@ -67,6 +89,9 @@ export function TeacherEnrollmentsPage() {
   const [expandedComments, setExpandedComments] = useState<string | null>(null);
   const [expandedAccounting, setExpandedAccounting] = useState<string | null>(null);
   const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
+  // RM-CHG-002 : proposition de changement de groupe initiée par le Professeur (Ch.20.3).
+  const [proposingChangeId, setProposingChangeId] = useState<string | null>(null);
+  const [teacherInitiateDrafts, setTeacherInitiateDrafts] = useState<Record<string, TeacherInitiateDraft>>({});
   const requestedGroupId = searchParams.get('groupId');
   const requestedPaymentSessionId = searchParams.get('paymentSessionId');
 
@@ -252,6 +277,44 @@ export function TeacherEnrollmentsPage() {
     );
   }
 
+  // --- RM-CHG-002 : proposition de changement de groupe initiée par le Professeur -------------
+
+  function teacherInitiateDraft(enrollmentId: string): TeacherInitiateDraft {
+    return teacherInitiateDrafts[enrollmentId] ?? { targetGroupId: '', effectiveDate: '', note: '' };
+  }
+
+  function setTeacherInitiateDraft(enrollmentId: string, patch: Partial<TeacherInitiateDraft>) {
+    setTeacherInitiateDrafts((prev) => ({ ...prev, [enrollmentId]: { ...teacherInitiateDraft(enrollmentId), ...patch } }));
+  }
+
+  async function handleTeacherInitiate(enrollment: TeacherEnrollment) {
+    const token = getAccessToken();
+    if (!token) return;
+    const draft = teacherInitiateDraft(enrollment.id);
+    if (!draft.targetGroupId || !draft.effectiveDate) return;
+    setError(null);
+    try {
+      await groupChangeApi.teacherInitiateGroupChange(token, {
+        enrollmentId: enrollment.id,
+        targetGroupId: draft.targetGroupId,
+        effectiveDate: draft.effectiveDate,
+        note: draft.note.trim() === '' ? undefined : draft.note,
+      });
+      setProposingChangeId(null);
+      setTeacherInitiateDrafts((prev) => {
+        const next = { ...prev };
+        delete next[enrollment.id];
+        return next;
+      });
+      showToast('Proposition envoyée au Parent — en attente de sa confirmation');
+      // RM-CHG-002 : la proposition n'apparaît dans "Demandes reçues" que si le groupe cible est
+      // celui actuellement sélectionné (la liste est scopée par groupe cible, comme pour le Parent).
+      loadEnrollments();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "La proposition n'a pas pu être envoyée.");
+    }
+  }
+
   function renderEnrollmentRows(rows: TeacherEnrollment[]) {
     return rows.map((enrollment) => (
       <Fragment key={enrollment.id}>
@@ -269,6 +332,11 @@ export function TeacherEnrollmentsPage() {
           </td>
           <td data-label="Statut">
             <span className={`badge ${STATUS_BADGE[enrollment.status]}`}>{STATUS_LABELS[enrollment.status]}</span>
+          </td>
+          <td data-label="Comportement de paiement">
+            <span className={`badge ${PAYMENT_BEHAVIOR_BADGE[enrollment.parentPaymentBehavior]}`}>
+              {PAYMENT_BEHAVIOR_LABELS[enrollment.parentPaymentBehavior]}
+            </span>
           </td>
           <td data-label="Tarif personnalisé">{enrollment.customPrice ?? '-'}</td>
           <td className="admin-actions">
@@ -326,6 +394,15 @@ export function TeacherEnrollmentsPage() {
                 <button type="button" className="danger" onClick={() => handleArchive(enrollment.id)}>
                   Archiver
                 </button>
+                {/* RM-CHG-002 (Ch.20.3) : le Professeur peut lui-même proposer un changement de
+                    groupe — le Parent doit ensuite confirmer ou décliner la proposition. */}
+                <button
+                  type="button"
+                  className="ghost-link"
+                  onClick={() => setProposingChangeId((current) => (current === enrollment.id ? null : enrollment.id))}
+                >
+                  {proposingChangeId === enrollment.id ? 'Annuler la proposition' : 'Proposer un changement'}
+                </button>
               </>
             )}
             {enrollment.status === 'SUSPENDED' && (
@@ -364,15 +441,65 @@ export function TeacherEnrollmentsPage() {
         </tr>
         {expandedComments === enrollment.id && (
           <tr>
-            <td colSpan={8}>
+            <td colSpan={9}>
               <EnrollmentCommentThread enrollmentId={enrollment.id} />
             </td>
           </tr>
         )}
         {expandedAccounting === enrollment.id && (
           <tr>
-            <td colSpan={8}>
+            <td colSpan={9}>
               <EnrollmentAccountingPanel enrollmentId={enrollment.id} canWrite initialPaymentSessionId={requestedPaymentSessionId} />
+            </td>
+          </tr>
+        )}
+        {proposingChangeId === enrollment.id && (
+          <tr>
+            <td colSpan={9}>
+              <div className="admin-actions">
+                <label>
+                  Groupe cible
+                  <Select
+                    value={teacherInitiateDraft(enrollment.id).targetGroupId}
+                    onChange={(e) => setTeacherInitiateDraft(enrollment.id, { targetGroupId: e.target.value })}
+                  >
+                    <option value="">Sélectionner un groupe</option>
+                    {groups
+                      .filter((g) => g.id !== enrollment.group.id)
+                      .map((g) => (
+                        <option key={g.id} value={g.id}>
+                          {g.name} - {g.subject.name} ({g.schoolLevel.name})
+                        </option>
+                      ))}
+                  </Select>
+                </label>
+                <label>
+                  Date d'effet
+                  <input
+                    type="date"
+                    value={teacherInitiateDraft(enrollment.id).effectiveDate}
+                    onChange={(e) => setTeacherInitiateDraft(enrollment.id, { effectiveDate: e.target.value })}
+                  />
+                </label>
+                <label>
+                  Motif (optionnel, communiqué au Parent)
+                  <input
+                    type="text"
+                    value={teacherInitiateDraft(enrollment.id).note}
+                    onChange={(e) => setTeacherInitiateDraft(enrollment.id, { note: e.target.value })}
+                  />
+                </label>
+                <button
+                  type="button"
+                  disabled={!teacherInitiateDraft(enrollment.id).targetGroupId || !teacherInitiateDraft(enrollment.id).effectiveDate}
+                  onClick={() => handleTeacherInitiate(enrollment)}
+                >
+                  Envoyer la proposition au Parent
+                </button>
+                <p className="form-hint">
+                  RM-CHG-002/003 : le Parent devra confirmer ou décliner cette proposition avant qu'elle ne prenne effet.
+                </p>
+              </div>
             </td>
           </tr>
         )}
@@ -397,6 +524,7 @@ export function TeacherEnrollmentsPage() {
                   <th>Parent</th>
                   <th>Établissement / Niveau / Classe</th>
                   <th>Statut</th>
+                  <th>Comportement de paiement</th>
                   <th>Tarif personnalisé</th>
                   <th>Actions</th>
                   <th>Commentaires</th>
@@ -472,7 +600,8 @@ export function TeacherEnrollmentsPage() {
       <section className="card-section">
         <h2>Demandes de changement de groupe reçues ({groupChanges.length})</h2>
         <p className="table-hint">
-          Un Parent souhaite transférer un élève depuis un autre groupe vers celui sélectionné ci-dessus.
+          Un Parent souhaite transférer un élève depuis un autre groupe vers celui sélectionné ci-dessus, ou vous avez
+          vous-même proposé un changement vers ce groupe (RM-CHG-002).
         </p>
         {!loadingEnrollments && groupChanges.length === 0 && <p>Aucune demande de changement reçue.</p>}
         {!loadingEnrollments && groupChanges.length > 0 && (
@@ -482,6 +611,7 @@ export function TeacherEnrollmentsPage() {
                 <tr>
                   <th>Élève</th>
                   <th>Groupe d'origine</th>
+                  <th>Initiateur</th>
                   <th>Statut</th>
                   <th>Actions</th>
                 </tr>
@@ -493,6 +623,7 @@ export function TeacherEnrollmentsPage() {
                       {change.originalEnrollment.student.firstName} {change.originalEnrollment.student.lastName}
                     </td>
                     <td data-label="Groupe d'origine">{change.originalEnrollment.group.name}</td>
+                    <td data-label="Initiateur">{change.initiatedBy === 'TEACHER' ? 'Vous (proposition)' : 'Parent'}</td>
                     <td data-label="Statut">
                       <span className={`badge ${CHANGE_STATUS_BADGE[change.status]}`}>
                         {CHANGE_STATUS_LABELS[change.status]}
@@ -505,7 +636,10 @@ export function TeacherEnrollmentsPage() {
                       )}
                     </td>
                     <td className="admin-actions">
-                      {change.status === 'PENDING' && (
+                      {change.status === 'PENDING' && change.initiatedBy === 'TEACHER' && (
+                        <span className="table-hint">En attente de la réponse du Parent</span>
+                      )}
+                      {change.status === 'PENDING' && change.initiatedBy === 'PARENT' && (
                         <>
                           <input
                             type="date"

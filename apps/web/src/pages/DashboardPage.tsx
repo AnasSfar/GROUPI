@@ -10,12 +10,15 @@ import type {
   GroupOccupancyView,
   DashboardSessionSummary,
 } from '../api/dashboardApi';
+import * as exportsApi from '../api/exportsApi';
+import type { ExportFormat, ExportJob } from '../api/exportsApi';
 import { AlertList } from '../components/AlertList';
 import { EmptyState, LoadingState } from '../components/UiState';
 import { StatGrid } from '../components/StatGrid';
 import { ChildDetailCard } from '../components/ChildDetailCard';
 import { TeacherWeekCalendar } from '../components/TeacherWeekCalendar';
 import { WeekCalendar, addDays, startOfWeek, type WeekCalendarEvent } from '../components/WeekCalendar';
+import { Select } from '../components/Select';
 import { formatAmount, formatDateTime, hasSessionStarted } from '../utils/format';
 import {
   IconUsers,
@@ -30,6 +33,7 @@ import {
   IconWallet,
   IconDownload,
   IconAlertTriangle,
+  IconBell,
 } from '../components/icons';
 
 interface DashCard {
@@ -63,6 +67,95 @@ function canOpenAttendance(session: DashboardSessionSummary): boolean {
 
 function attendanceActionLabel(status: string): string {
   return status === 'PLANNED' ? "Faire l'appel" : "Voir l'appel";
+}
+
+/**
+ * RM-DSH-012 : export réel du tableau de bord (PDF/Excel), branché sur le module Exports existant
+ * (`POST /exports` avec `type: 'DASHBOARD_INDICATORS'` → `ExportsService.requestTeacherExport`) —
+ * ce composant ne réimplémente aucune génération, il pilote juste le même flux que la page
+ * "Exporter mes données" (`/teacher/exports`).
+ */
+function TeacherDashboardExportWidget({ exportInfo }: { exportInfo: TeacherDashboard['export'] }) {
+  const { getAccessToken } = useAuth();
+  const [format, setFormat] = useState<ExportFormat>('PDF');
+  const [submitting, setSubmitting] = useState(false);
+  const [job, setJob] = useState<ExportJob | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleExport() {
+    const token = getAccessToken();
+    if (!token) return;
+    setSubmitting(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const created = await exportsApi.createExport(token, { type: 'DASHBOARD_INDICATORS', format });
+      setJob(created);
+      setNotice(
+        created.status === 'READY'
+          ? `Export "${created.fileName}" prêt au téléchargement.`
+          : 'Export en cours de génération (volume important) — il sera bientôt disponible ici et dans votre centre d’activités.',
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "La génération de l'export a échoué.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleDownload() {
+    const token = getAccessToken();
+    if (!token || !job) return;
+    setError(null);
+    try {
+      await exportsApi.downloadExport(token, job.id, job.fileName ?? 'export');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Téléchargement impossible.');
+    }
+  }
+
+  if (!exportInfo.available) {
+    return <p className="table-hint">{exportInfo.message}</p>;
+  }
+
+  return (
+    <>
+      {/* RM-EXP-005 : avertissement affiché avant/pendant le téléchargement — la responsabilité de
+          la conservation et de la confidentialité du fichier incombe ensuite entièrement au Professeur. */}
+      <p className="form-notice" role="status">
+        Une fois téléchargé, vous êtes seul responsable de la conservation et de la confidentialité de ce fichier
+        (RM-EXP-005).
+      </p>
+      <div className="field-row">
+        <label>
+          Format
+          <Select value={format} onChange={(e) => setFormat(e.target.value as ExportFormat)}>
+            <option value="PDF">PDF</option>
+            <option value="EXCEL">Excel</option>
+          </Select>
+        </label>
+        <button type="button" disabled={submitting} onClick={handleExport}>
+          {submitting ? 'Génération...' : 'Exporter le tableau de bord'}
+        </button>
+        {job?.status === 'READY' && (
+          <button type="button" onClick={handleDownload}>
+            Télécharger
+          </button>
+        )}
+      </div>
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      )}
+      {notice && (
+        <p className="form-notice" role="status">
+          {notice}
+        </p>
+      )}
+    </>
+  );
 }
 
 function TeacherDashboardView({ data, onRefresh }: { data: TeacherDashboard; onRefresh: () => void }) {
@@ -119,6 +212,7 @@ function TeacherDashboardView({ data, onRefresh }: { data: TeacherDashboard; onR
             { label: "Séances aujourd'hui", value: String(data.activity.todaysSessions.length), icon: <IconCalendarCheck />, tone: 'teal' },
             { label: "Demandes d'inscription en attente", value: String(data.activity.pendingEnrollmentsCount), icon: <IconUserPlus />, tone: 'amber' },
             { label: 'Changements de groupe en attente', value: String(data.activity.pendingGroupChangesCount), icon: <IconLayers />, tone: 'amber' },
+            { label: 'Commentaires non lus', value: String(data.activity.unreadCommentsCount), icon: <IconBell />, tone: 'info' },
           ]}
         />
         {data.activity.upcomingSessions.length > 0 && (
@@ -317,13 +411,7 @@ function TeacherDashboardView({ data, onRefresh }: { data: TeacherDashboard; onR
 
       <section className="card-section">
         <h2>Export</h2>
-        {data.export.available ? (
-          <button type="button" disabled title="Export PDF/Excel — module en cours de livraison (Ch.17)">
-            Exporter le tableau de bord
-          </button>
-        ) : (
-          <p className="table-hint">{data.export.message}</p>
-        )}
+        <TeacherDashboardExportWidget exportInfo={data.export} />
       </section>
     </>
   );
@@ -384,6 +472,14 @@ function ParentDashboardView({ data, onRefresh }: { data: ParentDashboard; onRef
       )}
       {data.children.length === 0 && (
         <EmptyState title="Aucun enfant actif déclaré">Ajoutez un enfant pour suivre ses inscriptions, présences et comptes.</EmptyState>
+      )}
+      {data.children.length > 0 && (
+        <StatGrid
+          tiles={[
+            { label: 'Commentaires non lus', value: String(data.unreadCommentsCount), icon: <IconBell />, tone: 'info' },
+            { label: 'Annonces non lues', value: String(data.unreadAnnouncementsCount), icon: <IconBell />, tone: 'info' },
+          ]}
+        />
       )}
       {data.children.length > 0 && <ParentWeekCalendar data={data} />}
       {data.children.map((child) => (

@@ -1,4 +1,5 @@
-import { IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
+import { TeachingMode } from '@prisma/client';
 
 export class SearchGroupsQueryDto {
   @IsOptional()
@@ -12,4 +13,14 @@ export class SearchGroupsQueryDto {
   @IsOptional()
   @IsString()
   city?: string;
+
+  /** RM-INS-007 : recherche par nom (ou partie du nom) du Professeur. */
+  @IsOptional()
+  @IsString()
+  teacherName?: string;
+
+  /** RM-INS-007 : filtre par mode d'enseignement du groupe. */
+  @IsOptional()
+  @IsIn(['PRESENTIAL', 'ONLINE'])
+  teachingMode?: TeachingMode;
 }

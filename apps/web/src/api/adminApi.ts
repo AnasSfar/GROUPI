@@ -53,8 +53,11 @@ export function disableUser(accessToken: string, userId: string, payload: Accoun
 /** Codes réellement vérifiés par le backend (@RequirePermissions) — pas de catalogue centralisé côté API. */
 export const ADMIN_PERMISSIONS: { code: string; label: string }[] = [
   { code: 'ACC_VALIDATE', label: 'Valider / suspendre / réactiver les comptes Professeur et Parent' },
+  { code: 'ACC_REASSIGN_STUDENT', label: 'Réaffecter un élève à un nouveau compte Parent' },
   { code: 'REF_CREATE', label: 'Gérer les référentiels (matières, niveaux, établissements)' },
   { code: 'SCH_VALIDATE', label: 'Valider les situations scolaires' },
+  { code: 'SCH_ADMIN_OVERRIDE', label: 'Corriger exceptionnellement une situation scolaire clôturée' },
+  { code: 'TPR_VALIDATE', label: 'Valider les ajouts de matière/niveau au profil Professeur' },
   { code: 'ABO_VALIDATE', label: 'Valider les abonnements Professeur' },
   { code: 'ABO_SUSPEND', label: 'Suspendre un abonnement' },
   { code: 'ABO_REACTIVATE', label: 'Réactiver un abonnement' },

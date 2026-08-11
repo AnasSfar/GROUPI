@@ -8,6 +8,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Min,
   MinLength,
   ValidateNested,
@@ -15,13 +16,31 @@ import {
 import { AbsenceBillingPolicy, VisibilityWhenFull } from '@prisma/client';
 import { GroupScheduleDto } from './group-schedule.dto';
 
-/** Ch.10.11 : après la 1ère inscription, seuls planning/lieu/tarif/capacité/visibilité restent
- *  modifiables. Cette version MVP verrouille matière/niveau/année dès la création (voir progress.md). */
+/**
+ * Ch.10.11/RM-GRP-016 : matière/niveau/année académique restent modifiables tant qu'aucune
+ * inscription (tout statut confondu) n'existe encore pour ce groupe ; dès la première inscription,
+ * ces trois champs sont définitivement verrouillés (ERR-GRP-009, voir GroupsService.update()).
+ */
 export class UpdateGroupDto {
   @IsOptional()
   @IsString()
   @MinLength(1)
   name?: string;
+
+  /** RM-GRP-016 : verrouillé dès qu'une inscription existe (ERR-GRP-009). */
+  @IsOptional()
+  @IsUUID()
+  subjectId?: string;
+
+  /** RM-GRP-016 : verrouillé dès qu'une inscription existe (ERR-GRP-009). */
+  @IsOptional()
+  @IsUUID()
+  schoolLevelId?: string;
+
+  /** RM-GRP-016 : verrouillé dès qu'une inscription existe (ERR-GRP-009). */
+  @IsOptional()
+  @IsUUID()
+  academicYearId?: string;
 
   @IsOptional()
   @IsInt()

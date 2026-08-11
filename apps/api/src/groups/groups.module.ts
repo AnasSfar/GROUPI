@@ -9,5 +9,8 @@ import { GroupsService } from './groups.service';
   imports: [AuthModule, SubscriptionsModule, NotificationsModule],
   controllers: [GroupsController],
   providers: [GroupsService],
+  // Exporté pour permettre à d'autres modules (ex. Séances, RM-GRP-009/030) d'injecter
+  // `GroupsService` et d'appeler `isDateInGenerationPause()` plutôt que de dupliquer la logique.
+  exports: [GroupsService],
 })
 export class GroupsModule {}

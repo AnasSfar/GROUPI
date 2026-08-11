@@ -7,6 +7,9 @@ import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
 
 export type EffectiveStatus = 'SCHEDULED' | 'PUBLISHED' | 'EXPIRED' | 'DELETED';
 
+/** RM-COM-016 : conservation légale de 7 ans à compter de la clôture (ici l'archivage du groupe). */
+const RETENTION_YEARS = 7;
+
 /**
  * Ch.19.4 : "statut effectif" calculé à la lecture, jamais stocké — même principe que
  * `computeLockDeadline`/`isLockable` pour le verrouillage des séances (sessions.service.ts).
@@ -132,6 +135,23 @@ export class GroupAnnouncementsService {
     return Promise.all(announcements.map((a) => this.withReadStats(a)));
   }
 
+  /**
+   * RM-COM-013 : le Super Administrateur peut consulter les annonces de n'importe quel groupe dans
+   * le cadre d'une procédure d'assistance/audit — lecture seule, aucune vérification de propriété
+   * (contrairement à `listForTeacher`), jamais exposé pour la création/modification/suppression.
+   */
+  async listForSuperAdmin(groupId: string) {
+    const group = await this.prisma.group.findUnique({ where: { id: groupId } });
+    if (!group) {
+      throw new NotFoundException('Groupe introuvable');
+    }
+    const announcements = await this.prisma.groupAnnouncement.findMany({
+      where: { groupId },
+      orderBy: { createdAt: 'desc' },
+    });
+    return Promise.all(announcements.map((a) => this.withReadStats(a)));
+  }
+
   /** Ch.19.4 : côté Parent, seules les annonces effectivement publiées et non expirées sont visibles. */
   async listForParent(parentUserId: string, groupId: string) {
     await this.assertParentInGroup(parentUserId, groupId);
@@ -216,5 +236,32 @@ export class GroupAnnouncementsService {
       where: { announcementId_parentId: { announcementId: id, parentId: parentUserId } },
     });
     return { readAt: read.readAt };
+  }
+
+  /**
+   * RM-COM-016 : politique de conservation légale de 7 ans — passé ce délai, suppression physique
+   * (seule dérogation à RM-COM-014, qui interdit la suppression physique en usage courant/métier).
+   * `Group` ne porte pas de champ `archivedAt` dédié : `updatedAt` est utilisé comme meilleure
+   * approximation disponible de la date de bascule vers `ARCHIVED` (aucune autre écriture n'est
+   * censée avoir lieu sur un groupe archivé). Appelée mensuellement par `TemporalJobsService`.
+   * Les lectures (`GroupAnnouncementRead`) sont purgées avant les annonces pour respecter la
+   * contrainte de clé étrangère.
+   */
+  async purgeOldAnnouncements(now = new Date()): Promise<number> {
+    const cutoff = new Date(now);
+    cutoff.setFullYear(cutoff.getFullYear() - RETENTION_YEARS);
+    const stale = await this.prisma.groupAnnouncement.findMany({
+      where: { group: { status: 'ARCHIVED', updatedAt: { lte: cutoff } } },
+      select: { id: true },
+    });
+    if (stale.length === 0) {
+      return 0;
+    }
+    const ids = stale.map((a) => a.id);
+    await this.prisma.$transaction([
+      this.prisma.groupAnnouncementRead.deleteMany({ where: { announcementId: { in: ids } } }),
+      this.prisma.groupAnnouncement.deleteMany({ where: { id: { in: ids } } }),
+    ]);
+    return ids.length;
   }
 }

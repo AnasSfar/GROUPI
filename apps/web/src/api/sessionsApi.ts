@@ -18,6 +18,10 @@ export interface Session {
   /** Ch.13.7/13.9 : date à partir de laquelle une séance TERMINEE devient définitivement
    *  VERROUILLEE — `null` tant que la séance n'est pas TERMINEE/VERROUILLEE. */
   lockDeadline: string | null;
+  /** RM-SES-009/010 : `true` quand le mode a été exceptionnellement changé pour cette occurrence. */
+  teachingModeException: boolean;
+  /** RM-SES-041 : commentaire pédagogique du Professeur pour cette séance. */
+  teacherComment: string | null;
   createdAt: string;
 }
 
@@ -108,4 +112,30 @@ export function removeSession(
   sessionId: string,
 ): Promise<{ id: string; deleted: boolean }> {
   return apiRequest(`/sessions/${sessionId}`, { method: 'DELETE', accessToken });
+}
+
+/** Ch.13.6 : passage exceptionnel du mode d'enseignement d'une séance précise. */
+export function setSessionTeachingMode(
+  accessToken: string,
+  sessionId: string,
+  teachingMode: TeachingMode,
+): Promise<Session> {
+  return apiRequest<Session>(`/sessions/${sessionId}/teaching-mode`, {
+    method: 'PATCH',
+    accessToken,
+    body: { teachingMode },
+  });
+}
+
+/** RM-SES-041 : commentaire pédagogique de la séance. */
+export function setSessionComment(
+  accessToken: string,
+  sessionId: string,
+  teacherComment: string,
+): Promise<Session> {
+  return apiRequest<Session>(`/sessions/${sessionId}/comment`, {
+    method: 'PATCH',
+    accessToken,
+    body: { teacherComment },
+  });
 }
