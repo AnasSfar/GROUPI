@@ -31,6 +31,10 @@ export async function createApp(expressInstance?: Express): Promise<INestApplica
     app.enableCors({
       origin: corsOrigin.split(',').map((origin) => origin.trim()),
       credentials: true,
+      // Sans ça, le navigateur ne met (quasi) jamais en cache le preflight OPTIONS : chaque
+      // requête authentifiée (Authorization header) double son nombre d'allers-retours réseau.
+      // 24h ; les navigateurs plafonnent de toute façon à leur propre maximum (ex. 2h Chrome).
+      maxAge: 86400,
     });
   }
 
