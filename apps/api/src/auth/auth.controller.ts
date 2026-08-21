@@ -17,6 +17,7 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
+import { VerifyPhoneDto } from './dto/verify-phone.dto';
 import { AddRoleDto } from './dto/add-role.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
@@ -95,6 +96,19 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   resendVerification(@CurrentUser() user: AuthenticatedUser) {
     return this.authService.resendVerificationEmail(user.id);
+  }
+
+  @Post('verify-phone')
+  @HttpCode(204)
+  verifyPhone(@Body() dto: VerifyPhoneDto) {
+    return this.authService.verifyPhone(dto);
+  }
+
+  @Post('resend-verification-phone')
+  @HttpCode(204)
+  @UseGuards(JwtAuthGuard)
+  resendVerificationPhone(@CurrentUser() user: AuthenticatedUser) {
+    return this.authService.resendVerificationSms(user.id);
   }
 
 

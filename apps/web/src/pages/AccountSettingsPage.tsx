@@ -67,7 +67,11 @@ function AddRoleSection({ targetRole }: { targetRole: Role }) {
         city,
         ...(isTeacher ? { subjectIds, schoolLevelIds } : {}),
       });
-      showToast('Nouveau rôle ajouté, en attente de validation par un administrateur');
+      showToast(
+        isTeacher
+          ? 'Nouveau rôle Professeur ajouté, en attente de validation par un administrateur'
+          : 'Nouveau rôle Parent ajouté',
+      );
       setOpen(false);
       // Pas de méthode de rafraîchissement exposée par AuthContext : on recharge la page pour que
       // `/auth/me` soit relu et que le rôle nouvellement ajouté apparaisse partout dans l'app.
@@ -349,6 +353,8 @@ export function AccountSettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [resent, setResent] = useState(false);
   const [resending, setResending] = useState(false);
+  const [phoneResent, setPhoneResent] = useState(false);
+  const [phoneResending, setPhoneResending] = useState(false);
   const [loggingOutAll, setLoggingOutAll] = useState(false);
   const [confirmingDeletion, setConfirmingDeletion] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -366,6 +372,22 @@ export function AccountSettingsPage() {
       setError(err instanceof ApiError ? err.message : "Impossible d'envoyer l'e-mail de vérification.");
     } finally {
       setResending(false);
+    }
+  }
+
+  async function handleResendPhoneVerification() {
+    const token = getAccessToken();
+    if (!token) return;
+    setPhoneResending(true);
+    setError(null);
+    try {
+      await authApi.resendVerificationPhone(token);
+      setPhoneResent(true);
+      showToast('Code de vérification envoyé par SMS');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Impossible d'envoyer le code de vérification.");
+    } finally {
+      setPhoneResending(false);
     }
   }
 
@@ -400,21 +422,17 @@ export function AccountSettingsPage() {
     }
   }
 
-  /** RM-CYC-013/018 : suppression réelle (aucun historique) ou anonymisation, décidée côté API. */
+  /** RM-CYC-013/018 : suppression logique self-service, décidée côté API. */
   async function handleRequestDeletion() {
     const token = getAccessToken();
     if (!token) return;
     setDeleting(true);
     setError(null);
     try {
-      const result = await authApi.requestDeletion(token);
+      await authApi.requestDeletion(token);
       await logout();
       navigate('/', { replace: true });
-      showToast(
-        result.deleted
-          ? 'Votre compte a été supprimé.'
-          : 'Votre compte a été anonymisé et désactivé.',
-      );
+      showToast('Votre compte a été supprimé et vous avez été déconnecté.');
     } catch (err) {
       setDeleting(false);
       setError(err instanceof ApiError ? err.message : 'Impossible de supprimer votre compte.');
@@ -441,31 +459,64 @@ export function AccountSettingsPage() {
 
       <section className="card-section">
         <h2>Informations</h2>
-        <p className="summary-row">
-          Email : <strong>{currentUser?.email}</strong>
-        </p>
         <p className="summary-row" style={{ marginTop: 8 }}>
           Rôle(s) :{' '}
           <strong>{currentUser?.roles.map((role) => ROLE_LABELS[role] ?? role).join(', ')}</strong>
         </p>
-        <p className="summary-row" style={{ marginTop: 8 }}>
-          Adresse e-mail :{' '}
-          {currentUser?.emailVerifiedAt ? (
-            <span className="badge badge-success">Vérifiée</span>
-          ) : (
-            <span className="badge badge-warning">Non vérifiée</span>
-          )}
-        </p>
-        {!currentUser?.emailVerifiedAt && (
-          <div className="page-actions" style={{ marginTop: 8 }}>
-            {resent ? (
-              <span className="table-hint">E-mail de vérification envoyé.</span>
-            ) : (
-              <button type="button" className="ghost" onClick={handleResendVerification} disabled={resending}>
-                {resending ? 'Envoi...' : "Renvoyer l'e-mail de vérification"}
-              </button>
+
+        {/* RM-SEC-001 : l'identifiant du compte est l'e-mail OU le téléphone — chacun n'est affiché
+            (avec son bloc de vérification) que s'il est effectivement renseigné sur ce compte. */}
+        {currentUser?.email && (
+          <>
+            <p className="summary-row" style={{ marginTop: 8 }}>
+              Email : <strong>{currentUser.email}</strong>{' '}
+              {currentUser.emailVerifiedAt ? (
+                <span className="badge badge-success">Vérifié</span>
+              ) : (
+                <span className="badge badge-warning">Non vérifié</span>
+              )}
+            </p>
+            {!currentUser.emailVerifiedAt && (
+              <div className="page-actions" style={{ marginTop: 8 }}>
+                {resent ? (
+                  <span className="table-hint">E-mail de vérification envoyé.</span>
+                ) : (
+                  <button type="button" className="ghost" onClick={handleResendVerification} disabled={resending}>
+                    {resending ? 'Envoi...' : "Renvoyer l'e-mail de vérification"}
+                  </button>
+                )}
+              </div>
             )}
-          </div>
+          </>
+        )}
+
+        {currentUser?.phone && (
+          <>
+            <p className="summary-row" style={{ marginTop: 8 }}>
+              Téléphone : <strong>{currentUser.phone}</strong>{' '}
+              {currentUser.phoneVerifiedAt ? (
+                <span className="badge badge-success">Vérifié</span>
+              ) : (
+                <span className="badge badge-warning">Non vérifié</span>
+              )}
+            </p>
+            {!currentUser.phoneVerifiedAt && (
+              <div className="page-actions" style={{ marginTop: 8 }}>
+                {phoneResent ? (
+                  <span className="table-hint">Code de vérification envoyé par SMS.</span>
+                ) : (
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={handleResendPhoneVerification}
+                    disabled={phoneResending}
+                  >
+                    {phoneResending ? 'Envoi...' : 'Renvoyer le code de vérification'}
+                  </button>
+                )}
+              </div>
+            )}
+          </>
         )}
       </section>
 
@@ -526,9 +577,9 @@ export function AccountSettingsPage() {
         {!confirmingDeletion ? (
           <>
             <p className="table-hint">
-              Demander la suppression de votre compte (RM-CYC-013/018) : si votre compte n'a aucun
-              historique métier, il sera supprimé définitivement ; sinon, vos données personnelles
-              seront anonymisées et le compte désactivé.
+              Supprimer votre compte archive votre accès et vous déconnecte immédiatement. Vos
+              données restent conservées uniquement lorsqu'elles sont nécessaires à l'historique de
+              la plateforme.
             </p>
             <div className="page-actions" style={{ marginTop: 12 }}>
               <button type="button" className="danger" onClick={() => setConfirmingDeletion(true)}>

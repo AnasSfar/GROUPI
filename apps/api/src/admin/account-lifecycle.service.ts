@@ -188,6 +188,7 @@ export class AccountLifecycleService {
     // déjà appliquée.
     const title = NOTIFICATION_TITLE_BY_STATUS[toStatus];
     const body = comment ?? reason;
+    const targetEmail = updated.email;
     await this.notifications.notify({
       recipientUserId: targetUserId,
       type: ACTION_BY_STATUS[toStatus],
@@ -199,8 +200,8 @@ export class AccountLifecycleService {
       // RM-CYC-014 : e-mail effectif en plus de l'activité en-app pour les transitions critiques
       // (suspension/désactivation/archivage) — PENDING_VALIDATION/ACTIVE restent notification interne
       // uniquement (priorité non-critique).
-      sendEmail: CRITICAL_EMAIL_STATUSES.has(toStatus)
-        ? () => this.email.sendAccountStatusChanged(updated.email, title, body)
+      sendEmail: CRITICAL_EMAIL_STATUSES.has(toStatus) && targetEmail
+        ? () => this.email.sendAccountStatusChanged(targetEmail, title, body)
         : undefined,
     });
 

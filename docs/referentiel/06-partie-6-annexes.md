@@ -1081,7 +1081,7 @@ Code
 Règle
 Chap.
 RM-SEC-001
-L’adresse e-mail constitue l’identifiant unique du compte.
+L’adresse e-mail ou le numéro de téléphone (au choix de l’utilisateur à l’inscription) constitue l’identifiant unique du compte.
 9
 RM-SEC-002
 Les mots de passe sont stockés sous forme hachée.
@@ -7372,7 +7372,7 @@ Tentative de validation d’un compte déjà validé
 Les inscriptions existantes restent accessibles conformément aux règles métier
 3
 ERR-ACC-008
-Tentative de création d’un second compte avec une adresse e-mail déjà utilisée
+Tentative de création d’un second compte avec un identifiant (adresse e-mail ou numéro de téléphone) déjà utilisé
 Opération refusée Création refusée
 3
 Domaine SUB — Abonnements

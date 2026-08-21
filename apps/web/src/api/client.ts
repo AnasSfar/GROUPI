@@ -50,10 +50,49 @@ export class ApiError extends Error {
   }
 }
 
-function extractMessage(body: unknown, fallback: string): string {
+/**
+ * N'expose au front que des messages destinés à un utilisateur final :
+ * - un `message` sous forme de tableau vient du ValidationPipe (class-validator) et contient du
+ *   texte technique en anglais ("email must be an email") — jamais affiché tel quel, remplacé par
+ *   un message générique.
+ * - un `message` sous forme de chaîne unique est en général une HttpException volontaire écrite en
+ *   français quelque part dans l'API (ex. "Identifiants invalides") — celui-là est destiné à
+ *   l'utilisateur, donc conservé.
+ * - toute erreur 5xx (panne, exception non gérée) ne doit jamais fuiter de détail technique, même
+ *   si le corps de la réponse contient un `message` — toujours le message générique.
+ */
+/**
+ * Message par défaut par famille de statut HTTP, utilisé quand l'API n'a pas fourni de message
+ * destiné à l'utilisateur (voir extractMessage). Pour les 5xx (panne ou bug côté serveur, rien que
+ * l'utilisateur ne peut résoudre lui-même), on l'oriente explicitement vers l'administrateur plutôt
+ * que de simplement dire "réessayez".
+ */
+function fallbackMessageFor(status: number): string {
+  if (status >= 500) {
+    return "Une erreur interne est survenue côté serveur. Si le problème persiste, veuillez contacter l'administrateur.";
+  }
+  switch (status) {
+    case 400:
+      return 'Certaines informations saisies sont invalides. Vérifiez le formulaire.';
+    case 401:
+      return 'Vous devez vous reconnecter pour continuer.';
+    case 403:
+      return "Vous n'avez pas les droits nécessaires pour effectuer cette action.";
+    case 404:
+      return "Cette ressource n'existe pas ou plus.";
+    case 409:
+      return "Cette opération n'est pas possible dans l'état actuel des données.";
+    case 429:
+      return 'Trop de tentatives. Veuillez patienter avant de réessayer.';
+    default:
+      return 'Une erreur est survenue. Veuillez réessayer.';
+  }
+}
+
+function extractMessage(status: number, body: unknown, fallback: string): string {
+  if (status >= 500) return fallback;
   if (body && typeof body === 'object' && 'message' in body) {
     const message = (body as { message?: unknown }).message;
-    if (Array.isArray(message)) return message.join(' ');
     if (typeof message === 'string') return message;
   }
   return fallback;
@@ -138,7 +177,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   const data = text ? JSON.parse(text) : undefined;
 
   if (!response.ok) {
-    throw new ApiError(response.status, extractMessage(data, `Une erreur est survenue (${response.status}).`), data);
+    throw new ApiError(response.status, extractMessage(response.status, data, fallbackMessageFor(response.status)), data);
   }
 
   return data as T;

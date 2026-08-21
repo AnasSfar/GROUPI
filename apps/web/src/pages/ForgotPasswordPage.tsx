@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import * as authApi from '../api/authApi';
 
 export function ForgotPasswordPage() {
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
 
@@ -11,8 +11,8 @@ export function ForgotPasswordPage() {
     event.preventDefault();
     setSubmitting(true);
     try {
-      // The API always returns 204 regardless of whether the email exists — never distinguish.
-      await authApi.forgotPassword(email);
+      // The API always returns 204 regardless of whether the identifier exists — never distinguish.
+      await authApi.forgotPassword(identifier);
     } finally {
       setSubmitting(false);
       setSent(true);
@@ -26,29 +26,34 @@ export function ForgotPasswordPage() {
         <h1>Mot de passe oublié</h1>
         {sent ? (
           <p className="form-notice" role="status">
-            Si cette adresse correspond à un compte, un lien de réinitialisation vient d'être
-            envoyé.
+            Si cet identifiant correspond à un compte, un lien (par e-mail) ou un code (par SMS) de
+            réinitialisation vient d'être envoyé.
           </p>
         ) : (
           <>
             <label>
-              Email
+              Email ou téléphone
               <input
-                type="email"
+                type="text"
                 required
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="username"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
               />
             </label>
             <button type="submit" disabled={submitting}>
-              {submitting ? 'Envoi...' : 'Envoyer le lien'}
+              {submitting ? 'Envoi...' : 'Envoyer'}
             </button>
           </>
         )}
         <p className="auth-links">
           <Link to="/login">Retour à la connexion</Link>
         </p>
+        {sent && (
+          <p className="auth-links">
+            <Link to="/reset-password">Vous avez reçu un code par SMS ?</Link>
+          </p>
+        )}
       </form>
     </div>
   );

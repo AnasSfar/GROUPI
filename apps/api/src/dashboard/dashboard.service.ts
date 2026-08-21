@@ -610,7 +610,7 @@ export class DashboardService {
 
     const pendingAccountValidations = has('ACC_VALIDATE')
       ? await this.prisma.user.findMany({
-          where: { status: 'PENDING_VALIDATION' },
+          where: { status: 'PENDING_VALIDATION', roles: { has: 'TEACHER' } },
           select: { id: true, email: true, roles: true, createdAt: true },
           orderBy: { createdAt: 'asc' },
           take: 20,

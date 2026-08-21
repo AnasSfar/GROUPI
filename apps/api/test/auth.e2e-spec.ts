@@ -129,7 +129,7 @@ describe('Auth (e2e)', () => {
   it('logs in with correct credentials -> 200 with tokens', async () => {
     const res = await api()
       .post('/api/v1/auth/login')
-      .send({ email: teacherEmail, password: teacherPassword })
+      .send({ identifier: teacherEmail, password: teacherPassword })
       .expect(200);
 
     expect(res.body).toEqual(
@@ -143,7 +143,7 @@ describe('Auth (e2e)', () => {
   it('rejects login with the wrong password', async () => {
     await api()
       .post('/api/v1/auth/login')
-      .send({ email: teacherEmail, password: 'totally-wrong' })
+      .send({ identifier: teacherEmail, password: 'totally-wrong' })
       .expect(401);
   });
 
@@ -151,7 +151,7 @@ describe('Auth (e2e)', () => {
     it('returns 200 with a valid access token', async () => {
       const loginRes = await api()
         .post('/api/v1/auth/login')
-        .send({ email: teacherEmail, password: teacherPassword })
+        .send({ identifier: teacherEmail, password: teacherPassword })
         .expect(200);
 
       const meRes = await api()
@@ -178,7 +178,7 @@ describe('Auth (e2e)', () => {
     it('rotates tokens on success, and the old refresh token becomes unusable', async () => {
       const loginRes = await api()
         .post('/api/v1/auth/login')
-        .send({ email: teacherEmail, password: teacherPassword })
+        .send({ identifier: teacherEmail, password: teacherPassword })
         .expect(200);
       const oldRefreshToken = loginRes.body.refreshToken;
 
@@ -215,11 +215,11 @@ describe('Auth (e2e)', () => {
     it('revokes all sessions, so a subsequent refresh with any of them fails', async () => {
       const login1 = await api()
         .post('/api/v1/auth/login')
-        .send({ email: teacherEmail, password: teacherPassword })
+        .send({ identifier: teacherEmail, password: teacherPassword })
         .expect(200);
       const login2 = await api()
         .post('/api/v1/auth/login')
-        .send({ email: teacherEmail, password: teacherPassword })
+        .send({ identifier: teacherEmail, password: teacherPassword })
         .expect(200);
 
       await api()
@@ -243,7 +243,7 @@ describe('Auth (e2e)', () => {
     it('revokes only the targeted session (idempotent)', async () => {
       const login = await api()
         .post('/api/v1/auth/login')
-        .send({ email: teacherEmail, password: teacherPassword })
+        .send({ identifier: teacherEmail, password: teacherPassword })
         .expect(200);
 
       await api().post('/api/v1/auth/logout').send({ refreshToken: login.body.refreshToken }).expect(204);
@@ -284,14 +284,14 @@ describe('Auth (e2e)', () => {
       for (let i = 0; i < 5; i++) {
         await api()
           .post('/api/v1/auth/login')
-          .send({ email: lockoutEmail, password: 'wrong-password' })
+          .send({ identifier: lockoutEmail, password: 'wrong-password' })
           .expect(401);
       }
 
       // Even the correct password is now rejected because the account is locked.
       const res = await api()
         .post('/api/v1/auth/login')
-        .send({ email: lockoutEmail, password: lockoutPassword })
+        .send({ identifier: lockoutEmail, password: lockoutPassword })
         .expect(401);
 
       expect(res.body.message).toMatch(/verrouill/i);
@@ -325,7 +325,7 @@ describe('Auth (e2e)', () => {
       for (let i = 0; i < 3; i++) {
         const loginRes = await api()
           .post('/api/v1/auth/login')
-          .send({ email: throttleEmail, password: currentPassword })
+          .send({ identifier: throttleEmail, password: currentPassword })
           .expect(200);
         const newPassword = `NewPassword${i}23`;
         await api()
@@ -338,7 +338,7 @@ describe('Auth (e2e)', () => {
 
       const loginRes = await api()
         .post('/api/v1/auth/login')
-        .send({ email: throttleEmail, password: currentPassword })
+        .send({ identifier: throttleEmail, password: currentPassword })
         .expect(200);
       const res = await api()
         .post('/api/v1/auth/change-password')

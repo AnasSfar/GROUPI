@@ -514,7 +514,7 @@ ERR-ACC-007
 Tentative de validation d’un compte déjà validé
 Les inscriptions existantes restent accessibles conformément aux règles métier
 ERR-ACC-008
-Tentative de création d’un second compte avec une adresse e-mail déjà utilisée
+Tentative de création d’un second compte avec un identifiant (adresse e-mail ou numéro de téléphone) déjà utilisé
 Opération refusée Création refusée
 
 3.12Règles métier

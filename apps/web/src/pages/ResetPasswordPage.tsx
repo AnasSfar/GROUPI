@@ -5,11 +5,17 @@ import { ApiError } from '../api/client';
 
 export function ResetPasswordPage() {
   const [searchParams] = useSearchParams();
-  const token = searchParams.get('token') ?? '';
+  const tokenFromLink = searchParams.get('token') ?? '';
   const navigate = useNavigate();
+  const [manualCode, setManualCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Un lien e-mail porte le token dans l'URL ; un code reçu par SMS n'a pas de lien cliquable et
+  // se saisit manuellement (RM-SEC-001) — les deux aboutissent au même appel, `resetPassword` ne
+  // fait aucune distinction entre les deux formats.
+  const token = tokenFromLink || manualCode;
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -32,22 +38,6 @@ export function ResetPasswordPage() {
     }
   }
 
-  if (!token) {
-    return (
-      <div className="auth-page">
-        <div className="auth-card">
-          <h1>Lien invalide</h1>
-          <p className="form-error" role="alert">
-            Ce lien de réinitialisation est incomplet ou invalide.
-          </p>
-          <p className="auth-links">
-            <Link to="/forgot-password">Demander un nouveau lien</Link>
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="auth-page">
       <form className="auth-card" onSubmit={handleSubmit}>
@@ -57,6 +47,19 @@ export function ResetPasswordPage() {
           <p className="form-error" role="alert">
             {error}
           </p>
+        )}
+        {!tokenFromLink && (
+          <label>
+            Code reçu par SMS
+            <input
+              type="text"
+              inputMode="numeric"
+              required
+              autoComplete="one-time-code"
+              value={manualCode}
+              onChange={(e) => setManualCode(e.target.value)}
+            />
+          </label>
         )}
         <label>
           Nouveau mot de passe
@@ -69,7 +72,7 @@ export function ResetPasswordPage() {
             onChange={(e) => setNewPassword(e.target.value)}
           />
         </label>
-        <button type="submit" disabled={submitting}>
+        <button type="submit" disabled={submitting || !token}>
           {submitting ? 'Enregistrement...' : 'Réinitialiser le mot de passe'}
         </button>
         <p className="auth-links">

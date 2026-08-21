@@ -142,7 +142,7 @@ export interface AdminDashboard {
     schoolCount: number;
     openAcademicYearCount: number;
   };
-  pendingAccountValidations: { id: string; email: string; roles: string[]; createdAt: string }[] | null;
+  pendingAccountValidations: { id: string; email: string | null; roles: string[]; createdAt: string }[] | null;
   pendingSchoolSituations: { id: string; studentId: string; createdAt: string }[] | null;
   subscriptions: { pendingPaymentCount: number; activeCount: number; suspendedCount: number; expiredCount: number } | null;
   auditLog: { totalCount: number; recent: { id: string; action: string; targetType: string; targetId: string; userId: string | null; createdAt: string }[] } | null;

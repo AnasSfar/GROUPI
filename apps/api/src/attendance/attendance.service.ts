@@ -294,6 +294,7 @@ export class AttendanceService {
         },
       });
       const label = STATUS_LABELS[dto.status];
+      const parentEmail = student.parent.user.email;
       await this.notifications.notify({
         recipientUserId: student.parentId,
         type: `ATT_CORRECTED_${dto.status}`,
@@ -302,13 +303,15 @@ export class AttendanceService {
         body: `${student.firstName} ${student.lastName} : la présence à la séance du ${session.date.toLocaleDateString('fr-FR')} a été corrigée en "${label}" (NOT-ATT-005).`,
         refType: 'Attendance',
         refId: attendance.id,
-        sendEmail: () =>
-          this.email.sendAttendanceRecorded(
-            student.parent.user.email,
-            `${student.firstName} ${student.lastName}`,
-            label,
-            session.date,
-          ),
+        sendEmail: parentEmail
+          ? () =>
+              this.email.sendAttendanceRecorded(
+                parentEmail,
+                `${student.firstName} ${student.lastName}`,
+                label,
+                session.date,
+              )
+          : undefined,
       });
     }
 
@@ -439,6 +442,7 @@ export class AttendanceService {
     for (const a of notified) {
       const label = STATUS_LABELS[a.status];
       const priority = ATT_PRIORITY[a.status];
+      const parentEmail = a.student.parent.user.email;
       await this.notifications.notify({
         recipientUserId: a.student.parentId,
         type: `ATT_${a.status}`,
@@ -448,11 +452,11 @@ export class AttendanceService {
         refType: 'Attendance',
         refId: a.id,
         sendEmail:
-          priority === 'INFORMATION'
+          priority === 'INFORMATION' || !parentEmail
             ? undefined
             : () =>
                 this.email.sendAttendanceRecorded(
-                  a.student.parent.user.email,
+                  parentEmail,
                   `${a.student.firstName} ${a.student.lastName}`,
                   label,
                   session.date,
@@ -498,6 +502,7 @@ export class AttendanceService {
           where: { id: session.group.teacherId },
           select: { email: true },
         });
+        const teacherEmail = teacher.email;
         for (const a of toAlert) {
           await this.notifications.notify({
             recipientUserId: session.group.teacherId,
@@ -507,8 +512,10 @@ export class AttendanceService {
             body: `${a.student.firstName} ${a.student.lastName} totalise ${threshold} absences non excusées consécutives.`,
             refType: 'Student',
             refId: a.studentId,
-            sendEmail: () =>
-              this.email.sendAbandonmentAlert(teacher.email, `${a.student.firstName} ${a.student.lastName}`, threshold),
+            sendEmail: teacherEmail
+              ? () =>
+                  this.email.sendAbandonmentAlert(teacherEmail, `${a.student.firstName} ${a.student.lastName}`, threshold)
+              : undefined,
           });
         }
       }

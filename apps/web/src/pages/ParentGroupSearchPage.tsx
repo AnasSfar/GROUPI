@@ -121,6 +121,18 @@ export function ParentGroupSearchPage() {
     }
   }, [availableLevels, schoolLevelId]);
 
+  /** N'autorise à choisir, pour un groupe donné, que les enfants dont le niveau scolaire actuel
+   * correspond au niveau du groupe (ex : pas d'élève de 8e proposé pour un groupe de 9e). */
+  function eligibleStudentsForGroup(group: PublicGroup): Student[] {
+    return students.filter((s) => s.currentSchoolSituation?.schoolLevel.id === group.schoolLevel.id);
+  }
+
+  function startEnrollmentRequest(group: PublicGroup) {
+    const eligible = eligibleStudentsForGroup(group);
+    setStudentToEnroll(eligible.length === 1 ? eligible[0].id : '');
+    setRequestingGroupId(group.id);
+  }
+
   async function handleRequestEnrollment(groupId: string) {
     const token = getAccessToken();
     if (!token || !studentToEnroll) return;
@@ -292,11 +304,15 @@ export function ParentGroupSearchPage() {
                           {students.length === 0 ? 'Ajoutez un enfant' : 'Groupe complet'}
                         </span>
                       )
+                    ) : eligibleStudentsForGroup(group).length === 0 ? (
+                      requestingGroupId === group.id ? null : (
+                        <span className="table-hint">Aucun enfant de ce niveau</span>
+                      )
                     ) : requestingGroupId === group.id ? (
                       <div className="reason-prompt">
                         <Select value={studentToEnroll} onChange={(e) => setStudentToEnroll(e.target.value)}>
                           <option value="">Choisir l'enfant...</option>
-                          {students.map((s) => (
+                          {eligibleStudentsForGroup(group).map((s) => (
                             <option key={s.id} value={s.id}>
                               {s.firstName} {s.lastName}
                             </option>
@@ -314,7 +330,7 @@ export function ParentGroupSearchPage() {
                         </button>
                       </div>
                     ) : (
-                      <button type="button" onClick={() => setRequestingGroupId(group.id)}>
+                      <button type="button" onClick={() => startEnrollmentRequest(group)}>
                         Demander une inscription
                       </button>
                     )}

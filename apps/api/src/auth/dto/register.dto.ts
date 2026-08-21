@@ -40,13 +40,15 @@ class InitialStudentDto {
 }
 
 export class RegisterDto {
+  /** Optional complementary contact address, unique when provided. */
+  @ValidateIf((o) => !!o.email)
   @IsEmail()
-  email!: string;
+  email?: string;
 
   @MinLength(8)
   password!: string;
 
-  /** Auto-inscription réservée aux Professeurs et Parents (Ch.3.3-3.5 : Admin/SuperAdmin ne s'auto-créent jamais) */
+  /** Self-registration is only available for teachers and parents. */
   @IsIn(['TEACHER', 'PARENT'])
   role!: 'TEACHER' | 'PARENT';
 
@@ -56,34 +58,36 @@ export class RegisterDto {
   @IsString()
   lastName!: string;
 
+  /** Required login identifier and profile contact phone. */
   @IsString()
+  @MinLength(1)
   phone!: string;
 
   @IsString()
   city!: string;
 
-  /** RM-TPR-001 : le profil minimum d'un Professeur inclut au moins une matière, dès la création du compte. */
+  /** A teacher must select at least one subject at account creation. */
   @ValidateIf((o) => o.role === 'TEACHER')
   @IsArray()
-  @ArrayMinSize(1, { message: 'Au moins une matière est requise pour un compte Professeur' })
+  @ArrayMinSize(1, { message: 'Au moins une matiere est requise pour un compte Professeur' })
   @IsUUID('4', { each: true })
   subjectIds!: string[];
 
-  /** RM-TPR-001 : le profil minimum d'un Professeur inclut au moins un niveau, dès la création du compte. */
+  /** A teacher must select at least one school level at account creation. */
   @ValidateIf((o) => o.role === 'TEACHER')
   @IsArray()
   @ArrayMinSize(1, { message: 'Au moins un niveau scolaire est requis pour un compte Professeur' })
   @IsUUID('4', { each: true })
   schoolLevelIds!: string[];
 
-  /** Ch.6.5 : un Parent déclare au moins un enfant et sa situation scolaire initiale à l'inscription. */
+  /** A parent declares at least one child and the initial school situation at registration. */
   @ValidateIf((o) => o.role === 'PARENT')
   @IsObject()
   @ValidateNested()
   @Type(() => InitialStudentDto)
   initialStudent!: InitialStudentDto;
 
-  /** Ch.9.5, ERR-SEC-013 : l'acceptation des conditions d'utilisation est obligatoire à l'inscription. */
+  /** Terms acceptance is mandatory at registration. */
   @IsBoolean()
   acceptTerms!: boolean;
 }

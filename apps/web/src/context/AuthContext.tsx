@@ -30,7 +30,7 @@ type SessionStatus = 'loading' | 'authenticated' | 'unauthenticated';
 interface AuthContextValue {
   currentUser: CurrentUser | null;
   status: SessionStatus;
-  login: (email: string, password: string) => Promise<void>;
+  login: (identifier: string, password: string) => Promise<void>;
   register: (payload: RegisterPayload) => Promise<RegisterResponse>;
   logout: () => Promise<void>;
   /** Reads straight from storage (not React state) — always the latest token, even right after a refresh. */
@@ -90,8 +90,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const tokens = await authApi.login(email, password);
+  const login = useCallback(async (identifier: string, password: string) => {
+    const tokens = await authApi.login(identifier, password);
     writeTokens(tokens);
     const me = await authApi.fetchCurrentUser(tokens.accessToken);
     setCurrentUser(me);

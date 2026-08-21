@@ -98,6 +98,7 @@ export class AbsenceNoticeService {
       where: { id: session.group.teacherId },
       select: { email: true },
     });
+    const teacherEmail = teacherUser.email;
     await this.notifications.notify({
       recipientUserId: session.group.teacherId,
       type: 'DSH_ABSENCE_NOTICE',
@@ -106,14 +107,16 @@ export class AbsenceNoticeService {
       body: `${student.firstName} ${student.lastName} — absence prévisible signalée pour la séance du ${session.date.toLocaleDateString('fr-FR')} à ${session.startTime} (groupe "${session.group.name}").`,
       refType: 'Session',
       refId: session.id,
-      sendEmail: () =>
-        this.email.sendAbsenceNoticeReported(
-          teacherUser.email,
-          `${student.firstName} ${student.lastName}`,
-          session.group.name,
-          session.date,
-          session.startTime,
-        ),
+      sendEmail: teacherEmail
+        ? () =>
+            this.email.sendAbsenceNoticeReported(
+              teacherEmail,
+              `${student.firstName} ${student.lastName}`,
+              session.group.name,
+              session.date,
+              session.startTime,
+            )
+        : undefined,
     });
 
     return this.toView(notice);

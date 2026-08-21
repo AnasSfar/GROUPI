@@ -122,7 +122,7 @@ export class TemporalJobsService {
       where: { groupId, status: 'ACTIVE' },
       include: { student: { select: { parentId: true, parent: { select: { user: { select: { email: true } } } } } } },
     });
-    const byParent = new Map<string, string>();
+    const byParent = new Map<string, string | null>();
     for (const e of enrollments) byParent.set(e.student.parentId, e.student.parent.user.email);
     return [...byParent.entries()].map(([parentId, email]) => ({ parentId, email }));
   }
@@ -184,6 +184,7 @@ export class TemporalJobsService {
         skipped++;
         continue;
       }
+      const teacherEmail = session.group.teacher.user.email;
       await this.notifications.notify({
         recipientUserId: session.group.teacherId,
         type: 'SES_ATTENDANCE_MISSING_J1',
@@ -192,7 +193,9 @@ export class TemporalJobsService {
         body: `Les pr\u00e9sences de la s\u00e9ance du groupe "${session.group.name}" du ${session.date.toLocaleDateString('fr-FR')} n'ont pas encore \u00e9t\u00e9 saisies.`,
         refType: 'Session',
         refId: session.id,
-        sendEmail: () => this.email.sendSessionAttendanceMissing(session.group.teacher.user.email, session.group.name, session.date),
+        sendEmail: teacherEmail
+          ? () => this.email.sendSessionAttendanceMissing(teacherEmail, session.group.name, session.date)
+          : undefined,
       });
       sent++;
     }
@@ -250,6 +253,7 @@ export class TemporalJobsService {
     let skipped = 0;
     for (const sub of subs) {
       if (!sub.expiresAt) continue;
+      const teacherEmail = sub.teacher.user.email;
       for (const days of [15, 7, 3]) {
         const reminderDay = dateOnly(addDays(sub.expiresAt, -days));
         if (dateOnly(now).getTime() !== reminderDay.getTime()) continue;
@@ -269,7 +273,9 @@ export class TemporalJobsService {
           body: `Votre abonnement "${sub.plan.name}" expire le ${sub.expiresAt.toLocaleDateString('fr-FR')}.`,
           refType: 'Subscription',
           refId: sub.id,
-          sendEmail: () => this.email.sendSubscriptionExpiryReminder(sub.teacher.user.email, sub.plan.name, sub.expiresAt!, days),
+          sendEmail: teacherEmail
+            ? () => this.email.sendSubscriptionExpiryReminder(teacherEmail, sub.plan.name, sub.expiresAt!, days)
+            : undefined,
         });
         sent++;
       }
@@ -287,7 +293,9 @@ export class TemporalJobsService {
             body: `Votre abonnement "${sub.plan.name}" a expir\u00e9 le ${sub.expiresAt.toLocaleDateString('fr-FR')}.`,
             refType: 'Subscription',
             refId: sub.id,
-            sendEmail: () => this.email.sendSubscriptionExpired(sub.teacher.user.email, sub.plan.name, sub.expiresAt!),
+            sendEmail: teacherEmail
+              ? () => this.email.sendSubscriptionExpired(teacherEmail, sub.plan.name, sub.expiresAt!)
+              : undefined,
           });
           sent++;
         } else skipped++;
@@ -318,7 +326,9 @@ export class TemporalJobsService {
               body: `Le d\u00e9lai de gr\u00e2ce de 7 jours apr\u00e8s expiration de l'abonnement "${sub.plan.name}" est d\u00e9pass\u00e9.`,
               refType: 'Subscription',
               refId: sub.id,
-              sendEmail: () => this.email.sendSubscriptionGraceSuspended(sub.teacher.user.email, sub.plan.name),
+              sendEmail: teacherEmail
+                ? () => this.email.sendSubscriptionGraceSuspended(teacherEmail, sub.plan.name)
+                : undefined,
             });
             sent++;
           } else skipped++;
@@ -414,7 +424,7 @@ export class TemporalJobsService {
     let skipped = 0;
     const cutoff = addDays(now, -30);
     const staleUsers = await this.prisma.user.findMany({
-      where: { status: 'PENDING_VALIDATION', createdAt: { lte: cutoff } },
+      where: { status: 'PENDING_VALIDATION', roles: { has: 'TEACHER' }, createdAt: { lte: cutoff } },
       select: { id: true, email: true, roles: true, createdAt: true },
     });
     if (staleUsers.length === 0) {
@@ -520,6 +530,7 @@ export class TemporalJobsService {
         continue;
       }
       const studentName = `${account.enrollment.student.firstName} ${account.enrollment.student.lastName}`;
+      const parentEmail = account.enrollment.student.parent.user.email;
       await this.notifications.notify({
         recipientUserId: account.enrollment.student.parentId,
         type: 'CPT_PAYMENT_REMINDER',
@@ -528,7 +539,9 @@ export class TemporalJobsService {
         body: `Solde d\u00e9biteur de ${Math.abs(balance).toFixed(3)} TND pour ${studentName} (groupe "${account.enrollment.group.name}").`,
         refType: 'AccountingAccount',
         refId: account.id,
-        sendEmail: () => this.email.sendPaymentReminder(account.enrollment.student.parent.user.email, studentName, Math.abs(balance)),
+        sendEmail: parentEmail
+          ? () => this.email.sendPaymentReminder(parentEmail, studentName, Math.abs(balance))
+          : undefined,
       });
       sent++;
     }
@@ -558,6 +571,7 @@ export class TemporalJobsService {
           continue;
         }
         const studentName = `${e.student.firstName} ${e.student.lastName}`;
+        const parentEmail = e.student.parent.user.email;
         await this.notifications.notify({
           recipientUserId: e.student.parentId,
           type: 'DSH_ABSENCE_NOTICE_DEADLINE',
@@ -566,7 +580,9 @@ export class TemporalJobsService {
           body: `La s\u00e9ance de ${studentName} dans le groupe "${session.group.name}" commence \u00e0 ${session.startTime}.`,
           refType: 'Session',
           refId: session.id,
-          sendEmail: () => this.email.sendAbsenceNoticeDeadline(e.student.parent.user.email, studentName, session.group.name, session.date, session.startTime),
+          sendEmail: parentEmail
+            ? () => this.email.sendAbsenceNoticeDeadline(parentEmail, studentName, session.group.name, session.date, session.startTime)
+            : undefined,
         });
         sent++;
       }

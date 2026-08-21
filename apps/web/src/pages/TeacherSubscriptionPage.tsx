@@ -196,9 +196,7 @@ export function TeacherSubscriptionPage() {
         <section className="card-section">
           <h2>Changer d'offre</h2>
           <p>
-            Offre actuelle : <strong>{activeSubscription.plan.name}</strong>. La montée de gamme est toujours
-            possible ; la descente est refusée si vos inscriptions actives dépassent la capacité de la nouvelle
-            offre (RM-SUB-012/013).
+            Offre actuelle : <strong>{activeSubscription.plan.name}</strong>.
           </p>
           {changePlanOptions.length === 0 ? (
             <p>Aucune autre offre disponible pour un changement.</p>

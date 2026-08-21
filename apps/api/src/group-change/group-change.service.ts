@@ -547,6 +547,7 @@ export class GroupChangeService {
     await this.warnIfFrequentChanges(targetGroup.teacherId, request);
 
     // NOT-INS-007 : hors transaction — un échec d'envoi ne doit jamais annuler la décision.
+    const acceptedParentEmail = request.originalEnrollment.student.parent.user.email;
     await this.notifications.notify({
       recipientUserId: request.originalEnrollment.student.parentId,
       type: 'GROUP_CHANGE_ACCEPTED',
@@ -555,13 +556,15 @@ export class GroupChangeService {
       body: `Le changement de groupe de ${request.originalEnrollment.student.firstName} ${request.originalEnrollment.student.lastName} vers "${request.targetGroup.name}" a été accepté, effectif le ${effectiveDate.toLocaleDateString('fr-FR')}.`,
       refType: 'GroupChangeRequest',
       refId: request.id,
-      sendEmail: () =>
-        this.email.sendGroupChangeAccepted(
-          request.originalEnrollment.student.parent.user.email,
-          `${request.originalEnrollment.student.firstName} ${request.originalEnrollment.student.lastName}`,
-          request.targetGroup.name,
-          effectiveDate,
-        ),
+      sendEmail: acceptedParentEmail
+        ? () =>
+            this.email.sendGroupChangeAccepted(
+              acceptedParentEmail,
+              `${request.originalEnrollment.student.firstName} ${request.originalEnrollment.student.lastName}`,
+              request.targetGroup.name,
+              effectiveDate,
+            )
+        : undefined,
     });
     return this.annotateOne(updated);
   }
@@ -751,6 +754,7 @@ export class GroupChangeService {
     });
 
     // NOT-INS-008
+    const rejectedParentEmail = request.originalEnrollment.student.parent.user.email;
     await this.notifications.notify({
       recipientUserId: request.originalEnrollment.student.parentId,
       type: 'GROUP_CHANGE_REJECTED',
@@ -759,12 +763,14 @@ export class GroupChangeService {
       body: `Le changement de groupe de ${request.originalEnrollment.student.firstName} ${request.originalEnrollment.student.lastName} vers "${request.targetGroup.name}" a été refusé.`,
       refType: 'GroupChangeRequest',
       refId: request.id,
-      sendEmail: () =>
-        this.email.sendGroupChangeRejected(
-          request.originalEnrollment.student.parent.user.email,
-          `${request.originalEnrollment.student.firstName} ${request.originalEnrollment.student.lastName}`,
-          request.targetGroup.name,
-        ),
+      sendEmail: rejectedParentEmail
+        ? () =>
+            this.email.sendGroupChangeRejected(
+              rejectedParentEmail,
+              `${request.originalEnrollment.student.firstName} ${request.originalEnrollment.student.lastName}`,
+              request.targetGroup.name,
+            )
+        : undefined,
     });
     const updated = await this.prisma.groupChangeRequest.findUniqueOrThrow({ where: { id }, include: INCLUDE_VIEW });
     return this.annotateOne(updated);

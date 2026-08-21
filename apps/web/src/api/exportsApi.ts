@@ -103,7 +103,7 @@ export interface ExportAuditEntry {
   outcome: string;
   refusalReason: string | null;
   createdAt: string;
-  user: { email: string; roles: string[] };
+  user: { email: string | null; roles: string[] };
 }
 
 export function listJournal(accessToken: string): Promise<ExportAuditEntry[]> {
@@ -121,7 +121,7 @@ export interface DataPortabilityRequest {
   dueAt: string;
   fulfilledAt: string | null;
   exportJobId: string | null;
-  user?: { email: string };
+  user?: { email: string | null };
 }
 
 export function requestDataPortability(accessToken: string): Promise<DataPortabilityRequest> {

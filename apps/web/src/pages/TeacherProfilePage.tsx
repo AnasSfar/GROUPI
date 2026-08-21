@@ -555,7 +555,9 @@ export function TeacherProfilePage() {
             <div className="account-summary-row">
               <div>
                 <p className="table-hint">Adresse de connexion</p>
-                <p className="profile-bio-text">{currentUser?.email ?? 'Adresse non disponible'}</p>
+                <p className="profile-bio-text">
+                  {currentUser?.email ?? currentUser?.phone ?? 'Adresse non disponible'}
+                </p>
               </div>
               <div>
                 <p className="table-hint">Accès au compte</p>

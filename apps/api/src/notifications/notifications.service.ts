@@ -181,6 +181,7 @@ export class NotificationsService {
 
     let succeeded = 0;
     for (const activity of failed) {
+      if (!activity.user.email) continue;
       try {
         await this.email.sendCriticalActivityRetry(activity.user.email, activity.title, activity.body ?? activity.title);
         await this.prisma.activity.update({ where: { id: activity.id }, data: { emailSentAt: new Date(), emailError: null } });

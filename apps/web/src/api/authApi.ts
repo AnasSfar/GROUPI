@@ -13,7 +13,8 @@ export interface InitialStudentPayload {
 }
 
 export interface RegisterPayload {
-  email: string;
+  /** Email facultatif, unique quand il est fourni. */
+  email?: string;
   password: string;
   role: Role;
   firstName: string;
@@ -28,7 +29,8 @@ export interface RegisterPayload {
 
 export interface RegisterResponse {
   id: string;
-  email: string;
+  email: string | null;
+  phone: string | null;
   status: string;
 }
 
@@ -39,19 +41,22 @@ export interface TokenPair {
 
 export interface CurrentUser {
   id: string;
-  email: string;
+  email: string | null;
+  phone: string | null;
   roles: string[];
   status: string;
   administratorPermissions: string[] | null;
   emailVerifiedAt: string | null;
+  phoneVerifiedAt: string | null;
 }
 
 export function register(payload: RegisterPayload): Promise<RegisterResponse> {
   return apiRequest<RegisterResponse>('/auth/register', { method: 'POST', body: payload });
 }
 
-export function login(email: string, password: string): Promise<TokenPair> {
-  return apiRequest<TokenPair>('/auth/login', { method: 'POST', body: { email, password } });
+/** RM-SEC-001 : `identifier` est l'adresse e-mail ou le numéro de téléphone du compte. */
+export function login(identifier: string, password: string): Promise<TokenPair> {
+  return apiRequest<TokenPair>('/auth/login', { method: 'POST', body: { identifier, password } });
 }
 
 export function refreshTokens(refreshToken: string): Promise<TokenPair> {
@@ -66,9 +71,9 @@ export function fetchCurrentUser(accessToken: string): Promise<CurrentUser> {
   return apiRequest<CurrentUser>('/auth/me', { accessToken });
 }
 
-/** Always resolves — the API returns 204 whether or not the email is registered (never reveals existence). */
-export function forgotPassword(email: string): Promise<void> {
-  return apiRequest<void>('/auth/forgot-password', { method: 'POST', body: { email } });
+/** Always resolves — the API returns 204 whether or not the identifier is registered (never reveals existence). */
+export function forgotPassword(identifier: string): Promise<void> {
+  return apiRequest<void>('/auth/forgot-password', { method: 'POST', body: { identifier } });
 }
 
 export function resetPassword(token: string, newPassword: string): Promise<void> {
@@ -85,7 +90,7 @@ export interface RequestDeletionResponse {
   deleted: boolean;
 }
 
-/** RM-CYC-013/018 — suppression réelle si aucun historique métier, anonymisation sinon. */
+/** RM-CYC-013/018 — suppression logique du compte utilisateur. */
 export function requestDeletion(accessToken: string): Promise<RequestDeletionResponse> {
   return apiRequest<RequestDeletionResponse>('/auth/me/request-deletion', { method: 'POST', accessToken });
 }
@@ -127,6 +132,15 @@ export function resendVerificationEmail(accessToken: string): Promise<void> {
   return apiRequest<void>('/auth/resend-verification', { method: 'POST', accessToken });
 }
 
+/** Ch.9.5 — équivalent de `verifyEmail` pour un compte identifié (ou complété) par téléphone. */
+export function verifyPhone(code: string): Promise<void> {
+  return apiRequest<void>('/auth/verify-phone', { method: 'POST', body: { code } });
+}
+
+export function resendVerificationPhone(accessToken: string): Promise<void> {
+  return apiRequest<void>('/auth/resend-verification-phone', { method: 'POST', accessToken });
+}
+
 export interface AddRolePayload {
   /** Le rôle métier à ajouter au compte actif (l'autre que celui déjà détenu). */
   role: Role;
@@ -141,7 +155,7 @@ export interface AddRolePayload {
 
 export interface AddRoleResponse {
   id: string;
-  email: string;
+  email: string | null;
   status: string;
   roles: string[];
 }

@@ -4,7 +4,8 @@ export type UserStatus = 'PENDING_VALIDATION' | 'ACTIVE' | 'SUSPENDED' | 'DISABL
 
 export interface AdminUser {
   id: string;
-  email: string;
+  /** RM-SEC-001 : identifiant du compte — e-mail ou téléphone, jamais les deux garantis à la fois. */
+  email: string | null;
   status: UserStatus;
   roles: string[];
   createdAt: string;

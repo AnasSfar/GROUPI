@@ -1,15 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Select } from '../components/Select';
+import { useToast } from '../components/Toast';
 import { EmptyState } from '../components/UiState';
 import { ApiError } from '../api/client';
 import * as groupsApi from '../api/groupsApi';
 import * as sessionsApi from '../api/sessionsApi';
+import * as teacherProfileApi from '../api/teacherProfileApi';
 import { formatDuration } from '../api/groupsApi';
 import { hasSessionStarted, sessionStartTimestamp } from '../utils/format';
-import type { Group } from '../api/groupsApi';
+import type { Group, TeachingMode } from '../api/groupsApi';
 import type { Session, SessionStatus } from '../api/sessionsApi';
+import type { TeachingLocation } from '../api/teacherProfileApi';
 
 const STATUS_LABELS: Record<SessionStatus, string> = {
   PLANNED: 'Planifiee',
@@ -47,6 +50,13 @@ function attendanceLabel(status: SessionStatus): string {
   return status === 'PLANNED' ? "Faire l'appel" : "Voir l'appel";
 }
 
+function attendanceUnavailableLabel(session: Session): string {
+  if (session.status === 'PLANNED') {
+    return `Disponible a ${session.startTime}`;
+  }
+  return 'Appel indisponible';
+}
+
 function sessionTimestamp(row: SessionRow): number {
   return sessionStartTimestamp(row.session.date, row.session.startTime);
 }
@@ -54,13 +64,34 @@ function sessionTimestamp(row: SessionRow): number {
 /** Vue operationnelle Professeur : une ligne par occurrence de seance, tous groupes confondus. */
 export function TeacherAllSessionsPage() {
   const { getAccessToken } = useAuth();
+  const { showToast } = useToast();
   const [rows, setRows] = useState<SessionRow[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
+  const [locations, setLocations] = useState<TeachingLocation[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState('');
   const [statusFilter, setStatusFilter] = useState<SessionStatus | ''>('');
   const [periodFilter, setPeriodFilter] = useState<'ALL' | 'TODAY' | 'UPCOMING' | 'PAST'>('ALL');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [createGroupId, setCreateGroupId] = useState('');
+  const [date, setDate] = useState('');
+  const [startTime, setStartTime] = useState('18:00');
+  const [durationMinutes, setDurationMinutes] = useState('60');
+  const [teachingMode, setTeachingMode] = useState<TeachingMode>('PRESENTIAL');
+  const [teachingLocationId, setTeachingLocationId] = useState('');
+
+  function applyGroupDefaults(groupId: string, availableGroups = groups) {
+    setCreateGroupId(groupId);
+    const group = availableGroups.find((item) => item.id === groupId);
+    if (!group) return;
+    const firstSchedule = group.schedules[0];
+    setTeachingMode(firstSchedule?.teachingMode ?? group.teachingMode);
+    setStartTime(firstSchedule?.startTime ?? '18:00');
+    setDurationMinutes(String(firstSchedule?.durationMinutes ?? 60));
+    setTeachingLocationId(firstSchedule?.teachingLocationId ?? '');
+  }
 
   const load = useCallback(async () => {
     const token = getAccessToken();
@@ -69,13 +100,17 @@ export function TeacherAllSessionsPage() {
     setError(null);
     try {
       const myGroups = await groupsApi.listMine(token);
-      const sessionsByGroup = await Promise.all(
+      const [sessionsByGroup, myLocations] = await Promise.all([
+        Promise.all(
         myGroups.map(async (group) => ({
           group,
           sessions: await sessionsApi.listSessions(token, group.id),
         })),
-      );
+        ),
+        teacherProfileApi.listLocations(token),
+      ]);
       setGroups(myGroups);
+      setLocations(myLocations);
       setRows(
         sessionsByGroup
           .flatMap(({ group, sessions }) => sessions.map((session) => ({ group, session })))
@@ -91,6 +126,42 @@ export function TeacherAllSessionsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (createGroupId || groups.length === 0) return;
+    applyGroupDefaults(groups[0].id, groups);
+  }, [createGroupId, groups]);
+
+  async function handleCreateSession(event: FormEvent) {
+    event.preventDefault();
+    const token = getAccessToken();
+    if (!token || !createGroupId || !date || !startTime) return;
+    setError(null);
+    setNotice(null);
+    try {
+      await sessionsApi.createSession(token, createGroupId, {
+        date,
+        startTime,
+        durationMinutes: Number(durationMinutes),
+        teachingMode,
+        teachingLocationId: teachingLocationId || undefined,
+      });
+      setDate('');
+      setNotice('Seance creee.');
+      showToast('Seance creee');
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Impossible de creer cette seance.');
+    }
+  }
+
+  function handleToggleCreateForm() {
+    setShowCreateForm((visible) => {
+      const nextVisible = !visible;
+      if (nextVisible) applyGroupDefaults(selectedGroupId || createGroupId || groups[0]?.id || '');
+      return nextVisible;
+    });
+  }
 
   const filteredRows = useMemo(() => {
     const today = new Date();
@@ -119,6 +190,14 @@ export function TeacherAllSessionsPage() {
           <p>Une ligne par seance, avec acces direct a l'appel et au suivi des paiements.</p>
         </div>
         <div className="page-actions">
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={handleToggleCreateForm}
+            disabled={groups.length === 0}
+          >
+            {showCreateForm ? 'Fermer' : 'Creer une seance'}
+          </button>
           <Link to="/teacher/groups">Mes groupes</Link>
         </div>
       </div>
@@ -127,6 +206,77 @@ export function TeacherAllSessionsPage() {
         <p className="form-error" role="alert">
           {error}
         </p>
+      )}
+      {notice && (
+        <p className="form-notice" role="status">
+          {notice}
+        </p>
+      )}
+
+      {showCreateForm && (
+        <section className="card-section">
+          <h2>Creer une seance</h2>
+          <form onSubmit={handleCreateSession}>
+            <div className="field-row">
+              <label>
+                Groupe
+                <Select value={createGroupId} onChange={(e) => applyGroupDefaults(e.target.value)}>
+                  {groups.map((group) => (
+                    <option key={group.id} value={group.id}>
+                      {group.name}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+              <label>
+                Date
+                <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} />
+              </label>
+              <label>
+                Heure de debut
+                <input
+                  type="time"
+                  required
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                />
+              </label>
+              <label>
+                Duree (min)
+                <input
+                  type="number"
+                  min={1}
+                  required
+                  value={durationMinutes}
+                  onChange={(e) => setDurationMinutes(e.target.value)}
+                />
+              </label>
+            </div>
+            <div className="field-row">
+              <label>
+                Mode d'enseignement
+                <Select value={teachingMode} onChange={(e) => setTeachingMode(e.target.value as TeachingMode)}>
+                  <option value="PRESENTIAL">Presentiel</option>
+                  <option value="ONLINE">En ligne</option>
+                </Select>
+              </label>
+              <label>
+                Lieu (optionnel)
+                <Select value={teachingLocationId} onChange={(e) => setTeachingLocationId(e.target.value)}>
+                  <option value="">-</option>
+                  {locations.map((location) => (
+                    <option key={location.id} value={location.id}>
+                      {location.label}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+            </div>
+            <button type="submit" disabled={!createGroupId || !date || !startTime}>
+              Creer la seance
+            </button>
+          </form>
+        </section>
       )}
 
       <section className="card-section">
@@ -210,7 +360,7 @@ export function TeacherAllSessionsPage() {
                           {attendanceLabel(session.status)}
                         </Link>
                       ) : (
-                        <span className="table-hint">Appel indisponible</span>
+                        <span className="table-hint">{attendanceUnavailableLabel(session)}</span>
                       )}
                       <Link to={`/teacher/sessions/${session.id}/payments`}>Saisir les paiements</Link>
                       <Link to={`/teacher/groups/${group.id}/sessions`}>Voir</Link>
@@ -225,4 +375,3 @@ export function TeacherAllSessionsPage() {
     </>
   );
 }
-

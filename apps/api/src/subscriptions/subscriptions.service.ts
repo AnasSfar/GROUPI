@@ -297,6 +297,7 @@ export class SubscriptionsService {
       data: { status: 'SUSPENDED', suspendedAt: new Date(), suspendedById: adminId, suspensionReason: dto.reason },
     });
     const updated = await this.loadById(id);
+    const teacherEmail = sub.teacher.user.email;
     // NOT-ABO-006 (Critique -> e-mail, RM-NOT-008/009)
     await this.notifications.notify({
       recipientUserId: sub.teacherId,
@@ -309,7 +310,7 @@ export class SubscriptionsService {
         ' Contactez l’administration GROUPI pour régulariser votre situation.',
       refType: 'Subscription',
       refId: sub.id,
-      sendEmail: () => this.email.sendSubscriptionSuspended(sub.teacher.user.email, sub.plan.name),
+      sendEmail: teacherEmail ? () => this.email.sendSubscriptionSuspended(teacherEmail, sub.plan.name) : undefined,
     });
     return updated;
   }
@@ -331,6 +332,7 @@ export class SubscriptionsService {
       },
     });
     const updated = await this.loadById(id);
+    const teacherEmail = sub.teacher.user.email;
     // NOT-ABO-007 (Important -> e-mail, RM-NOT-008/009)
     await this.notifications.notify({
       recipientUserId: sub.teacherId,
@@ -340,7 +342,7 @@ export class SubscriptionsService {
       body: `Votre abonnement "${sub.plan.name}" a été réactivé. Vos droits sont rétablis, aucune donnée n’a été perdue.`,
       refType: 'Subscription',
       refId: sub.id,
-      sendEmail: () => this.email.sendSubscriptionReactivated(sub.teacher.user.email, sub.plan.name),
+      sendEmail: teacherEmail ? () => this.email.sendSubscriptionReactivated(teacherEmail, sub.plan.name) : undefined,
     });
     return updated;
   }

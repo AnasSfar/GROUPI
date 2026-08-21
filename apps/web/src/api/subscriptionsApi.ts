@@ -22,7 +22,7 @@ export interface Subscription {
   suspensionReason: string | null;
   plan: SubscriptionPlan;
   academicYear: { id: string; label: string; status: 'OPEN' | 'CLOSED'; endDate: string };
-  teacher: { id: string; firstName: string; lastName: string; user: { email: string } };
+  teacher: { id: string; firstName: string; lastName: string; user: { email: string | null } };
 }
 
 export function listPlans(accessToken: string): Promise<SubscriptionPlan[]> {

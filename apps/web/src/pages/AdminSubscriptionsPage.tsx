@@ -145,7 +145,7 @@ export function AdminSubscriptionsPage() {
               {subscriptions.map((sub) => (
                 <tr key={sub.id}>
                   <td data-label="Professeur">
-                    {sub.teacher.firstName} {sub.teacher.lastName} ({sub.teacher.user.email})
+                    {sub.teacher.firstName} {sub.teacher.lastName} ({sub.teacher.user.email ?? '—'})
                   </td>
                   <td data-label="Offre">{sub.plan.name}</td>
                   <td data-label="Année académique">{sub.academicYear.label}</td>

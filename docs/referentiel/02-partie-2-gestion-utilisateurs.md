@@ -1030,9 +1030,9 @@ Le présent chapitre décrit les mécanismes d’authentification, de gestion de
 
 9.2. Authentification
 Chaque utilisateur accède à GROUPI au moyen de :
-Son adresse e-mail ; 
+Son identifiant de compte (adresse e-mail ou numéro de téléphone) ; 
 Son mot de passe personnel. 
-L’adresse e-mail constitue l’identifiant unique du compte.
+À l’inscription, l’utilisateur choisit son identifiant de compte : soit son adresse e-mail, soit son numéro de téléphone. Ce choix fixe l’identifiant unique du compte (RM-SEC-001) ; l’autre moyen de contact peut être renseigné en complément mais reste alors facultatif et ne permet pas la connexion. Ce choix n’est pas modifiable après la création du compte en V1.
 L’authentification vérifie également l’état du compte utilisateur. Selon cet état, l’accès peut être autorisé, restreint ou refusé conformément au cycle de vie des comptes.
 État du compte
 Authentification
@@ -1064,18 +1064,18 @@ Le Professeur ou le Parent peut demander la réinitialisation de son mot de pass
 
 La procédure est la suivante :
 Demande de réinitialisation ; 
-Envoi d’un lien sécurisé par e-mail ; 
+Envoi d’un lien sécurisé par e-mail si le compte utilise l’adresse e-mail comme identifiant, ou d’un code sécurisé par SMS si le compte utilise le numéro de téléphone comme identifiant ; 
 Définition d’un nouveau mot de passe. 
-Le lien possède :
+Le lien ou le code possède :
 Une durée de validité limitée ; 
 Un usage unique. 
 La demande de réinitialisation invalide automatiquement tous les liens de réinitialisation précédemment émis.La réinitialisation du mot de passe invalide automatiquement toutes les sessions actives de l’utilisateur.
 
 9.5. Première connexion
 Lors de la première connexion, GROUPI peut demander :
-La vérification de l’adresse e-mail ; 
+La vérification de l’identifiant du compte (adresse e-mail ou numéro de téléphone, selon celui choisi à l’inscription) ; 
 L’acceptation des conditions d’utilisation. 
-Tant que la vérification de l’adresse e-mail ou l’acceptation obligatoire des conditions d’utilisation n’ont pas été réalisées, les fonctionnalités concernées restent indisponibles.
+Tant que cette vérification ou l’acceptation obligatoire des conditions d’utilisation n’ont pas été réalisées, les fonctionnalités concernées restent indisponibles.
 
 9.6. Sessions
 Chaque connexion crée une session utilisateur.

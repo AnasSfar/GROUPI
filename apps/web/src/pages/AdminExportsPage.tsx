@@ -268,7 +268,7 @@ export function AdminExportsPage() {
               <tbody>
                 {journal.map((entry) => (
                   <tr key={entry.id}>
-                    <td data-label="Utilisateur">{entry.user.email}</td>
+                    <td data-label="Utilisateur">{entry.user.email ?? '—'}</td>
                     <td data-label="Type">{entry.type}</td>
                     <td data-label="Format">{FORMAT_LABELS[entry.format]}</td>
                     <td data-label="Résultat">

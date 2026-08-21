@@ -29,6 +29,10 @@ function daysBetween(from: Date, to: Date): number {
   return Math.max(0, Math.round((to.getTime() - from.getTime()) / 86_400_000));
 }
 
+function startOfUtcDay(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
 const ACCOUNT_INCLUDE = {
   period: true,
   enrollment: {
@@ -724,6 +728,7 @@ export class AccountingService {
       throw new BadRequestException('Ce compte ne présente aucune dette à rappeler');
     }
 
+    const parentEmail = account.enrollment.student.parent.user.email;
     await this.notifications.notify({
       recipientUserId: account.enrollment.student.parentId,
       type: 'CPT_PAYMENT_REMINDER',
@@ -732,12 +737,14 @@ export class AccountingService {
       body: `Solde débiteur de ${Math.abs(balance).toFixed(3)} TND pour ${account.enrollment.student.firstName} ${account.enrollment.student.lastName} (groupe "${account.enrollment.group.name}").`,
       refType: 'AccountingAccount',
       refId: account.id,
-      sendEmail: () =>
-        this.email.sendPaymentReminder(
-          account.enrollment.student.parent.user.email,
-          `${account.enrollment.student.firstName} ${account.enrollment.student.lastName}`,
-          Math.abs(balance),
-        ),
+      sendEmail: parentEmail
+        ? () =>
+            this.email.sendPaymentReminder(
+              parentEmail,
+              `${account.enrollment.student.firstName} ${account.enrollment.student.lastName}`,
+              Math.abs(balance),
+            )
+        : undefined,
     });
     return { sent: true, balance };
   }
@@ -1035,11 +1042,38 @@ export class AccountingService {
   }
 
   /** RM-CPT-014 : séances PLANNED futures × tarif appliqué, pour les inscriptions ACTIVE du groupe. */
-  private async computeForecastRevenue(scope: { teacherId?: string; groupId?: string }): Promise<number> {
+  private currentRevenuePeriods(now = new Date()) {
+    const year = now.getUTCFullYear();
+    const month = now.getUTCMonth();
+    const quarterStartMonth = Math.floor(month / 3) * 3;
+    return {
+      currentMonth: {
+        start: new Date(Date.UTC(year, month, 1)),
+        end: new Date(Date.UTC(year, month + 1, 1)),
+      },
+      currentQuarter: {
+        start: new Date(Date.UTC(year, quarterStartMonth, 1)),
+        end: new Date(Date.UTC(year, quarterStartMonth + 3, 1)),
+      },
+      currentYear: {
+        start: new Date(Date.UTC(year, 0, 1)),
+        end: new Date(Date.UTC(year + 1, 0, 1)),
+      },
+    };
+  }
+
+  private async computeForecastRevenue(
+    scope: { teacherId?: string; groupId?: string },
+    period?: { start: Date; end: Date },
+  ): Promise<number> {
+    const today = startOfUtcDay(new Date());
     const sessions = await this.prisma.session.findMany({
       where: {
         status: 'PLANNED',
-        date: { gte: new Date() },
+        date: {
+          gte: period ? (period.start > today ? period.start : today) : today,
+          ...(period ? { lt: period.end } : {}),
+        },
         group: {
           ...(scope.teacherId ? { teacherId: scope.teacherId } : {}),
           ...(scope.groupId ? { id: scope.groupId } : {}),
@@ -1076,6 +1110,46 @@ export class AccountingService {
   }
 
   /** Ch.15.12.2/15.12.3 : agrégats communs professeur/groupe — la seule différence est le périmètre des comptes. */
+  private async computePeriodRevenue(
+    scope: { teacherId?: string; groupId?: string },
+    period: { start: Date; end: Date },
+  ) {
+    const accounts = await this.loadAccountsForScope(scope);
+    const accountIds = accounts.map((a) => a.id);
+    const entries =
+      accountIds.length > 0
+        ? this.aggregatable(
+            await this.prisma.accountingEntry.findMany({
+              where: {
+                accountId: { in: accountIds },
+                effectiveDate: { gte: period.start, lt: period.end },
+              },
+            }),
+          )
+        : [];
+    const realizedRevenue = entries
+      .filter((e) => e.type === 'SESSION')
+      .reduce((sum, e) => sum + Number(e.amount), 0);
+    const collectedRevenue = entries
+      .filter((e) => e.type === 'PAYMENT' && e.direction === 'CREDIT')
+      .reduce((sum, e) => sum + Number(e.amount), 0);
+    return {
+      forecastRevenue: round3(await this.computeForecastRevenue(scope, period)),
+      realizedRevenue: round3(realizedRevenue),
+      collectedRevenue: round3(collectedRevenue),
+    };
+  }
+
+  private async computePeriodRevenueSet(scope: { teacherId?: string; groupId?: string }) {
+    const periods = this.currentRevenuePeriods();
+    const [currentMonth, currentQuarter, currentYear] = await Promise.all([
+      this.computePeriodRevenue(scope, periods.currentMonth),
+      this.computePeriodRevenue(scope, periods.currentQuarter),
+      this.computePeriodRevenue(scope, periods.currentYear),
+    ]);
+    return { currentMonth, currentQuarter, currentYear };
+  }
+
   private async computeAggregateIndicators(scope: { teacherId?: string; groupId?: string }) {
     const now = new Date();
     const accounts = await this.loadAccountsForScope(scope);
@@ -1231,12 +1305,14 @@ export class AccountingService {
    * recalculés deux fois (même traitement que les doublons NOT-CPT-006/010 côté notifications).
    */
   async getTeacherIndicators(teacherId: string) {
-    const [aggregate, forecastRevenue] = await Promise.all([
+    const [aggregate, forecastRevenue, periodRevenue] = await Promise.all([
       this.computeAggregateIndicators({ teacherId }),
       this.computeForecastRevenue({ teacherId }),
+      this.computePeriodRevenueSet({ teacherId }),
     ]);
     return {
       forecastRevenue: round3(forecastRevenue),
+      periodRevenue,
       realizedRevenue: aggregate.invoicedTotal,
       collectedRevenue: aggregate.paidTotal,
       receivableRevenue: aggregate.receivable,

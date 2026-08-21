@@ -6,6 +6,7 @@ import { AuthService } from './auth.service';
 import { PasswordService } from './password.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
+import { SmsService } from '../sms/sms.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { TeacherProfileService } from '../teacher-profile/teacher-profile.service';
 
@@ -23,8 +24,13 @@ function makePrismaMock() {
   return {
     user: {
       findUnique: jest.fn(),
+      findFirst: jest.fn(),
       findUniqueOrThrow: jest.fn(),
+      findMany: jest.fn(),
       update: jest.fn(),
+      create: jest.fn(),
+    },
+    auditLog: {
       create: jest.fn(),
     },
     teacherProfile: {
@@ -63,6 +69,12 @@ function makePrismaMock() {
       updateMany: jest.fn(),
       create: jest.fn(),
     },
+    phoneVerificationToken: {
+      updateMany: jest.fn(),
+      create: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+    },
     userSession: {
       create: jest.fn(),
       update: jest.fn(),
@@ -97,6 +109,7 @@ describe('AuthService', () => {
   let config: { get: jest.Mock; getOrThrow: jest.Mock };
   let password: { hash: jest.Mock; verify: jest.Mock };
   let email: { sendPasswordResetEmail: jest.Mock; sendEmailVerification: jest.Mock };
+  let sms: { sendPhoneVerification: jest.Mock; sendAccountLocked: jest.Mock; sendPasswordResetSms: jest.Mock };
   let notifications: { notify: jest.Mock };
   let teacherProfile: { assertSubjectLevelSelectionValid: jest.Mock };
 
@@ -128,6 +141,11 @@ describe('AuthService', () => {
       sendPasswordResetEmail: jest.fn().mockResolvedValue(undefined),
       sendEmailVerification: jest.fn().mockResolvedValue(undefined),
     };
+    sms = {
+      sendPhoneVerification: jest.fn().mockResolvedValue(undefined),
+      sendAccountLocked: jest.fn().mockResolvedValue(undefined),
+      sendPasswordResetSms: jest.fn().mockResolvedValue(undefined),
+    };
     notifications = { notify: jest.fn().mockResolvedValue({}) };
     teacherProfile = { assertSubjectLevelSelectionValid: jest.fn().mockResolvedValue(undefined) };
 
@@ -137,6 +155,7 @@ describe('AuthService', () => {
       config as unknown as ConfigService,
       password as unknown as PasswordService,
       email as unknown as EmailService,
+      sms as unknown as SmsService,
       notifications as unknown as NotificationsService,
       teacherProfile as unknown as TeacherProfileService,
     );
@@ -149,11 +168,12 @@ describe('AuthService', () => {
   // ---------------------------------------------------------------------
   describe('register', () => {
     it('creates a User + TeacherProfile for role TEACHER', async () => {
-      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.user.findFirst.mockResolvedValue(null);
       password.hash.mockResolvedValue('hashed-pw');
       prisma.user.create.mockResolvedValue({
         id: 'user-1',
         email: 'teacher@example.com',
+        phone: '20000000',
         status: 'PENDING_VALIDATION',
       });
       prisma.teacherProfile.create.mockResolvedValue({ id: 'user-1' });
@@ -177,6 +197,7 @@ describe('AuthService', () => {
         expect.objectContaining({
           data: expect.objectContaining({
             email: 'teacher@example.com',
+            phone: '20000000',
             passwordHash: 'hashed-pw',
             status: 'PENDING_VALIDATION',
             roles: ['TEACHER'],
@@ -192,17 +213,19 @@ describe('AuthService', () => {
       expect(result).toEqual({
         id: 'user-1',
         email: 'teacher@example.com',
+        phone: '20000000',
         status: 'PENDING_VALIDATION',
       });
     });
 
     it('creates a User + ParentProfile for role PARENT', async () => {
-      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.user.findFirst.mockResolvedValue(null);
       password.hash.mockResolvedValue('hashed-pw');
       prisma.user.create.mockResolvedValue({
         id: 'user-2',
         email: 'parent@example.com',
-        status: 'PENDING_VALIDATION',
+        phone: '20000001',
+        status: 'ACTIVE',
       });
       prisma.parentProfile.create.mockResolvedValue({ id: 'user-2' });
       prisma.schoolLevel.findUnique.mockResolvedValue({
@@ -233,13 +256,13 @@ describe('AuthService', () => {
       } as any);
 
       expect(prisma.parentProfile.create).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ id: 'user-2' }) }),
+        expect.objectContaining({ data: expect.objectContaining({ id: 'user-2', validatedAt: expect.any(Date) }) }),
       );
       expect(prisma.teacherProfile.create).not.toHaveBeenCalled();
     });
 
     it('rejects a duplicate email with ConflictException', async () => {
-      prisma.user.findUnique.mockResolvedValue({ id: 'existing', email: 'dup@example.com' });
+      prisma.user.findFirst.mockResolvedValue({ id: 'existing', email: 'dup@example.com' });
 
       await expect(
         service.register({
@@ -269,15 +292,16 @@ describe('AuthService', () => {
       failedLoginAttempts: 0,
       lockedUntil: null,
       tokenVersion: 0,
+      deletedAt: null,
     };
 
     it('succeeds with correct credentials and issues tokens', async () => {
-      prisma.user.findUnique.mockResolvedValue({ ...baseUser });
+      prisma.user.findFirst.mockResolvedValue({ ...baseUser });
       password.verify.mockResolvedValue(true);
       prisma.userSession.create.mockResolvedValue({});
 
       const tokens = await service.login(
-        { email: baseUser.email, password: 'correct' } as any,
+        { identifier: baseUser.email, password: 'correct' } as any,
         meta,
       );
 
@@ -295,41 +319,51 @@ describe('AuthService', () => {
     });
 
     it('fails with wrong password', async () => {
-      prisma.user.findUnique.mockResolvedValue({ ...baseUser });
+      prisma.user.findFirst.mockResolvedValue({ ...baseUser });
       password.verify.mockResolvedValue(false);
 
       await expect(
-        service.login({ email: baseUser.email, password: 'wrong' } as any, meta),
+        service.login({ identifier: baseUser.email, password: 'wrong' } as any, meta),
       ).rejects.toBeInstanceOf(UnauthorizedException);
     });
 
     it('rejects unknown email', async () => {
-      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.user.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.login({ email: 'nobody@example.com', password: 'x' } as any, meta),
+        service.login({ identifier: 'nobody@example.com', password: 'x' } as any, meta),
       ).rejects.toBeInstanceOf(UnauthorizedException);
     });
 
     it.each(['SUSPENDED', 'DISABLED', 'ARCHIVED'])(
       'rejects a %s account before checking the password',
       async (status) => {
-        prisma.user.findUnique.mockResolvedValue({ ...baseUser, status });
+        prisma.user.findFirst.mockResolvedValue({ ...baseUser, status });
 
         await expect(
-          service.login({ email: baseUser.email, password: 'whatever' } as any, meta),
+          service.login({ identifier: baseUser.email, password: 'whatever' } as any, meta),
         ).rejects.toBeInstanceOf(UnauthorizedException);
 
         expect(password.verify).not.toHaveBeenCalled();
       },
     );
 
-    it('rejects login when lockedUntil is in the future', async () => {
-      const future = new Date(Date.now() + 60_000);
-      prisma.user.findUnique.mockResolvedValue({ ...baseUser, lockedUntil: future });
+    it('rejects a soft-deleted account before checking the password', async () => {
+      prisma.user.findFirst.mockResolvedValue({ ...baseUser, deletedAt: new Date() });
 
       await expect(
-        service.login({ email: baseUser.email, password: 'correct' } as any, meta),
+        service.login({ identifier: baseUser.email, password: 'whatever' } as any, meta),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+
+      expect(password.verify).not.toHaveBeenCalled();
+    });
+
+    it('rejects login when lockedUntil is in the future', async () => {
+      const future = new Date(Date.now() + 60_000);
+      prisma.user.findFirst.mockResolvedValue({ ...baseUser, lockedUntil: future });
+
+      await expect(
+        service.login({ identifier: baseUser.email, password: 'correct' } as any, meta),
       ).rejects.toBeInstanceOf(UnauthorizedException);
 
       expect(password.verify).not.toHaveBeenCalled();
@@ -337,12 +371,12 @@ describe('AuthService', () => {
 
     it('allows login again once lockedUntil is in the past', async () => {
       const past = new Date(Date.now() - 60_000);
-      prisma.user.findUnique.mockResolvedValue({ ...baseUser, lockedUntil: past });
+      prisma.user.findFirst.mockResolvedValue({ ...baseUser, lockedUntil: past });
       password.verify.mockResolvedValue(true);
       prisma.userSession.create.mockResolvedValue({});
 
       await expect(
-        service.login({ email: baseUser.email, password: 'correct' } as any, meta),
+        service.login({ identifier: baseUser.email, password: 'correct' } as any, meta),
       ).resolves.toBeDefined();
     });
   });
@@ -358,14 +392,15 @@ describe('AuthService', () => {
       status: 'ACTIVE',
       lockedUntil: null,
       tokenVersion: 0,
+      deletedAt: null,
     };
 
     it('increments failedLoginAttempts on a wrong password below the max', async () => {
-      prisma.user.findUnique.mockResolvedValue({ ...baseUser, failedLoginAttempts: 2 });
+      prisma.user.findFirst.mockResolvedValue({ ...baseUser, failedLoginAttempts: 2 });
       password.verify.mockResolvedValue(false);
 
       await expect(
-        service.login({ email: baseUser.email, password: 'wrong' } as any, meta),
+        service.login({ identifier: baseUser.email, password: 'wrong' } as any, meta),
       ).rejects.toBeInstanceOf(UnauthorizedException);
 
       expect(prisma.user.update).toHaveBeenCalledWith(
@@ -377,11 +412,11 @@ describe('AuthService', () => {
 
     it('locks the account and resets the counter once max attempts is reached', async () => {
       // configDefaults.LOGIN_MAX_ATTEMPTS = 5 -> attempts 4 -> 5th failure locks
-      prisma.user.findUnique.mockResolvedValue({ ...baseUser, failedLoginAttempts: 4 });
+      prisma.user.findFirst.mockResolvedValue({ ...baseUser, failedLoginAttempts: 4 });
       password.verify.mockResolvedValue(false);
 
       await expect(
-        service.login({ email: baseUser.email, password: 'wrong' } as any, meta),
+        service.login({ identifier: baseUser.email, password: 'wrong' } as any, meta),
       ).rejects.toBeInstanceOf(UnauthorizedException);
 
       expect(prisma.user.update).toHaveBeenCalledWith(
@@ -395,11 +430,11 @@ describe('AuthService', () => {
     });
 
     it('records the failed attempt in loginHistory with success: false', async () => {
-      prisma.user.findUnique.mockResolvedValue({ ...baseUser, failedLoginAttempts: 0 });
+      prisma.user.findFirst.mockResolvedValue({ ...baseUser, failedLoginAttempts: 0 });
       password.verify.mockResolvedValue(false);
 
       await expect(
-        service.login({ email: baseUser.email, password: 'wrong' } as any, meta),
+        service.login({ identifier: baseUser.email, password: 'wrong' } as any, meta),
       ).rejects.toBeInstanceOf(UnauthorizedException);
 
       expect(prisma.loginHistory.create).toHaveBeenCalledWith(
@@ -520,6 +555,44 @@ describe('AuthService', () => {
         where: { userId: 'user-1', revokedAt: null },
         data: { revokedAt: expect.any(Date) },
       });
+    });
+  });
+
+  describe('requestDeletion', () => {
+    it('soft-deletes the account, revokes active sessions and writes an audit entry', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'user-1',
+        email: 'a@example.com',
+        phone: null,
+        roles: ['PARENT'],
+        status: 'ACTIVE',
+        deletedAt: null,
+      });
+
+      await expect(service.requestDeletion('user-1')).resolves.toEqual({ anonymized: false, deleted: true });
+
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        data: {
+          deletedAt: expect.any(Date),
+          status: 'ARCHIVED',
+          tokenVersion: { increment: 1 },
+        },
+      });
+      expect(prisma.userSession.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'user-1', revokedAt: null },
+        data: { revokedAt: expect.any(Date) },
+      });
+      expect(prisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            userId: 'user-1',
+            action: 'ACCOUNT_SOFT_DELETED',
+            targetType: 'User',
+            targetId: 'user-1',
+          }),
+        }),
+      );
     });
   });
 

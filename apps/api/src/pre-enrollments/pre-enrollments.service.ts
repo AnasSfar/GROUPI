@@ -270,12 +270,12 @@ export class PreEnrollmentsService {
 
   /** Ch.11.4, RM-PRE-016/023/025, ERR-PRE-001/002/007/012 : création par le Parent. */
   async create(parentId: string, dto: CreatePreEnrollmentDto) {
-    // RM-CYC-008 : un Parent dont le compte n'est pas (ou plus) ACTIVE — en attente de validation,
-    // suspendu, désactivé... — ne peut engager aucune nouvelle démarche métier.
+    // RM-CYC-008 : un Parent dont le compte n'est pas (ou plus) ACTIVE ne peut engager aucune
+    // nouvelle démarche métier.
     const parentUser = await this.prisma.user.findUnique({ where: { id: parentId }, select: { status: true } });
     if (!parentUser || parentUser.status !== 'ACTIVE') {
       throw new ForbiddenException(
-        'Votre compte doit être validé et actif pour créer une préinscription (RM-CYC-008)',
+        'Votre compte doit être actif pour créer une préinscription (RM-CYC-008)',
       );
     }
 
@@ -583,6 +583,7 @@ export class PreEnrollmentsService {
       include: INCLUDE_DETAILS,
     });
     // NOT-PRE-* : hors chemin critique — un échec d'envoi ne doit jamais annuler la proposition.
+    const proposalParentEmail = updated.parent.user.email;
     await this.notifications.notify({
       recipientUserId: updated.parentId,
       type: 'PRE_PROPOSAL_SENT',
@@ -591,12 +592,14 @@ export class PreEnrollmentsService {
       body: `Un groupe "${group.name}" a été proposé pour ${updated.student.firstName} ${updated.student.lastName} suite à votre préinscription.`,
       refType: 'PreEnrollment',
       refId: updated.id,
-      sendEmail: () =>
-        this.email.sendPreEnrollmentProposal(
-          updated.parent.user.email,
-          `${updated.student.firstName} ${updated.student.lastName}`,
-          group.name,
-        ),
+      sendEmail: proposalParentEmail
+        ? () =>
+            this.email.sendPreEnrollmentProposal(
+              proposalParentEmail,
+              `${updated.student.firstName} ${updated.student.lastName}`,
+              group.name,
+            )
+        : undefined,
     });
     return updated;
   }

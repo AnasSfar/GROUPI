@@ -310,11 +310,17 @@ enum DataPortabilityRequestStatus {
 
 model User {
   id              String     @id @default(uuid()) @db.Uuid
-  email           String     @unique
+  /// RM-SEC-001 : identifiants uniques du compte. Pour l'auto-inscription Professeur/Parent, le
+  /// téléphone est obligatoire et l'e-mail est facultatif. Les deux colonnes restent nullables pour
+  /// couvrir les comptes administrateurs et l'historique. `phone` ici est distinct du champ `phone`
+  /// de `TeacherProfile`/`ParentProfile` (coordonnée de contact, non unique).
+  email           String?    @unique
+  phone           String?    @unique
   passwordHash    String     @map("password_hash")
   status          UserStatus
   roles           Role[]
   emailVerifiedAt DateTime?  @map("email_verified_at")
+  phoneVerifiedAt DateTime?  @map("phone_verified_at")
   /// Ch.9.5, ERR-SEC-013 : acceptation obligatoire à l'inscription — jamais nul pour un compte créé
   /// après l'introduction de ce champ ; peut être nul pour un compte plus ancien (non rétroactif).
   acceptedTermsAt DateTime?  @map("accepted_terms_at")
@@ -346,6 +352,7 @@ model User {
   sessions                         UserSession[]
   passwordResetTokens              PasswordResetToken[]
   emailVerificationTokens          EmailVerificationToken[]
+  phoneVerificationTokens          PhoneVerificationToken[]
   adminInvitationTokens            AdminInvitationToken[]
   loginHistory                     LoginHistory[]
   /// RM-SEC-013/014/031 : appareils/adresses IP déjà vus pour ce compte — sécurité uniquement.
@@ -429,6 +436,22 @@ model EmailVerificationToken {
   createdAt DateTime  @default(now()) @map("created_at")
 
   @@map("email_verification_token")
+}
+
+/// Code de vérification du numéro de téléphone, usage unique — équivalent de
+/// `EmailVerificationToken` pour un compte dont l'identifiant choisi (RM-SEC-001) est le téléphone.
+/// `tokenHash` retient le hachage d'un code numérique court envoyé par SMS (et non d'un token long,
+/// impraticable à recopier depuis un SMS).
+model PhoneVerificationToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  user      User      @relation(fields: [userId], references: [id])
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@map("phone_verification_token")
 }
 
 /// RM-CYC-022 : lien d'invitation envoyé à un Administrateur créé par le Super Administrateur —

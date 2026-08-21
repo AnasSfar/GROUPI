@@ -146,6 +146,11 @@ export function createAdjustment(
 
 export interface TeacherAccountingIndicators {
   forecastRevenue: number;
+  periodRevenue: {
+    currentMonth: TeacherAccountingPeriodRevenue;
+    currentQuarter: TeacherAccountingPeriodRevenue;
+    currentYear: TeacherAccountingPeriodRevenue;
+  };
   realizedRevenue: number;
   collectedRevenue: number;
   receivableRevenue: number;
@@ -168,6 +173,12 @@ export interface TeacherAccountingIndicators {
   worstCollectionMonth: string | null;
   debtRegularizationRate: number | null;
   globalPaymentRate: number | null;
+}
+
+export interface TeacherAccountingPeriodRevenue {
+  forecastRevenue: number;
+  realizedRevenue: number;
+  collectedRevenue: number;
 }
 
 export function getTeacherIndicators(accessToken: string): Promise<TeacherAccountingIndicators> {

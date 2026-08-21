@@ -447,6 +447,7 @@ export class EnrollmentsService {
     });
 
     // NOT-INS-002 : hors transaction — un échec d'envoi ne doit jamais annuler la décision.
+    const acceptedParentEmail = updated.student.parent.user.email;
     await this.notifications.notify({
       recipientUserId: updated.student.parentId,
       type: 'INS_ACCEPTED',
@@ -455,12 +456,14 @@ export class EnrollmentsService {
       body: `La demande d'inscription de ${updated.student.firstName} ${updated.student.lastName} au groupe "${updated.group.name}" a été acceptée.`,
       refType: 'Enrollment',
       refId: updated.id,
-      sendEmail: () =>
-        this.email.sendEnrollmentAccepted(
-          updated.student.parent.user.email,
-          `${updated.student.firstName} ${updated.student.lastName}`,
-          updated.group.name,
-        ),
+      sendEmail: acceptedParentEmail
+        ? () =>
+            this.email.sendEnrollmentAccepted(
+              acceptedParentEmail,
+              `${updated.student.firstName} ${updated.student.lastName}`,
+              updated.group.name,
+            )
+        : undefined,
     });
     return updated;
   }
@@ -495,6 +498,7 @@ export class EnrollmentsService {
     });
 
     // NOT-INS-003
+    const rejectedParentEmail = updated.student.parent.user.email;
     await this.notifications.notify({
       recipientUserId: updated.student.parentId,
       type: 'INS_REJECTED',
@@ -503,12 +507,14 @@ export class EnrollmentsService {
       body: `La demande d'inscription de ${updated.student.firstName} ${updated.student.lastName} au groupe "${updated.group.name}" a été refusée.`,
       refType: 'Enrollment',
       refId: updated.id,
-      sendEmail: () =>
-        this.email.sendEnrollmentRejected(
-          updated.student.parent.user.email,
-          `${updated.student.firstName} ${updated.student.lastName}`,
-          updated.group.name,
-        ),
+      sendEmail: rejectedParentEmail
+        ? () =>
+            this.email.sendEnrollmentRejected(
+              rejectedParentEmail,
+              `${updated.student.firstName} ${updated.student.lastName}`,
+              updated.group.name,
+            )
+        : undefined,
     });
     return updated;
   }

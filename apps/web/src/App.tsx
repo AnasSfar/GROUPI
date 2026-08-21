@@ -24,6 +24,7 @@ const TeacherGroupsPage = lazy(() => import('./pages/TeacherGroupsPage').then((m
 const TeacherAllSessionsPage = lazy(() => import('./pages/TeacherAllSessionsPage').then((m) => ({ default: m.TeacherAllSessionsPage })));
 const ParentGroupSearchPage = lazy(() => import('./pages/ParentGroupSearchPage').then((m) => ({ default: m.ParentGroupSearchPage })));
 const TeacherSessionsPage = lazy(() => import('./pages/TeacherSessionsPage').then((m) => ({ default: m.TeacherSessionsPage })));
+const TeacherStudentsPage = lazy(() => import('./pages/TeacherStudentsPage').then((m) => ({ default: m.TeacherStudentsPage })));
 const ParentEnrollmentsPage = lazy(() => import('./pages/ParentEnrollmentsPage').then((m) => ({ default: m.ParentEnrollmentsPage })));
 const TeacherEnrollmentsPage = lazy(() => import('./pages/TeacherEnrollmentsPage').then((m) => ({ default: m.TeacherEnrollmentsPage })));
 const ParentPreEnrollmentsPage = lazy(() => import('./pages/ParentPreEnrollmentsPage').then((m) => ({ default: m.ParentPreEnrollmentsPage })));
@@ -48,6 +49,7 @@ const AdminSchoolRequestsPage = lazy(() => import('./pages/AdminSchoolRequestsPa
 const AdminReferentialsPage = lazy(() => import('./pages/AdminReferentialsPage').then((m) => ({ default: m.AdminReferentialsPage })));
 const AccountSettingsPage = lazy(() => import('./pages/AccountSettingsPage').then((m) => ({ default: m.AccountSettingsPage })));
 const VerifyEmailPage = lazy(() => import('./pages/VerifyEmailPage').then((m) => ({ default: m.VerifyEmailPage })));
+const VerifyPhonePage = lazy(() => import('./pages/VerifyPhonePage').then((m) => ({ default: m.VerifyPhonePage })));
 const AdminInvitationAcceptPage = lazy(() => import('./pages/AdminInvitationAcceptPage').then((m) => ({ default: m.AdminInvitationAcceptPage })));
 
 function App() {
@@ -64,6 +66,7 @@ function App() {
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/verify-email" element={<VerifyEmailPage />} />
+            <Route path="/verify-phone" element={<VerifyPhonePage />} />
             <Route path="/admin-invitation" element={<AdminInvitationAcceptPage />} />
 
             <Route
@@ -136,6 +139,14 @@ function App() {
                 element={
                   <ProtectedRoute roles={['TEACHER']}>
                     <TeacherAllSessionsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/teacher/students"
+                element={
+                  <ProtectedRoute roles={['TEACHER']}>
+                    <TeacherStudentsPage />
                   </ProtectedRoute>
                 }
               />
@@ -329,6 +340,5 @@ function App() {
 }
 
 export default App;
-
 
 

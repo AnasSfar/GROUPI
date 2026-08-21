@@ -186,7 +186,8 @@ export class SessionsService {
       }),
     ]);
     for (const e of enrollments) {
-      const { type, title, body, sendEmail } = build(group.name, e.student.parent.user.email);
+      const parentEmail = e.student.parent.user.email;
+      const { type, title, body, sendEmail } = build(group.name, parentEmail ?? '');
       await this.notifications.notify({
         recipientUserId: e.student.parentId,
         type,
@@ -195,7 +196,7 @@ export class SessionsService {
         body,
         refType: 'Group',
         refId: groupId,
-        sendEmail,
+        sendEmail: parentEmail ? sendEmail : undefined,
       });
     }
   }

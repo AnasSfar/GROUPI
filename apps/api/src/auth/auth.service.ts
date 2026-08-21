@@ -7,9 +7,10 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { randomBytes, createHash } from 'crypto';
+import { randomBytes, randomInt, createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
+import { SmsService } from '../sms/sms.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PasswordService } from './password.service';
 import { TeacherProfileService } from '../teacher-profile/teacher-profile.service';
@@ -19,6 +20,7 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
+import { VerifyPhoneDto } from './dto/verify-phone.dto';
 import { AddRoleDto } from './dto/add-role.dto';
 
 const NON_AUTHENTICABLE_STATUSES = new Set(['SUSPENDED', 'DISABLED', 'ARCHIVED']);
@@ -49,15 +51,28 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly password: PasswordService,
     private readonly email: EmailService,
+    private readonly sms: SmsService,
     private readonly notifications: NotificationsService,
     private readonly teacherProfile: TeacherProfileService,
   ) {}
 
-  /** Ch.3.6-3.7, RM-ACC-004/005 : auto-inscription Professeur/Parent uniquement, compte PENDING_VALIDATION. */
+  /** Ch.3.6-3.7 : auto-inscription Professeur/Parent. Seuls les Professeurs attendent une validation admin. */
   async register(dto: RegisterDto) {
-    const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    // RM-SEC-001 : le téléphone est l'identifiant obligatoire ; l'email reste un contact facultatif.
+    const email = dto.email?.trim() || null;
+    const phone = dto.phone.trim();
+    if (!phone) {
+      throw new BadRequestException('Le numéro de téléphone est obligatoire');
+    }
+
+    const identifierConflicts: { email?: string; phone?: string }[] = [];
+    if (email) identifierConflicts.push({ email });
+    if (phone) identifierConflicts.push({ phone });
+    const existing = identifierConflicts.length
+      ? await this.prisma.user.findFirst({ where: { OR: identifierConflicts } })
+      : null;
     if (existing) {
-      throw new ConflictException('Un compte existe déjà avec cette adresse e-mail');
+      throw new ConflictException('Un compte existe déjà avec cet identifiant (ERR-ACC-008)');
     }
 
     // Ch.9.5, ERR-SEC-013 : conditions d'utilisation obligatoires à l'inscription.
@@ -70,9 +85,10 @@ export class AuthService {
     const user = await this.prisma.$transaction(async (tx) => {
       const created = await tx.user.create({
         data: {
-          email: dto.email,
+          email,
+          phone,
           passwordHash,
-          status: 'PENDING_VALIDATION',
+          status: dto.role === 'TEACHER' ? 'PENDING_VALIDATION' : 'ACTIVE',
           roles: [dto.role],
           acceptedTermsAt: new Date(),
         },
@@ -121,6 +137,7 @@ export class AuthService {
             lastName: dto.lastName,
             phone: dto.phone,
             city: dto.city,
+            validatedAt: new Date(),
           },
         });
 
@@ -175,9 +192,22 @@ export class AuthService {
     });
 
     // Hors chemin critique (Ch.24) : un échec d'envoi ne doit jamais bloquer l'inscription.
-    await this.sendVerificationEmail(user.id, user.email);
+    if (user.email) {
+      await this.sendVerificationEmail(user.id, user.email);
+    }
+    if (user.phone) {
+      await this.sendVerificationSms(user.id, user.phone);
+    }
 
-    return { id: user.id, email: user.email, status: user.status };
+    return { id: user.id, email: user.email, phone: user.phone, status: user.status };
+  }
+
+  private generateNumericCode(length = 6): string {
+    let code = '';
+    for (let i = 0; i < length; i++) {
+      code += randomInt(0, 10).toString();
+    }
+    return code;
   }
 
   /**
@@ -208,6 +238,9 @@ export class AuthService {
 
   async resendVerificationEmail(userId: string): Promise<void> {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    if (!user.email) {
+      throw new BadRequestException("Ce compte n'a pas d'adresse e-mail à vérifier");
+    }
     if (user.emailVerifiedAt) {
       throw new BadRequestException('Cette adresse e-mail est déjà vérifiée');
     }
@@ -235,14 +268,75 @@ export class AuthService {
     ]);
   }
 
-  /** §9.2, RM-SEC-016/024/026/027 : vérifie statut + verrouillage avant tout essai de mot de passe. */
+  /**
+   * RM-SEC-001, Ch.9.5 — équivalent de `sendVerificationEmail` pour un compte dont l'identifiant
+   * (ou le moyen de contact complémentaire) est un numéro de téléphone : un code numérique court
+   * envoyé par SMS, plutôt qu'un token long pensé pour un lien cliquable.
+   */
+  private async sendVerificationSms(userId: string, phone: string): Promise<void> {
+    const ttlMinutes = this.config.get<number>('EMAIL_VERIFICATION_TTL_MINUTES', 60 * 24);
+    const code = this.generateNumericCode();
+
+    await this.prisma.$transaction([
+      this.prisma.phoneVerificationToken.updateMany({
+        where: { userId, usedAt: null },
+        data: { usedAt: new Date() },
+      }),
+      this.prisma.phoneVerificationToken.create({
+        data: {
+          userId,
+          tokenHash: this.hashToken(code),
+          expiresAt: new Date(Date.now() + ttlMinutes * 60_000),
+        },
+      }),
+    ]);
+
+    await this.sms.sendPhoneVerification(phone, code);
+  }
+
+  async resendVerificationSms(userId: string): Promise<void> {
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    if (!user.phone) {
+      throw new BadRequestException("Ce compte n'a pas de numéro de téléphone à vérifier");
+    }
+    if (user.phoneVerifiedAt) {
+      throw new BadRequestException('Ce numéro de téléphone est déjà vérifié');
+    }
+    await this.sendVerificationSms(user.id, user.phone);
+  }
+
+  /** Ch.9.5 — code à usage unique, même schéma que `verifyEmail`. */
+  async verifyPhone(dto: VerifyPhoneDto): Promise<void> {
+    const tokenHash = this.hashToken(dto.code);
+    const verificationToken = await this.prisma.phoneVerificationToken.findUnique({ where: { tokenHash } });
+
+    if (!verificationToken || verificationToken.usedAt || verificationToken.expiresAt < new Date()) {
+      throw new BadRequestException('Code de vérification invalide ou expiré');
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.phoneVerificationToken.update({
+        where: { id: verificationToken.id },
+        data: { usedAt: new Date() },
+      }),
+      this.prisma.user.update({
+        where: { id: verificationToken.userId },
+        data: { phoneVerifiedAt: new Date() },
+      }),
+    ]);
+  }
+
+  /** §9.2, RM-SEC-001/016/024/026/027 : identifiant email OU téléphone, vérifie statut + verrouillage
+   * avant tout essai de mot de passe. */
   async login(dto: LoginDto, meta: RequestMeta): Promise<TokenPair> {
-    const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    const user = await this.prisma.user.findFirst({
+      where: { OR: [{ email: dto.identifier }, { phone: dto.identifier }] },
+    });
     if (!user) {
       throw new UnauthorizedException('Identifiants invalides');
     }
 
-    if (NON_AUTHENTICABLE_STATUSES.has(user.status)) {
+    if (user.deletedAt || NON_AUTHENTICABLE_STATUSES.has(user.status)) {
       throw new UnauthorizedException('Ce compte ne peut pas se connecter');
     }
 
@@ -252,7 +346,7 @@ export class AuthService {
 
     const passwordValid = await this.password.verify(user.passwordHash, dto.password);
     if (!passwordValid) {
-      await this.recordFailedAttempt(user.id, user.email, user.failedLoginAttempts, meta);
+      await this.recordFailedAttempt(user.id, user.email, user.phone, user.failedLoginAttempts, meta);
       throw new UnauthorizedException('Identifiants invalides');
     }
 
@@ -375,7 +469,13 @@ export class AuthService {
    * Seule l'ajout d'une notification lorsque le verrouillage se déclenche réellement (pas à chaque
    * échec individuel) est traité ici.
    */
-  private async recordFailedAttempt(userId: string, email: string, currentAttempts: number, meta: RequestMeta) {
+  private async recordFailedAttempt(
+    userId: string,
+    email: string | null,
+    phone: string | null,
+    currentAttempts: number,
+    meta: RequestMeta,
+  ) {
     const maxAttempts = this.config.get<number>('LOGIN_MAX_ATTEMPTS', 5);
     const lockoutMinutes = this.config.get<number>('LOGIN_LOCKOUT_MINUTES', 15);
     const attempts = currentAttempts + 1;
@@ -410,8 +510,13 @@ export class AuthService {
         refType: 'User',
         refId: userId,
         // RM-CYC-014 : verrouillage = notification critique, désormais aussi envoyée par e-mail
-        // (auparavant activité en-app uniquement).
-        sendEmail: () => this.email.sendAccountLocked(email, lockoutMinutes, maxAttempts),
+        // (auparavant activité en-app uniquement). Pour un compte identifié par téléphone (RM-SEC-001,
+        // pas d'adresse e-mail), le même hook `sendEmail` sert d'envoi hors-bande best-effort par SMS.
+        sendEmail: email
+          ? () => this.email.sendAccountLocked(email, lockoutMinutes, maxAttempts)
+          : phone
+            ? () => this.sms.sendAccountLocked(phone, lockoutMinutes, maxAttempts)
+            : undefined,
       });
     }
   }
@@ -424,7 +529,13 @@ export class AuthService {
       include: { user: true },
     });
 
-    if (!session || session.revokedAt || session.expiresAt < new Date()) {
+    if (
+      !session ||
+      session.revokedAt ||
+      session.expiresAt < new Date() ||
+      session.user.deletedAt ||
+      NON_AUTHENTICABLE_STATUSES.has(session.user.status)
+    ) {
       throw new UnauthorizedException('Session invalide, veuillez vous reconnecter');
     }
 
@@ -540,15 +651,24 @@ export class AuthService {
     ]);
   }
 
-  /** RM-SEC-004/005/015 : invalide les liens précédents, lien à usage unique valable 15 min. */
+  /** RM-SEC-001/004/005/015 : identifiant email OU téléphone ; invalide les liens/codes précédents,
+   * lien/code à usage unique valable 15 min. */
   async forgotPassword(dto: ForgotPasswordDto): Promise<void> {
-    const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    const user = await this.prisma.user.findFirst({
+      where: { OR: [{ email: dto.identifier }, { phone: dto.identifier }] },
+    });
     if (!user) {
-      return; // ne révèle pas si l'e-mail existe
+      return; // ne révèle pas si l'identifiant existe
     }
 
+    // Réinitialisation via le numéro de téléphone dès lors que c'est ce numéro qui a été saisi
+    // (que le téléphone soit l'identifiant principal du compte ou un simple moyen de contact) —
+    // sinon, comportement historique par e-mail.
+    const viaPhone = user.phone !== null && user.phone === dto.identifier;
     const ttlMinutes = this.config.get<number>('PASSWORD_RESET_TTL_MINUTES', 15);
-    const rawToken = randomBytes(32).toString('hex');
+    // RM-SEC-004/005/015 : un code par SMS reste court (numérique) — un token hexadécimal long,
+    // pensé pour un lien cliquable par e-mail, serait impraticable à recopier depuis un SMS.
+    const rawToken = viaPhone ? this.generateNumericCode() : randomBytes(32).toString('hex');
 
     await this.prisma.$transaction([
       this.prisma.passwordResetToken.updateMany({
@@ -564,7 +684,11 @@ export class AuthService {
       }),
     ]);
 
-    await this.email.sendPasswordResetEmail(user.email, rawToken);
+    if (viaPhone && user.phone) {
+      await this.sms.sendPasswordResetSms(user.phone, rawToken);
+    } else if (user.email) {
+      await this.email.sendPasswordResetEmail(user.email, rawToken);
+    }
   }
 
   /** RM-SEC-019 : la réinitialisation invalide immédiatement toutes les sessions actives. */
@@ -621,26 +745,9 @@ export class AuthService {
     ]);
   }
 
-  /**
-   * RM-CYC-013/018 : demande de suppression self-service, sur le même modèle que `deactivateMe`.
-   * RM-CYC-018 : les identifiants techniques (ici `id`) ne sont JAMAIS modifiés, que ce soit en cas
-   * de suppression réelle ou d'anonymisation.
-   *
-   * - Aucun historique métier détecté (`hasBusinessHistory` ci-dessous) : suppression réelle de
-   *   l'utilisateur et de ses données techniques directement liées.
-   * - Sinon (cas normal en pratique dès qu'un profil Professeur/Parent existe, voir
-   *   `hasBusinessHistory`) : anonymisation — nom/prénom/téléphone/e-mail remplacés par des valeurs
-   *   anonymisées, statut `DISABLED`, toutes les sessions invalidées (même mécanisme que
-   *   `deactivateMe`).
-   *
-   * Reste volontairement simple (self-service avec confirmation côté frontend, comme la
-   * désactivation) — pas de workflow d'approbation Ch.8 dédié pour cette passe de correction.
-   */
+  /** RM-CYC-013/018 : suppression logique self-service, avec conservation de la ligne User. */
   async requestDeletion(userId: string): Promise<{ anonymized: boolean; deleted: boolean }> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: { teacherProfile: true, parentProfile: true },
-    });
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       throw new UnauthorizedException('Utilisateur introuvable');
     }
@@ -649,87 +756,37 @@ export class AuthService {
         'Le compte Super Administrateur ne peut pas faire l’objet d’une suppression en auto-service',
       );
     }
-    if (user.status === 'ARCHIVED') {
-      throw new BadRequestException('Ce compte est déjà archivé');
-    }
-
-    const hasHistory = await this.hasBusinessHistory(user);
-
-    if (!hasHistory) {
-      // RM-CYC-013 : aucun historique métier — suppression réelle. Les tables dépendantes portant
-      // une contrainte de clé étrangère vers `User`/le profil sont nettoyées avant, pour respecter
-      // l'intégrité référentielle (aucun `onDelete: Cascade` déclaré dans ce schéma).
-      await this.prisma.$transaction(async (tx) => {
-        await tx.userSession.deleteMany({ where: { userId } });
-        await tx.loginHistory.deleteMany({ where: { userId } });
-        await tx.userDevice.deleteMany({ where: { userId } });
-        await tx.passwordResetToken.deleteMany({ where: { userId } });
-        await tx.emailVerificationToken.deleteMany({ where: { userId } });
-        await tx.adminInvitationToken.deleteMany({ where: { userId } });
-        await tx.activity.deleteMany({ where: { userId } });
-        // Le journal d'audit est conservé pour les actions dont ce compte était l'AUTEUR (traçabilité
-        // d'actions sur d'autres comptes) — seul le lien vers ce compte est retiré (`userId` nullable).
-        await tx.auditLog.updateMany({ where: { userId }, data: { userId: null } });
-        if (user.teacherProfile) {
-          await tx.teacherSubject.deleteMany({ where: { teacherProfileId: userId } });
-          await tx.teacherSchoolLevel.deleteMany({ where: { teacherProfileId: userId } });
-          await tx.teacherProfile.delete({ where: { id: userId } });
-        }
-        if (user.parentProfile) {
-          await tx.parentProfile.delete({ where: { id: userId } });
-        }
-        await tx.auditLog.create({
-          data: {
-            userId: null,
-            action: 'ACCOUNT_DELETED',
-            targetType: 'User',
-            targetId: userId,
-            oldValues: { email: user.email, status: user.status },
-            newValues: { reason: 'SELF_SERVICE_NO_HISTORY' },
-          },
-        });
-        await tx.user.delete({ where: { id: userId } });
-      });
+    if (user.deletedAt) {
       return { anonymized: false, deleted: true };
     }
 
-    // RM-CYC-013/018 : anonymisation — `id` inchangé, seules les données personnelles identifiantes
-    // sont remplacées.
-    const anonymizedEmail = `deleted-${userId}@groupi.invalid`;
-    await this.prisma.$transaction(async (tx) => {
-      await tx.user.update({
+    const deletedAt = new Date();
+    await this.prisma.$transaction([
+      this.prisma.user.update({
         where: { id: userId },
         data: {
-          email: anonymizedEmail,
-          status: 'DISABLED',
+          deletedAt,
+          status: 'ARCHIVED',
           tokenVersion: { increment: 1 },
         },
-      });
-      await tx.userSession.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } });
-      if (user.teacherProfile) {
-        await tx.teacherProfile.update({
-          where: { id: userId },
-          data: { firstName: 'Compte', lastName: 'Anonymisé', phone: '0000000000' },
-        });
-      }
-      if (user.parentProfile) {
-        await tx.parentProfile.update({
-          where: { id: userId },
-          data: { firstName: 'Compte', lastName: 'Anonymisé', phone: '0000000000' },
-        });
-      }
-      await tx.auditLog.create({
+      }),
+      this.prisma.userSession.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: deletedAt } }),
+      this.prisma.auditLog.create({
         data: {
           userId,
-          action: 'ACCOUNT_ANONYMIZED',
+          action: 'ACCOUNT_SOFT_DELETED',
           targetType: 'User',
           targetId: userId,
-          oldValues: { email: user.email, status: user.status },
-          newValues: { email: anonymizedEmail, status: 'DISABLED', reason: 'SELF_SERVICE_HAS_HISTORY' },
+          oldValues: { email: user.email, phone: user.phone, status: user.status },
+          newValues: {
+            deletedAt,
+            status: 'ARCHIVED',
+            reason: 'SELF_SERVICE_SOFT_DELETE',
+          },
         },
-      });
-    });
-    return { anonymized: true, deleted: false };
+      }),
+    ]);
+    return { anonymized: false, deleted: true };
   }
 
   /**
@@ -751,7 +808,8 @@ export class AuthService {
       where: {
         status: 'DISABLED',
         updatedAt: { lt: sevenYearsAgo },
-        NOT: { email: { endsWith: '@groupi.invalid' } },
+        // Exclut les comptes déjà anonymisés, identifiant e-mail ou téléphone (RM-SEC-001).
+        NOT: { OR: [{ email: { startsWith: 'deleted-' } }, { phone: { startsWith: 'deleted-' } }] },
         roles: { hasSome: ['TEACHER', 'PARENT'] },
       },
       select: { id: true },
@@ -877,8 +935,7 @@ export class AuthService {
           })),
         });
       } else {
-        // RM-PAR-001 : profil minimum du Parent. `validatedAt` reste nul (ParentProfile n'a pas de
-        // champ `status` dédié) — équivalent de PENDING_VALIDATION en attendant la revue Admin.
+        // RM-PAR-001 : profil minimum du Parent, actif sans validation admin.
         await tx.parentProfile.create({
           data: {
             id: userId,
@@ -886,6 +943,7 @@ export class AuthService {
             lastName: dto.lastName,
             phone: dto.phone,
             city: dto.city,
+            validatedAt: new Date(),
           },
         });
       }

@@ -10,16 +10,14 @@ import type {
   GroupOccupancyView,
   DashboardSessionSummary,
 } from '../api/dashboardApi';
-import * as exportsApi from '../api/exportsApi';
-import type { ExportFormat, ExportJob } from '../api/exportsApi';
 import { AlertList } from '../components/AlertList';
 import { EmptyState, LoadingState } from '../components/UiState';
 import { StatGrid } from '../components/StatGrid';
 import { ChildDetailCard } from '../components/ChildDetailCard';
 import { TeacherWeekCalendar } from '../components/TeacherWeekCalendar';
 import { WeekCalendar, addDays, startOfWeek, type WeekCalendarEvent } from '../components/WeekCalendar';
-import { Select } from '../components/Select';
 import { formatAmount, formatDateTime, hasSessionStarted } from '../utils/format';
+import { readHiddenGroupIds } from '../utils/hiddenGroups';
 import {
   IconUsers,
   IconBookOpen,
@@ -32,7 +30,6 @@ import {
   IconCreditCard,
   IconWallet,
   IconDownload,
-  IconAlertTriangle,
   IconBell,
 } from '../components/icons';
 
@@ -69,97 +66,65 @@ function attendanceActionLabel(status: string): string {
   return status === 'PLANNED' ? "Faire l'appel" : "Voir l'appel";
 }
 
-/**
- * RM-DSH-012 : export réel du tableau de bord (PDF/Excel), branché sur le module Exports existant
- * (`POST /exports` avec `type: 'DASHBOARD_INDICATORS'` → `ExportsService.requestTeacherExport`) —
- * ce composant ne réimplémente aucune génération, il pilote juste le même flux que la page
- * "Exporter mes données" (`/teacher/exports`).
- */
-function TeacherDashboardExportWidget({ exportInfo }: { exportInfo: TeacherDashboard['export'] }) {
-  const { getAccessToken } = useAuth();
-  const [format, setFormat] = useState<ExportFormat>('PDF');
-  const [submitting, setSubmitting] = useState(false);
-  const [job, setJob] = useState<ExportJob | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleExport() {
-    const token = getAccessToken();
-    if (!token) return;
-    setSubmitting(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const created = await exportsApi.createExport(token, { type: 'DASHBOARD_INDICATORS', format });
-      setJob(created);
-      setNotice(
-        created.status === 'READY'
-          ? `Export "${created.fileName}" prêt au téléchargement.`
-          : 'Export en cours de génération (volume important) — il sera bientôt disponible ici et dans votre centre d’activités.',
-      );
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "La génération de l'export a échoué.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function handleDownload() {
-    const token = getAccessToken();
-    if (!token || !job) return;
-    setError(null);
-    try {
-      await exportsApi.downloadExport(token, job.id, job.fileName ?? 'export');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Téléchargement impossible.');
-    }
-  }
-
-  if (!exportInfo.available) {
-    return <p className="table-hint">{exportInfo.message}</p>;
-  }
+function TeacherAccountingPeriodTable({ accounting }: { accounting: TeacherDashboard['accounting'] }) {
+  const periods = [
+    { key: 'currentMonth' as const, label: 'Mois en cours', icon: <IconCalendarCheck />, tone: 'teal' },
+    { key: 'currentQuarter' as const, label: 'Trimestre en cours', icon: <IconLayers />, tone: 'green' },
+    { key: 'currentYear' as const, label: "Toute l'année", icon: <IconWallet />, tone: 'amber' },
+  ];
+  const metrics = [
+    {
+      key: 'forecastRevenue' as const,
+      label: 'CA prévisionnel',
+    },
+    {
+      key: 'realizedRevenue' as const,
+      label: 'CA réalisé',
+    },
+    {
+      key: 'collectedRevenue' as const,
+      label: 'CA encaissé',
+    },
+  ];
 
   return (
-    <>
-      {/* RM-EXP-005 : avertissement affiché avant/pendant le téléchargement — la responsabilité de
-          la conservation et de la confidentialité du fichier incombe ensuite entièrement au Professeur. */}
-      <p className="form-notice" role="status">
-        Une fois téléchargé, vous êtes seul responsable de la conservation et de la confidentialité de ce fichier
-        (RM-EXP-005).
-      </p>
-      <div className="field-row">
-        <label>
-          Format
-          <Select value={format} onChange={(e) => setFormat(e.target.value as ExportFormat)}>
-            <option value="PDF">PDF</option>
-            <option value="EXCEL">Excel</option>
-          </Select>
-        </label>
-        <button type="button" disabled={submitting} onClick={handleExport}>
-          {submitting ? 'Génération...' : 'Exporter le tableau de bord'}
-        </button>
-        {job?.status === 'READY' && (
-          <button type="button" onClick={handleDownload}>
-            Télécharger
-          </button>
-        )}
-      </div>
-      {error && (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
-      )}
-      {notice && (
-        <p className="form-notice" role="status">
-          {notice}
-        </p>
-      )}
-    </>
+    <div className="accounting-period-list">
+      {periods.map((period) => (
+        <article key={period.key} className={`accounting-period-card tone-${period.tone}`}>
+          <div className="accounting-period-title">
+            <span className="accounting-period-icon">{period.icon}</span>
+            <h3>{period.label}</h3>
+          </div>
+          <div className="accounting-period-values">
+            {metrics.map((metric) => (
+              <div key={metric.key} className="accounting-period-value">
+                <span>{metric.label}</span>
+                <strong>{formatAmount(accounting.periodRevenue[period.key][metric.key])}</strong>
+              </div>
+            ))}
+          </div>
+        </article>
+      ))}
+    </div>
   );
 }
 
-function TeacherDashboardView({ data, onRefresh }: { data: TeacherDashboard; onRefresh: () => void }) {
+function TeacherDashboardView({
+  data,
+  onRefresh,
+  hiddenGroupIds,
+}: {
+  data: TeacherDashboard;
+  onRefresh: () => void;
+  hiddenGroupIds: Set<string>;
+}) {
   void onRefresh;
+  const removedGroupIds = new Set([
+    ...data.groups.filter((g) => g.status === 'ARCHIVED').map((g) => g.id),
+    ...hiddenGroupIds,
+  ]);
+  const visibleGroups = data.groups.filter((g) => !removedGroupIds.has(g.id));
+  const visibleTodaysSessions = data.activity.todaysSessions.filter((s) => !removedGroupIds.has(s.group.id));
   return (
     <>
       {data.alerts.length > 0 && (
@@ -177,151 +142,39 @@ function TeacherDashboardView({ data, onRefresh }: { data: TeacherDashboard; onR
 
       <TeacherWeekCalendar />
 
-      <section className="card-section">
-        <h2>Activité</h2>
-        {data.activity.todaysSessions.length > 0 && (
-          <>
-            <p className="table-hint section-spacer">Aujourd'hui</p>
-            <ul className="activity-list">
-              {data.activity.todaysSessions.map((s) => (
-                <li key={s.id} className="activity-item activity-row attendance-shortcut-row">
-                  <span className="activity-row-dot tone-amber" />
-                  <p>{s.group.name}</p>
-                  <span className="activity-row-value">{formatDateTime(s.date, s.startTime)}</span>
-                  {canOpenAttendance(s) && (
-                    <>
-                      <Link className="attendance-shortcut" to={`/teacher/sessions/${s.id}/attendance`}>
-                        <IconClipboardCheck aria-hidden="true" />
-                        {attendanceActionLabel(s.status)}
-                      </Link>
-                      <Link className="attendance-shortcut" to={`/teacher/sessions/${s.id}/payments`}>
-                        <IconCreditCard aria-hidden="true" />
-                        Saisir les paiements
-                      </Link>
-                    </>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-        <StatGrid
-          tiles={[
-            { label: 'Groupes actifs', value: String(data.activity.activeGroupsCount), icon: <IconLayers />, tone: 'teal' },
-            { label: 'Élèves inscrits', value: String(data.activity.totalActiveStudents), icon: <IconUsers />, tone: 'info' },
-            { label: "Séances aujourd'hui", value: String(data.activity.todaysSessions.length), icon: <IconCalendarCheck />, tone: 'teal' },
-            { label: "Demandes d'inscription en attente", value: String(data.activity.pendingEnrollmentsCount), icon: <IconUserPlus />, tone: 'amber' },
-            { label: 'Changements de groupe en attente', value: String(data.activity.pendingGroupChangesCount), icon: <IconLayers />, tone: 'amber' },
-            { label: 'Commentaires non lus', value: String(data.activity.unreadCommentsCount), icon: <IconBell />, tone: 'info' },
-          ]}
-        />
-        {data.activity.upcomingSessions.length > 0 && (
-          <>
-            <p className="table-hint section-spacer">Prochaines séances</p>
-            <ul className="activity-list">
-              {data.activity.upcomingSessions.slice(0, 5).map((s) => (
-                <li key={s.id} className="activity-item activity-row">
-                  <span className="activity-row-dot" />
-                  <p>{s.group.name}</p>
-                  <span className="activity-row-value">{formatDateTime(s.date, s.startTime)}</span>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-      </section>
-
-      <section className="card-section">
-        <h2>Présences</h2>
-        <StatGrid
-          tiles={[
-            { label: "Absences aujourd'hui", value: String(data.presences.absencesToday), icon: <IconClipboardCheck />, tone: 'red' },
-            { label: "Retards aujourd'hui", value: String(data.presences.latesToday), icon: <IconClipboardCheck />, tone: 'amber' },
-            { label: "Élèves à risque d'abandon", value: String(data.presences.abandonmentAlerts.length), icon: <IconAlertTriangle />, tone: 'red' },
-          ]}
-        />
-        {data.presences.abandonmentAlerts.length > 0 && (
-          <div className="alert-banner">
-            <h3>Alertes d'abandon</h3>
-            <ul>
-              {data.presences.abandonmentAlerts.map((a) => (
-                <li key={a.enrollmentId}>
-                  {a.student.firstName} {a.student.lastName} ({a.groupName}) — {a.consecutiveUnexcusedAbsences} absences
-                  consécutives
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </section>
+      {visibleTodaysSessions.length > 0 && (
+        <section className="card-section">
+          <h2>Aujourd'hui</h2>
+          <ul className="activity-list">
+            {visibleTodaysSessions.map((s) => (
+              <li key={s.id} className="activity-item activity-row attendance-shortcut-row">
+                <span className="activity-row-dot tone-amber" />
+                <p>{s.group.name}</p>
+                <span className="activity-row-value">{formatDateTime(s.date, s.startTime)}</span>
+                {canOpenAttendance(s) && (
+                  <>
+                    <Link className="attendance-shortcut" to={`/teacher/sessions/${s.id}/attendance`}>
+                      <IconClipboardCheck aria-hidden="true" />
+                      {attendanceActionLabel(s.status)}
+                    </Link>
+                    <Link className="attendance-shortcut" to={`/teacher/sessions/${s.id}/payments`}>
+                      <IconCreditCard aria-hidden="true" />
+                      Saisir les paiements
+                    </Link>
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="card-section">
         <h2>Comptabilité</h2>
-        <StatGrid
-          tiles={[
-            { label: 'CA prévisionnel', value: formatAmount(data.accounting.forecastRevenue), icon: <IconWallet />, tone: 'teal' },
-            { label: 'CA réalisé', value: formatAmount(data.accounting.realizedRevenue), icon: <IconWallet />, tone: 'green' },
-            { label: 'CA encaissé', value: formatAmount(data.accounting.collectedRevenue), icon: <IconWallet />, tone: 'green' },
-            { label: 'Restant à encaisser', value: formatAmount(data.accounting.receivableRevenue), icon: <IconCreditCard />, tone: 'amber' },
-            { label: 'Comptes débiteurs', value: String(data.accounting.debtorAccountCount), icon: <IconUsers />, tone: 'red' },
-            { label: 'Comptes créditeurs', value: String(data.accounting.creditorAccountCount), icon: <IconUsers />, tone: 'green' },
-          ]}
-        />
+        <TeacherAccountingPeriodTable accounting={data.accounting} />
         <p className="section-link">
           <Link to="/teacher/accounting">Voir tous les indicateurs financiers →</Link>
         </p>
-      </section>
-
-      <section className="card-section">
-        <h2>Paiements</h2>
-        {data.payments.debtorAccounts.length === 0 ? (
-          <EmptyState title="Aucun compte en solde négatif">Les comptes suivis sont équilibrés ou créditeurs.</EmptyState>
-        ) : (
-          <div className="table-wrap">
-            <table className="admin-table">
-              <thead>
-                <tr>
-                  <th>Élève</th>
-                  <th>Groupe</th>
-                  <th>Solde</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.payments.debtorAccounts.map((d) => (
-                  <tr key={d.account.id}>
-                    <td data-label="Élève">
-                      {d.account.student.firstName} {d.account.student.lastName}
-                    </td>
-                    <td data-label="Groupe">{d.account.group.name}</td>
-                    <td data-label="Solde">
-                      <span className={`badge ${d.alert ? 'badge-danger' : 'badge-warning'}`}>{formatAmount(d.balance)}</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {data.payments.recentPayments.length > 0 && (
-          <>
-            <p className="table-hint section-spacer">
-              Derniers paiements enregistrés
-            </p>
-            <ul className="activity-list">
-              {data.payments.recentPayments.slice(0, 5).map((p) => (
-                <li key={p.id} className="activity-item activity-row">
-                  <span className="activity-row-dot tone-green" />
-                  <p>
-                    {p.account.student.firstName} {p.account.student.lastName} ({p.account.group.name})
-                  </p>
-                  <span className="activity-row-value">
-                    {formatAmount(p.amount)} · {new Date(p.effectiveDate).toLocaleDateString('fr-FR')}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
       </section>
 
       <section className="card-section">
@@ -337,7 +190,7 @@ function TeacherDashboardView({ data, onRefresh }: { data: TeacherDashboard; onR
               </tr>
             </thead>
             <tbody>
-              {data.groups.map((g) => (
+            {visibleGroups.map((g) => (
                 <tr key={g.id}>
                   <td data-label="Groupe">{g.name}</td>
                   <td data-label="Matière / Niveau">
@@ -354,18 +207,6 @@ function TeacherDashboardView({ data, onRefresh }: { data: TeacherDashboard; onR
             </tbody>
           </table>
         </div>
-      </section>
-
-      <section className="card-section">
-        <h2>Profil</h2>
-        <StatGrid
-          tiles={[
-            { label: 'Complétude du profil', value: `${data.profile.completenessScore}%`, icon: <IconBookOpen />, tone: 'teal' },
-          ]}
-        />
-        {data.profile.missingFields.length > 0 && (
-          <p className="table-hint">À compléter : {data.profile.missingFields.join(', ')}</p>
-        )}
       </section>
 
       <section className="card-section">
@@ -386,33 +227,30 @@ function TeacherDashboardView({ data, onRefresh }: { data: TeacherDashboard; onR
         )}
       </section>
 
-      <section className="card-section">
-        <h2>Préinscriptions</h2>
-        <StatGrid
-          tiles={[
-            { label: 'Reçues', value: String(data.preEnrollments.receivedCount), icon: <IconUserPlus />, tone: 'teal' },
-            { label: 'En attente de traitement', value: String(data.preEnrollments.pendingCount), icon: <IconUserPlus />, tone: 'amber' },
-          ]}
-        />
-        {data.preEnrollments.mostRequestedSubjects.length > 0 && (
-          <p className="table-hint">
-            Matières les plus demandées : {data.preEnrollments.mostRequestedSubjects.map((s) => `${s.label} (${s.count})`).join(', ')}
+      {data.preEnrollments.receivedCount > 0 && (
+        <section className="card-section">
+          <h2>Préinscriptions</h2>
+          <StatGrid
+            tiles={[
+              { label: 'Reçues', value: String(data.preEnrollments.receivedCount), icon: <IconUserPlus />, tone: 'teal' },
+              { label: 'En attente de traitement', value: String(data.preEnrollments.pendingCount), icon: <IconUserPlus />, tone: 'amber' },
+            ]}
+          />
+          {data.preEnrollments.mostRequestedSubjects.length > 0 && (
+            <p className="table-hint">
+              Matières les plus demandées : {data.preEnrollments.mostRequestedSubjects.map((s) => `${s.label} (${s.count})`).join(', ')}
+            </p>
+          )}
+          {data.preEnrollments.mostRequestedLevels.length > 0 && (
+            <p className="table-hint">
+              Niveaux les plus demandés : {data.preEnrollments.mostRequestedLevels.map((s) => `${s.label} (${s.count})`).join(', ')}
+            </p>
+          )}
+          <p className="section-link">
+            <Link to="/teacher/pre-enrollments">Consulter les préinscriptions →</Link>
           </p>
-        )}
-        {data.preEnrollments.mostRequestedLevels.length > 0 && (
-          <p className="table-hint">
-            Niveaux les plus demandés : {data.preEnrollments.mostRequestedLevels.map((s) => `${s.label} (${s.count})`).join(', ')}
-          </p>
-        )}
-        <p className="section-link">
-          <Link to="/teacher/pre-enrollments">Consulter les préinscriptions →</Link>
-        </p>
-      </section>
-
-      <section className="card-section">
-        <h2>Export</h2>
-        <TeacherDashboardExportWidget exportInfo={data.export} />
-      </section>
+        </section>
+      )}
     </>
   );
 }
@@ -534,7 +372,7 @@ function AdminDashboardView({ data }: { data: AdminDashboard }) {
               {data.pendingAccountValidations.map((u) => (
                 <li key={u.id} className="activity-item activity-row">
                   <span className="activity-row-dot tone-amber" />
-                  <p>{u.email}</p>
+                  <p>{u.email ?? '—'}</p>
                   <span className="activity-row-value">{u.roles.join(', ')}</span>
                 </li>
               ))}
@@ -612,6 +450,7 @@ export function DashboardPage() {
   const isAdmin = isSuperAdmin || (currentUser?.roles.includes('ADMIN') ?? false);
   const isTeacher = currentUser?.roles.includes('TEACHER') ?? false;
   const isParent = currentUser?.roles.includes('PARENT') ?? false;
+  const hiddenGroupIds = useMemo(() => readHiddenGroupIds(currentUser?.id), [currentUser?.id]);
 
   const [teacherDashboard, setTeacherDashboard] = useState<TeacherDashboard | null>(null);
   const [parentDashboard, setParentDashboard] = useState<ParentDashboard | null>(null);
@@ -763,7 +602,7 @@ export function DashboardPage() {
         <div>
           <h1>Tableau de bord</h1>
           <p>
-            Connecté en tant que <strong>{currentUser?.email}</strong>
+            Connecté en tant que <strong>{currentUser?.email ?? currentUser?.phone}</strong>
           </p>
         </div>
       </div>
@@ -783,7 +622,7 @@ export function DashboardPage() {
       {loadingDashboard && <LoadingState label="Chargement du tableau de bord..." />}
 
       {!loadingDashboard && isTeacher && teacherDashboard && (
-        <TeacherDashboardView data={teacherDashboard} onRefresh={loadDashboard} />
+        <TeacherDashboardView data={teacherDashboard} onRefresh={loadDashboard} hiddenGroupIds={hiddenGroupIds} />
       )}
       {!loadingDashboard && isParent && parentDashboard && (
         <ParentDashboardView data={parentDashboard} onRefresh={loadDashboard} />

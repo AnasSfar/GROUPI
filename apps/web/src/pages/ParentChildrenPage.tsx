@@ -44,6 +44,11 @@ export function ParentChildrenPage() {
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  // Le nom de famille est pré-rempli avec celui du parent (suggestion, pas une valeur imposée) :
+  // on arrête de le resynchroniser dès que le parent modifie ce champ à la main, pour ne pas
+  // écraser sa saisie. Remis à false après un ajout réussi (le formulaire est vidé), pour que la
+  // suggestion réapparaisse au prochain enfant.
+  const [lastNameEdited, setLastNameEdited] = useState(false);
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [schoolLevelId, setSchoolLevelId] = useState('');
   const [schoolId, setSchoolId] = useState('');
@@ -81,6 +86,12 @@ export function ParentChildrenPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (profile && !lastNameEdited) {
+      setLastName(profile.lastName);
+    }
+  }, [profile, lastNameEdited]);
 
   /** Le référentiel compte plus de 6000 établissements nationaux — sans filtre par ville, le
    * sélecteur est inutilisable. On restreint donc aux établissements de la ville choisie. */
@@ -124,6 +135,7 @@ export function ParentChildrenPage() {
       setStudents((prev) => [...prev, created]);
       setFirstName('');
       setLastName('');
+      setLastNameEdited(false);
       setDateOfBirth('');
       setSchoolLevelId('');
       setSchoolCityId('');
@@ -181,13 +193,6 @@ export function ParentChildrenPage() {
       {error && (
         <p className="form-error" role="alert">
           {error}
-        </p>
-      )}
-
-      {!profile.validatedAt && (
-        <p className="form-notice" role="status">
-          Votre compte est en attente de validation par un administrateur. Vous pouvez déjà
-          déclarer vos enfants en attendant.
         </p>
       )}
 
@@ -334,7 +339,7 @@ export function ParentChildrenPage() {
 
       <section className="card-section">
         <h2>Ajouter un enfant</h2>
-        <form onSubmit={handleCreateStudent}>
+        <form onSubmit={handleCreateStudent} className="child-form">
           <div className="field-row">
             <label>
               Prénom
@@ -351,7 +356,10 @@ export function ParentChildrenPage() {
                 type="text"
                 required
                 value={lastName}
-                onChange={(e) => setLastName(e.target.value)}
+                onChange={(e) => {
+                  setLastName(e.target.value);
+                  setLastNameEdited(true);
+                }}
               />
             </label>
           </div>
@@ -363,66 +371,70 @@ export function ParentChildrenPage() {
               onChange={(e) => setDateOfBirth(e.target.value)}
             />
           </label>
-          <label>
-            Niveau scolaire
-            <Select value={schoolLevelId} onChange={(e) => setSchoolLevelId(e.target.value)}>
-              <option value="">Sélectionner...</option>
-              {schoolLevels.map((level) => (
-                <option key={level.id} value={level.id}>
-                  {level.name}
+          <div className="field-row">
+            <label>
+              Niveau scolaire
+              <Select value={schoolLevelId} onChange={(e) => setSchoolLevelId(e.target.value)}>
+                <option value="">Sélectionner...</option>
+                {schoolLevels.map((level) => (
+                  <option key={level.id} value={level.id}>
+                    {level.name}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <label>
+              Ville de l'établissement
+              <Select
+                searchable
+                searchPlaceholder="Rechercher une ville..."
+                value={schoolCityId}
+                onChange={(e) => setSchoolCityId(e.target.value)}
+              >
+                <option value="">Sélectionner...</option>
+                {cities.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          </div>
+          <div className="field-row">
+            <label>
+              Établissement
+              <Select
+                searchable
+                searchPlaceholder="Rechercher un établissement..."
+                value={schoolId}
+                onChange={(e) => setSchoolId(e.target.value)}
+                disabled={!schoolCityId}
+              >
+                <option value="">
+                  {schoolCityId ? 'Sélectionner...' : "Choisissez d'abord une ville"}
                 </option>
-              ))}
-            </Select>
-          </label>
-          <label>
-            Ville de l'établissement
-            <Select
-              searchable
-              searchPlaceholder="Rechercher une ville..."
-              value={schoolCityId}
-              onChange={(e) => setSchoolCityId(e.target.value)}
-            >
-              <option value="">Sélectionner...</option>
-              {cities.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
-          </label>
-          <label>
-            Établissement
-            <Select
-              searchable
-              searchPlaceholder="Rechercher un établissement..."
-              value={schoolId}
-              onChange={(e) => setSchoolId(e.target.value)}
-              disabled={!schoolCityId}
-            >
-              <option value="">
-                {schoolCityId ? 'Sélectionner...' : "Choisissez d'abord une ville"}
-              </option>
-              {schoolsInCity.map((school) => (
-                <option key={school.id} value={school.id}>
-                  {formatSchoolOption(school)}
-                </option>
-              ))}
-            </Select>
-            {schoolCityId && schoolsInCity.length === 0 && (
-              <span className="table-hint">
-                Aucun établissement référencé dans cette ville — vous pouvez en demander l'ajout
-                depuis « Établissements ».
-              </span>
-            )}
-          </label>
-          <label>
-            Classe (indicatif)
-            <input
-              type="text"
-              value={schoolClass}
-              onChange={(e) => setSchoolClass(e.target.value)}
-            />
-          </label>
+                {schoolsInCity.map((school) => (
+                  <option key={school.id} value={school.id}>
+                    {formatSchoolOption(school)}
+                  </option>
+                ))}
+              </Select>
+              {schoolCityId && schoolsInCity.length === 0 && (
+                <span className="table-hint">
+                  Aucun établissement référencé dans cette ville — vous pouvez en demander l'ajout
+                  depuis « Établissements ».
+                </span>
+              )}
+            </label>
+            <label>
+              Classe (indicatif)
+              <input
+                type="text"
+                value={schoolClass}
+                onChange={(e) => setSchoolClass(e.target.value)}
+              />
+            </label>
+          </div>
           <button type="submit" disabled={!schoolLevelId || !schoolId}>
             Ajouter cet enfant
           </button>
@@ -431,5 +443,4 @@ export function ParentChildrenPage() {
     </>
   );
 }
-
 

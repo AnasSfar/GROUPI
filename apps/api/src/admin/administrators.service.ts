@@ -68,7 +68,7 @@ export class AdministratorsService {
       return created;
     });
 
-    await this.sendInvitationEmail(user.id, user.email);
+    await this.sendInvitationEmail(user.id, dto.email);
 
     return { id: user.id, email: user.email, status: user.status, permissions: dto.permissions };
   }

@@ -82,7 +82,7 @@ export class ExportsService {
     private readonly builder: ExportDataBuilder,
   ) {}
 
-  private async getUserEmail(userId: string): Promise<string> {
+  private async getUserEmail(userId: string): Promise<string | null> {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { email: true } });
     return user.email;
   }
@@ -131,7 +131,10 @@ export class ExportsService {
         priority: 'IMPORTANT',
         title: 'Export refusé',
         body: reason,
-        sendEmail: async () => this.email.sendExportRefused(await this.getUserEmail(userId), reason),
+        sendEmail: async () => {
+          const email = await this.getUserEmail(userId);
+          if (email) await this.email.sendExportRefused(email, reason);
+        },
       });
     }
     if (outcome === 'REFUSED_SUBSCRIPTION') {
@@ -264,7 +267,10 @@ export class ExportsService {
         body: `La génération de l'export "${TYPE_LABEL[type]}" a échoué. Merci de réessayer ou de contacter l'administration.`,
         refType: 'ExportJob',
         refId: jobId,
-        sendEmail: async () => this.email.sendExportFailed(await this.getUserEmail(requestedById), TYPE_LABEL[type]),
+        sendEmail: async () => {
+          const email = await this.getUserEmail(requestedById);
+          if (email) await this.email.sendExportFailed(email, TYPE_LABEL[type]);
+        },
       });
       await this.writeAudit(requestedById, type, format, this.toCriteria(dto), 'FAILED', (err as Error).message, jobId);
       throw new InternalServerErrorException("Échec de génération de l'export (NOT-EXP-005)");

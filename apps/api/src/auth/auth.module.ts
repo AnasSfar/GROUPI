@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { EmailModule } from '../email/email.module';
+import { SmsModule } from '../sms/sms.module';
 import { NotificationsService } from '../notifications/notifications.service';
 import { TeacherProfileService } from '../teacher-profile/teacher-profile.service';
 import { AuthController } from './auth.controller';
@@ -16,6 +17,7 @@ import { PermissionsGuard } from './guards/permissions.guard';
   imports: [
     PassportModule,
     EmailModule,
+    SmsModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

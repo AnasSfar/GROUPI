@@ -44,6 +44,7 @@ export function RegisterPage() {
   const [schools, setSchools] = useState<School[]>([]);
   const [studentFirstName, setStudentFirstName] = useState('');
   const [studentLastName, setStudentLastName] = useState('');
+  const [studentLastNameEdited, setStudentLastNameEdited] = useState(false);
   const [studentDateOfBirth, setStudentDateOfBirth] = useState('');
   const [studentSchoolLevelId, setStudentSchoolLevelId] = useState('');
   const [studentCityId, setStudentCityId] = useState('');
@@ -66,6 +67,15 @@ export function RegisterPage() {
     referentialsApi.listCities().then(setCities).catch(() => setCities([]));
     referentialsApi.listSchools().then(setSchools).catch(() => setSchools([]));
   }, [isParent]);
+
+  // Simple suggestion, jamais imposée : tant que le parent n'a pas modifié le nom de l'enfant à la
+  // main, on lui propose son propre nom de famille (cas le plus fréquent) — dès qu'il tape quoi que
+  // ce soit dans ce champ, la synchronisation s'arrête pour ne jamais écraser sa saisie.
+  useEffect(() => {
+    if (!studentLastNameEdited) {
+      setStudentLastName(lastName);
+    }
+  }, [lastName, studentLastNameEdited]);
 
   const selectedStudentSchoolLevel = useMemo(
     () => schoolLevels.find((level) => level.id === studentSchoolLevelId),
@@ -117,6 +127,8 @@ export function RegisterPage() {
       studentLastName.trim() !== '' &&
       studentSchoolLevelId !== '' &&
       studentSchoolId !== '');
+  /** RM-SEC-001 : le téléphone est l'identifiant de connexion obligatoire. */
+  const identifierRequirementsMet = phone.trim() !== '';
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -124,12 +136,12 @@ export function RegisterPage() {
     setSubmitting(true);
     try {
       await register({
-        email,
+        ...(email.trim() ? { email: email.trim() } : {}),
         password,
         role,
         firstName,
         lastName,
-        phone,
+        phone: phone.trim(),
         city,
         acceptTerms,
         ...(isTeacher ? { subjectIds, schoolLevelIds } : {}),
@@ -149,7 +161,9 @@ export function RegisterPage() {
         replace: true,
         state: {
           notice:
-            'Compte créé. Il doit être validé par un administrateur avant de pouvoir se connecter pleinement.',
+            role === 'TEACHER'
+              ? "Compte créé. Un code de vérification vient de vous être envoyé par SMS, et le compte doit être validé par un administrateur."
+              : "Compte créé. Un code de vérification vient de vous être envoyé par SMS. Vous pouvez vous connecter avec votre téléphone.",
         },
       });
     } catch (err) {
@@ -191,18 +205,21 @@ export function RegisterPage() {
           </button>
         </div>
 
+        <p className="form-hint">
+          Vous vous connecterez avec votre téléphone et votre mot de passe. Les champs marqués * sont obligatoires.
+        </p>
+
         <label>
           Email
           <input
             type="email"
-            required
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
         </label>
         <label>
-          Mot de passe
+          Mot de passe *
           <input
             type="password"
             required
@@ -214,7 +231,7 @@ export function RegisterPage() {
         </label>
         <div className="field-row">
           <label>
-            Prénom
+            Prénom *
             <input
               type="text"
               required
@@ -223,7 +240,7 @@ export function RegisterPage() {
             />
           </label>
           <label>
-            Nom
+            Nom *
             <input
               type="text"
               required
@@ -234,7 +251,7 @@ export function RegisterPage() {
         </div>
         <div className="field-row">
           <label>
-            Téléphone
+            Téléphone *
             <input
               type="tel"
               required
@@ -243,7 +260,7 @@ export function RegisterPage() {
             />
           </label>
           <label>
-            Ville
+            Ville *
             <input
               type="text"
               required
@@ -256,7 +273,7 @@ export function RegisterPage() {
         {isTeacher && (
           <>
             <div className="field-group">
-              <span className="field-group-label">Matières enseignées</span>
+              <span className="field-group-label">Matières enseignées *</span>
               <div className="checkbox-grid">
                 {subjects.map((subject) => (
                   <label key={subject.id} className="checkbox-option">
@@ -277,7 +294,7 @@ export function RegisterPage() {
             </div>
 
             <div className="field-group">
-              <span className="field-group-label">Niveaux scolaires</span>
+              <span className="field-group-label">Niveaux scolaires *</span>
               <SchoolLevelSectionPicker
                 levels={schoolLevels}
                 selectedIds={schoolLevelIds}
@@ -297,7 +314,7 @@ export function RegisterPage() {
             <legend>Premier enfant</legend>
             <div className="field-row">
               <label>
-                Prénom de l'enfant
+                Prénom de l'enfant *
                 <input
                   type="text"
                   required
@@ -306,12 +323,15 @@ export function RegisterPage() {
                 />
               </label>
               <label>
-                Nom de l'enfant
+                Nom de l'enfant *
                 <input
                   type="text"
                   required
                   value={studentLastName}
-                  onChange={(e) => setStudentLastName(e.target.value)}
+                  onChange={(e) => {
+                    setStudentLastName(e.target.value);
+                    setStudentLastNameEdited(true);
+                  }}
                 />
               </label>
             </div>
@@ -324,7 +344,7 @@ export function RegisterPage() {
               />
             </label>
             <label>
-              Niveau scolaire
+              Niveau scolaire *
               <select
                 required
                 value={studentSchoolLevelId}
@@ -356,7 +376,7 @@ export function RegisterPage() {
                 </Select>
               </label>
               <label>
-                Établissement
+                Établissement *
                 <Select
                   searchable
                   searchPlaceholder="Rechercher un établissement..."
@@ -395,7 +415,13 @@ export function RegisterPage() {
 
         <button
           type="submit"
-          disabled={submitting || !acceptTerms || !teacherRequirementsMet || !parentRequirementsMet}
+          disabled={
+            submitting ||
+            !acceptTerms ||
+            !teacherRequirementsMet ||
+            !parentRequirementsMet ||
+            !identifierRequirementsMet
+          }
         >
           {submitting ? 'Création...' : 'Créer mon compte'}
         </button>

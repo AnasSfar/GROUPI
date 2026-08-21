@@ -62,6 +62,10 @@ function displayPhone(user: AdminUser): string {
   return profile?.phone ?? '—';
 }
 
+function displayEmail(user: AdminUser): string {
+  return user.email ?? '—';
+}
+
 /** Petit formulaire inline de motif, requis avant de suspendre/désactiver (RM-CYC-029). */
 function ReasonPrompt({
   label,
@@ -252,7 +256,11 @@ export function AdminUsersPage() {
   const visibleUsers = users.filter((user) => {
     if (!matchesRoleFilter(user, roleFilter)) return false;
     if (!searchQuery) return true;
-    return displayName(user).toLowerCase().includes(searchQuery) || user.email.toLowerCase().includes(searchQuery);
+    return (
+      displayName(user).toLowerCase().includes(searchQuery) ||
+      displayEmail(user).toLowerCase().includes(searchQuery) ||
+      displayPhone(user).toLowerCase().includes(searchQuery)
+    );
   });
 
   return (
@@ -335,7 +343,7 @@ export function AdminUsersPage() {
               {visibleUsers.map((user) => (
                 <tr key={user.id}>
                   <td data-label="Nom">{displayName(user)}</td>
-                  <td data-label="Email">{user.email}</td>
+                  <td data-label="Email">{displayEmail(user)}</td>
                   <td data-label="Téléphone">{displayPhone(user)}</td>
                   <td data-label="Rôle">{user.roles.map((r) => ROLE_LABELS[r] ?? r).join(', ')}</td>
                   <td data-label="Statut">
@@ -444,7 +452,7 @@ export function AdminUsersPage() {
         <div className="terms-modal-backdrop" onClick={() => setPromotingUser(null)}>
           <div className="terms-modal" onClick={(e) => e.stopPropagation()}>
             <h2>Promouvoir {displayName(promotingUser)} Administrateur</h2>
-            <p>{promotingUser.email} conservera son rôle actuel en plus du rôle Administrateur.</p>
+            <p>{displayEmail(promotingUser)} conservera son rôle actuel en plus du rôle Administrateur.</p>
             {promoteError && (
               <p className="form-error" role="alert">
                 {promoteError}
