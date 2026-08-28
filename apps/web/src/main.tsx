@@ -3,6 +3,10 @@ import { createRoot } from 'react-dom/client'
 import * as Sentry from '@sentry/react'
 import './index.css'
 import App from './App.tsx'
+import { initTheme } from './utils/theme'
+
+// Applique le thème mémorisé (clair par défaut) sur <html> avant le premier rendu React.
+initTheme()
 
 // Optionnel — sans VITE_SENTRY_DSN, aucune remontée d'erreur, comportement inchangé (même
 // convention que EmailService côté API : infra silencieusement désactivée sans configuration).

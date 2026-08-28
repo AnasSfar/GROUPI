@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import * as notificationsApi from '../api/notificationsApi';
 import * as teacherProfileApi from '../api/teacherProfileApi';
 import type { TeacherProfile } from '../api/teacherProfileApi';
+import { ThemeToggle } from './ThemeToggle';
 import {
   IconGauge,
   IconBell,
@@ -344,6 +345,7 @@ export function AppLayout() {
             )}
           </div>
           <div className="workspace-actions">
+            <ThemeToggle />
             <Link to="/notifications" className="workspace-notifications">
               <IconBell width={15} height={15} />
               <span>{unreadCount > 0 ? `${unreadCount > 99 ? '99+' : unreadCount} non lue(s)` : 'Aucune non lue'}</span>

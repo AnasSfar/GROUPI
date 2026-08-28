@@ -9,6 +9,7 @@ import {
   IconGauge,
   IconLayers,
 } from '../components/icons';
+import { ThemeToggle } from '../components/ThemeToggle';
 
 const teacherFeatureCards = [
   {
@@ -59,6 +60,7 @@ export function HomePage() {
           <Link to="/register" className="landing-nav-cta">
             Créer un compte
           </Link>
+          <ThemeToggle />
         </nav>
       </header>
 

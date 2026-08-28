@@ -76,7 +76,7 @@
 
   font: 16px/155% var(--sans);
   letter-spacing: 0.1px;
-  color-scheme: light dark;
+  color-scheme: light;
   color: var(--text);
   background: var(--bg-shell);
   font-synthesis: none;
@@ -85,8 +85,11 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
+/* Thème sombre : appliqué UNIQUEMENT sur choix explicite de l'utilisateur (<html data-theme="dark">,
+   voir utils/theme.ts + <ThemeToggle>). L'app démarre toujours en clair, jamais sur le réglage
+   système de l'appareil. */
+:root[data-theme='dark'] {
+    color-scheme: dark;
     --brand-navy: #6fa8d6;
     --brand-navy-hover: #8fbde3;
     --brand-navy-soft: rgba(111, 168, 214, 0.14);
@@ -126,7 +129,6 @@
     --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.2);
     --shadow-lg: 0 18px 42px rgba(0, 0, 0, 0.42), 0 6px 16px rgba(0, 0, 0, 0.25);
     --shadow-accent: 0 12px 28px -12px color-mix(in srgb, var(--accent) 68%, transparent);
-  }
 }
 
 * {
@@ -1061,6 +1063,58 @@ code {
   text-decoration: none;
   color: var(--link);
   border-color: var(--accent-border);
+}
+
+/* --- Bascule de thème clair / sombre (components/ThemeToggle) ---------------------------------- */
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.theme-toggle:hover {
+  color: var(--link);
+  border-color: var(--accent-border);
+}
+
+.theme-toggle-floating {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 90;
+  width: 40px;
+  height: 40px;
+  box-shadow: var(--shadow-md);
+}
+
+/* Redondante là où une bascule est déjà intégrée au chrome de la page. */
+body:has(.app-shell) .theme-toggle-floating,
+body:has(.landing-page) .theme-toggle-floating {
+  display: none;
+}
+
+/* Au-dessus du dock de navigation quand celui-ci occupe toute la largeur (mobile). */
+@media (max-width: 980px) {
+  .theme-toggle-floating {
+    bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+.landing-nav-links .theme-toggle {
+  background: transparent;
+  box-shadow: none;
 }
 
 @media (max-width: 640px) {
@@ -4371,16 +4425,14 @@ button.ghost:hover:not(:disabled) {
   font-size: 25px;
 }
 
-@media (prefers-color-scheme: dark) {
-  .landing-page {
-    background:
-      linear-gradient(180deg, rgba(15, 36, 56, 0.34), rgba(11, 17, 25, 0) 430px),
-      var(--bg-shell);
-  }
+:root[data-theme='dark'] .landing-page {
+  background:
+    linear-gradient(180deg, rgba(15, 36, 56, 0.34), rgba(11, 17, 25, 0) 430px),
+    var(--bg-shell);
+}
 
-  .landing-button-primary {
-    box-shadow: none;
-  }
+:root[data-theme='dark'] .landing-button-primary {
+  box-shadow: none;
 }
 
 @media (max-width: 980px) {

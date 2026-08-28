@@ -7,6 +7,16 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GROUPI</title>
+    <script>
+      // Applique le thème mémorisé avant le premier rendu (évite un flash clair chez les
+      // utilisateurs en thème sombre). Défaut : clair — jamais le réglage système.
+      try {
+        var t = localStorage.getItem('groupi:theme');
+        document.documentElement.dataset.theme = t === 'dark' ? 'dark' : 'light';
+      } catch (e) {
+        document.documentElement.dataset.theme = 'light';
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
