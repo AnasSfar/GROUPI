@@ -95,6 +95,14 @@ enum GroupStatus {
   ARCHIVED
 }
 
+/// Avenant 01, Ch. B.5 : un groupe de niveau (salle d'attente, sans planning ni facturation) est
+/// distingué d'un groupe standard (Ch. 10) par ce discriminant ; `STANDARD` par défaut pour ne pas
+/// requalifier les groupes existants.
+enum GroupKind {
+  LEVEL_POOL
+  STANDARD
+}
+
 enum AbsenceBillingPolicy {
   ALL_BILLED
   EXCUSED_NOT_BILLED
@@ -124,6 +132,35 @@ enum EnrollmentStatus {
   CANCELLED
   /// Ch.12.11 : demande sans décision du Professeur au-delà du délai de 7 jours (RM-INS-026/058).
   EXPIRED
+}
+
+/// Avenant 01, Ch. C.5 : d'où vient une inscription ACTIVE — défaut `TEACHER_ASSIGNMENT` car c'est
+/// désormais le chemin nominal (Ch. C) ; les inscriptions antérieures à cet avenant restent sur ce
+/// défaut (pas de reconstitution fiable de leur origine réelle, cf. avenant Ch. H.8).
+enum EnrollmentOrigin {
+  TEACHER_ASSIGNMENT
+  PRE_ENROLLMENT
+  GROUP_CHANGE
+}
+
+/// Avenant 01, Ch. A.4 : cycle de vie du lien d'invitation général d'un Professeur (RM-INV-*).
+enum ParentInvitationStatus {
+  ACTIVE
+  DISABLED
+  EXPIRED
+}
+
+/// Avenant 01, Ch. B.5 : statut d'un rattachement élève <-> groupe de niveau (RM-POOL-*).
+enum LevelPoolMembershipStatus {
+  ACTIVE
+  REMOVED
+}
+
+/// Avenant 01, Ch. B.5 : comment un rattachement à un groupe de niveau a été créé.
+enum MembershipSource {
+  INVITATION
+  TEACHER_MANUAL
+  SITUATION_SYNC
 }
 
 /// Ch.12.12 : cycle de vie d'une demande de changement de groupe (variante définitive uniquement,
@@ -314,7 +351,10 @@ model User {
   /// téléphone est obligatoire et l'e-mail est facultatif. Les deux colonnes restent nullables pour
   /// couvrir les comptes administrateurs et l'historique. `phone` ici est distinct du champ `phone`
   /// de `TeacherProfile`/`ParentProfile` (coordonnée de contact, non unique).
-  email           String?    @unique
+  /// Avenant 01, Ch. I.1/RM-SEC-052 : l'e-mail est retiré du produit (téléphone = seul identifiant).
+  /// Colonne conservée nullable, SANS contrainte d'unicité, le temps de migrer les comptes existants
+  /// — plus jamais lue par le code applicatif (auth, notifications, écrans).
+  email           String?
   phone           String?    @unique
   passwordHash    String     @map("password_hash")
   status          UserStatus
@@ -373,6 +413,8 @@ model User {
   exportAudits                     ExportAudit[]            @relation("ExportAuditUser")
   dataPortabilityRequestsMade      DataPortabilityRequest[] @relation("DataPortabilityRequester")
   dataPortabilityRequestsFulfilled DataPortabilityRequest[] @relation("DataPortabilityFulfilledBy")
+  /// Avenant 01, Ch. B.5 : retraits de rattachement (groupe de niveau) décidés par ce compte.
+  levelPoolMembershipsRemoved      LevelPoolMembership[]    @relation("LevelPoolMembershipRemovedBy")
 
   @@map("user")
 }
@@ -524,6 +566,8 @@ model TeacherProfile {
   subscriptions     Subscription[]
   /// RM-TPR-012 : dépôt de diplôme disponible dès la V1, facultatif et non vérifié.
   diplomas          Diploma[]
+  /// Avenant 01, Ch. A.4 : lien(s) d'invitation général émis par ce Professeur (un par année académique).
+  parentInvitations ParentInvitation[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -593,6 +637,8 @@ model AcademicYear {
   /// Ch.15.4 : créée paresseusement au premier besoin (première activation d'inscription de
   /// l'année), comme le reste des transitions temporelles de ce projet (pas de cron).
   accountingPeriod        AccountingPeriod?
+  /// Avenant 01, Ch. A.4 : liens d'invitation Professeur émis pour cette année académique.
+  parentInvitations       ParentInvitation[]
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -785,11 +831,13 @@ model Student {
   currentSchoolSituation   StudentSchoolSituation? @relation("CurrentSituation", fields: [currentSchoolSituationId], references: [id])
   status                   StudentStatus
 
-  schoolSituations StudentSchoolSituation[] @relation("StudentSituations")
-  enrollments      Enrollment[]
-  preEnrollments   PreEnrollment[]
-  attendances      Attendance[]
-  absenceNotices   AbsenceNotice[]
+  schoolSituations     StudentSchoolSituation[] @relation("StudentSituations")
+  enrollments          Enrollment[]
+  preEnrollments       PreEnrollment[]
+  attendances          Attendance[]
+  absenceNotices       AbsenceNotice[]
+  /// Avenant 01, Ch. B.5 : rattachements de cet élève à des groupes de niveau (RM-POOL-*).
+  levelPoolMemberships LevelPoolMembership[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -826,8 +874,10 @@ model Group {
   id                         String               @id @default(uuid()) @db.Uuid
   teacherId                  String               @map("teacher_id") @db.Uuid
   teacher                    TeacherProfile       @relation(fields: [teacherId], references: [id])
-  subjectId                  String               @map("subject_id") @db.Uuid
-  subject                    Subject              @relation(fields: [subjectId], references: [id])
+  /// Avenant 01, Ch. B.5 : NULLABLE — un groupe de niveau (`kind = LEVEL_POOL`) n'a pas de matière ;
+  /// obligatoire en pratique (contrainte applicative, pas DB) pour un groupe standard.
+  subjectId                  String?              @map("subject_id") @db.Uuid
+  subject                    Subject?             @relation(fields: [subjectId], references: [id])
   schoolLevelId              String               @map("school_level_id") @db.Uuid
   schoolLevel                SchoolLevel          @relation(fields: [schoolLevelId], references: [id])
   academicYearId             String               @map("academic_year_id") @db.Uuid
@@ -845,6 +895,13 @@ model Group {
   startDate                  DateTime             @map("start_date") @db.Date
   endDate                    DateTime?            @map("end_date") @db.Date
   status                     GroupStatus
+  /// Avenant 01, Ch. B.5 : `STANDARD` par défaut (groupes existants inchangés). Un groupe de niveau
+  /// (`LEVEL_POOL`) est créé exclusivement par GROUPI (RM-POOL-001/006), jamais à la main
+  /// (ERR-POOL-006, appliqué au niveau service) ; au plus un par `(teacherId, schoolLevelId,
+  /// academicYearId)` — cette unicité n'est pas un `@@unique` Prisma standard (elle ne s'applique
+  /// qu'aux lignes `LEVEL_POOL`, les groupes standard partageant librement le même triplet) : elle
+  /// est portée par un index unique partiel ajouté en SQL dans la migration correspondante.
+  kind                       GroupKind            @default(STANDARD)
   /// RM-PRE-005/015 : le Professeur pilote librement l'ouverture/fermeture des préinscriptions
   /// pour ce groupe — n'affecte jamais les inscriptions classiques.
   preEnrollmentsOpen         Boolean              @default(true) @map("pre_enrollments_open")
@@ -866,6 +923,8 @@ model Group {
   incomingGroupChangeRequests GroupChangeRequest[]
   /// Ch.19.4 : annonces publiées par le Professeur à destination des Parents du groupe.
   announcements               GroupAnnouncement[]
+  /// Avenant 01, Ch. B.5 : rattachements reçus par ce groupe (peuplé seulement si `kind = LEVEL_POOL`).
+  levelPoolMemberships        LevelPoolMembership[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -951,18 +1010,25 @@ model Session {
 
 /// Lien administratif, pédagogique et comptable entre un Parent, un Élève et un Groupe (Ch. 12)
 model Enrollment {
-  id            String           @id @default(uuid()) @db.Uuid
-  studentId     String           @map("student_id") @db.Uuid
-  student       Student          @relation(fields: [studentId], references: [id])
-  groupId       String           @map("group_id") @db.Uuid
-  group         Group            @relation(fields: [groupId], references: [id])
-  status        EnrollmentStatus
-  customPrice   Decimal?         @map("custom_price") @db.Decimal(10, 3)
-  paymentMethod String?          @map("payment_method")
-  requestedAt   DateTime         @map("requested_at")
-  decidedAt     DateTime?        @map("decided_at")
-  decidedById   String?          @map("decided_by_id") @db.Uuid
-  decidedBy     User?            @relation("EnrollmentDecidedBy", fields: [decidedById], references: [id])
+  id                 String               @id @default(uuid()) @db.Uuid
+  studentId          String               @map("student_id") @db.Uuid
+  student            Student              @relation(fields: [studentId], references: [id])
+  groupId            String               @map("group_id") @db.Uuid
+  group              Group                @relation(fields: [groupId], references: [id])
+  status             EnrollmentStatus
+  customPrice        Decimal?             @map("custom_price") @db.Decimal(10, 3)
+  paymentMethod      String?              @map("payment_method")
+  requestedAt        DateTime             @map("requested_at")
+  decidedAt          DateTime?            @map("decided_at")
+  decidedById        String?              @map("decided_by_id") @db.Uuid
+  decidedBy          User?                @relation("EnrollmentDecidedBy", fields: [decidedById], references: [id])
+  /// Avenant 01, Ch. C.5 : défaut `TEACHER_ASSIGNMENT` (chemin nominal désormais — Ch. C) ; les
+  /// inscriptions antérieures à l'avenant restent sur ce défaut (RM-AFF-*, voir Ch. H.8).
+  origin             EnrollmentOrigin     @default(TEACHER_ASSIGNMENT)
+  /// Avenant 01, Ch. C.5 : rattachement (salle d'attente) à l'origine d'une affectation — nul pour
+  /// les inscriptions issues d'une préinscription ou d'un changement de groupe.
+  sourceMembershipId String?              @map("source_membership_id") @db.Uuid
+  sourceMembership   LevelPoolMembership? @relation(fields: [sourceMembershipId], references: [id])
 
   attendances             Attendance[]
   /// Ch.12.12 : demandes de changement de groupe faites DEPUIS cette inscription (groupe A).
@@ -981,6 +1047,55 @@ model Enrollment {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("enrollment")
+}
+
+/// Avenant 01, Ch. A — lien d'invitation général et réutilisable d'un Professeur (RM-INV-*). N'est
+/// lié ni à un groupe, ni à un niveau, ni à une matière (RM-INV-002) : la consommation détermine le
+/// rattachement via le niveau déclaré par le Parent, résolu au moment de l'ajout de l'enfant.
+model ParentInvitation {
+  id             String                 @id @default(uuid()) @db.Uuid
+  teacherId      String                 @map("teacher_id") @db.Uuid
+  teacher        TeacherProfile         @relation(fields: [teacherId], references: [id])
+  academicYearId String                 @map("academic_year_id") @db.Uuid
+  academicYear   AcademicYear           @relation(fields: [academicYearId], references: [id])
+  /// RM-INV-003 : jamais stocké en clair — seul le Professeur voit la valeur en clair, à l'émission.
+  tokenHash      String                 @unique @map("token_hash")
+  status         ParentInvitationStatus
+  /// RM-INV-006 : = fin de l'année académique ; `EXPIRED` appliqué paresseusement à la lecture
+  /// (même principe que `Enrollment.EXPIRED`), pas de cron dédié.
+  expiresAt      DateTime?              @map("expires_at")
+  rotatedAt      DateTime?              @map("rotated_at")
+  createdAt      DateTime               @default(now()) @map("created_at")
+
+  /// Traçabilité de la consommation : vit dans `LevelPoolMembership`, pas ici (A.4).
+  levelPoolMemberships LevelPoolMembership[]
+
+  @@unique([teacherId, academicYearId])
+  @@map("parent_invitation")
+}
+
+/// Avenant 01, Ch. B — rattachement (jamais une inscription ni une préinscription, RM-POOL-004)
+/// d'un élève à un groupe de niveau (`Group.kind = LEVEL_POOL`) d'un Professeur.
+model LevelPoolMembership {
+  id           String                    @id @default(uuid()) @db.Uuid
+  studentId    String                    @map("student_id") @db.Uuid
+  student      Student                   @relation(fields: [studentId], references: [id])
+  groupId      String                    @map("group_id") @db.Uuid
+  group        Group                     @relation(fields: [groupId], references: [id])
+  status       LevelPoolMembershipStatus
+  source       MembershipSource
+  invitationId String?                   @map("invitation_id") @db.Uuid
+  invitation   ParentInvitation?         @relation(fields: [invitationId], references: [id])
+  createdAt    DateTime                  @default(now()) @map("created_at")
+  removedAt    DateTime?                 @map("removed_at")
+  removedById  String?                   @map("removed_by_id") @db.Uuid
+  removedBy    User?                     @relation("LevelPoolMembershipRemovedBy", fields: [removedById], references: [id])
+
+  /// Ch. C.5 : affectations (inscriptions groupe standard) issues de ce rattachement source.
+  sourcedEnrollments Enrollment[]
+
+  @@unique([studentId, groupId])
+  @@map("level_pool_membership")
 }
 
 /// Ch.12.12 : demande de changement de groupe — variante définitive uniquement dans ce chantier.
