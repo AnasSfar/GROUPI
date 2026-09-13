@@ -190,6 +190,13 @@ export function InvitationAcceptPage() {
           </strong>{' '}
           vous invite à suivre la scolarité de votre enfant sur GROUPI — année académique{' '}
           {preview.academicYearLabel}.
+          {preview.groupName && (
+            <>
+              {' '}
+              Votre enfant rejoindra directement le groupe « {preview.groupName} » si son niveau
+              scolaire correspond.
+            </>
+          )}
         </p>
 
         {error && (

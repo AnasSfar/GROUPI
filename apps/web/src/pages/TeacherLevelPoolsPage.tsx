@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/ConfirmDialog';
@@ -12,27 +13,27 @@ import type { LevelPool, LevelPoolMember } from '../api/levelPoolsApi';
 import type { Group } from '../api/groupsApi';
 
 /**
- * Avenant 01, Ch. B/C — « Salles d'attente » : un niveau par carte, sélection d'élèves puis
- * affectation vers un groupe standard du même niveau (Ch. C.3). Terminologie officielle (§0.3) :
- * « salle d'attente » / « rattachement » / « affectation », jamais « groupe » côté élève en attente.
+ * Avenant 01, Ch. B/C — « Salles d'attente » : une carte par niveau, chacune avec son tableau
+ * d'élèves (coordonnées incluses) et sa propre affectation vers un groupe standard du même niveau
+ * (Ch. C.3). Terminologie officielle (§0.3) : « salle d'attente » / « rattachement » /
+ * « affectation », jamais « groupe » côté élève en attente.
  */
 export function TeacherLevelPoolsPage() {
   const { getAccessToken } = useAuth();
   const { showToast } = useToast();
   const confirm = useConfirm();
+  const navigate = useNavigate();
 
   const [pools, setPools] = useState<LevelPool[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
-  const [selectedPoolId, setSelectedPoolId] = useState<string | null>(null);
-  const [members, setMembers] = useState<LevelPoolMember[]>([]);
-  const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
-  const [targetGroupId, setTargetGroupId] = useState('');
+  const [membersByPool, setMembersByPool] = useState<Record<string, LevelPoolMember[]>>({});
+  const [selectedByPool, setSelectedByPool] = useState<Record<string, Set<string>>>({});
+  const [targetGroupByPool, setTargetGroupByPool] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
-  const [membersLoading, setMembersLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busyPoolId, setBusyPoolId] = useState<string | null>(null);
 
-  const loadPools = useCallback(async () => {
+  const loadAll = useCallback(async () => {
     const token = getAccessToken();
     if (!token) return;
     setLoading(true);
@@ -44,6 +45,10 @@ export function TeacherLevelPoolsPage() {
       ]);
       setPools(poolsRes);
       setGroups(groupsRes);
+      const membersEntries = await Promise.all(
+        poolsRes.map(async (pool) => [pool.id, await levelPoolsApi.listMembers(token, pool.id)] as const),
+      );
+      setMembersByPool(Object.fromEntries(membersEntries));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Impossible de charger les salles d’attente.');
     } finally {
@@ -52,52 +57,40 @@ export function TeacherLevelPoolsPage() {
   }, [getAccessToken]);
 
   useEffect(() => {
-    loadPools();
-  }, [loadPools]);
+    loadAll();
+  }, [loadAll]);
 
-  const loadMembers = useCallback(
-    async (poolId: string) => {
-      const token = getAccessToken();
-      if (!token) return;
-      setMembersLoading(true);
-      try {
-        setMembers(await levelPoolsApi.listMembers(token, poolId));
-        setSelectedStudentIds(new Set());
-      } catch (err) {
-        showToast(err instanceof ApiError ? err.message : 'Impossible de charger les élèves.', 'error');
-      } finally {
-        setMembersLoading(false);
-      }
-    },
-    [getAccessToken, showToast],
-  );
+  const eligibleGroupsByLevel = useMemo(() => {
+    const map: Record<string, Group[]> = {};
+    for (const pool of pools) {
+      map[pool.id] = groups.filter(
+        (g) => g.schoolLevel.id === pool.schoolLevel.id && (g.status === 'ACTIVE' || g.status === 'FULL'),
+      );
+    }
+    return map;
+  }, [groups, pools]);
 
-  function openPool(pool: LevelPool) {
-    setSelectedPoolId(pool.id);
-    setTargetGroupId('');
-    loadMembers(pool.id);
-  }
-
-  const selectedPool = pools.find((p) => p.id === selectedPoolId) ?? null;
-
-  const eligibleGroups = useMemo(() => {
-    if (!selectedPool) return [];
-    return groups.filter(
-      (g) => g.schoolLevel.id === selectedPool.schoolLevel.id && (g.status === 'ACTIVE' || g.status === 'FULL'),
-    );
-  }, [groups, selectedPool]);
-
-  function toggleStudent(studentId: string, checked: boolean) {
-    setSelectedStudentIds((prev) => {
-      const next = new Set(prev);
+  function toggleStudent(poolId: string, studentId: string, checked: boolean) {
+    setSelectedByPool((prev) => {
+      const next = new Set(prev[poolId] ?? []);
       if (checked) next.add(studentId);
       else next.delete(studentId);
-      return next;
+      return { ...prev, [poolId]: next };
     });
   }
 
-  async function handleRemove(studentId: string) {
-    if (!selectedPool) return;
+  async function refreshPoolMembers(poolId: string) {
+    const token = getAccessToken();
+    if (!token) return;
+    try {
+      const members = await levelPoolsApi.listMembers(token, poolId);
+      setMembersByPool((prev) => ({ ...prev, [poolId]: members }));
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'Impossible de recharger les élèves.', 'error');
+    }
+  }
+
+  async function handleRemove(poolId: string, studentId: string) {
     const ok = await confirm({
       message: "Retirer cet élève de la salle d'attente ? Une inscription active éventuelle n'est jamais affectée.",
     });
@@ -105,20 +98,22 @@ export function TeacherLevelPoolsPage() {
     const token = getAccessToken();
     if (!token) return;
     try {
-      const res = await levelPoolsApi.removeMember(token, selectedPool.id, studentId);
+      const res = await levelPoolsApi.removeMember(token, poolId, studentId);
       showToast(res.warning ?? 'Élève retiré de la salle d’attente.', res.warning ? 'info' : 'success');
-      await loadMembers(selectedPool.id);
-      await loadPools();
+      await refreshPoolMembers(poolId);
+      await loadAll();
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : 'Impossible de retirer cet élève.', 'error');
     }
   }
 
-  async function handleAssign() {
-    if (!selectedPool || !targetGroupId || selectedStudentIds.size === 0) return;
+  async function handleAssign(poolId: string) {
+    const targetGroupId = targetGroupByPool[poolId];
+    const selectedStudentIds = selectedByPool[poolId] ?? new Set<string>();
+    if (!targetGroupId || selectedStudentIds.size === 0) return;
     const token = getAccessToken();
     if (!token) return;
-    setBusy(true);
+    setBusyPoolId(poolId);
     try {
       const result = await groupMembersApi.assign(token, targetGroupId, {
         studentIds: [...selectedStudentIds],
@@ -135,12 +130,13 @@ export function TeacherLevelPoolsPage() {
           'error',
         );
       }
-      await loadMembers(selectedPool.id);
-      await loadPools();
+      setSelectedByPool((prev) => ({ ...prev, [poolId]: new Set() }));
+      await refreshPoolMembers(poolId);
+      await loadAll();
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : "Impossible d'affecter les élèves sélectionnés.", 'error');
     } finally {
-      setBusy(false);
+      setBusyPoolId(null);
     }
   }
 
@@ -158,6 +154,11 @@ export function TeacherLevelPoolsPage() {
             d'invitation. Affectez-le ensuite à l'un de vos groupes standard.
           </p>
         </div>
+        <div className="page-actions">
+          <button type="button" className="btn-primary" onClick={() => navigate('/teacher/invitation')}>
+            Inviter des parents
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -172,110 +173,118 @@ export function TeacherLevelPoolsPage() {
           par un Administrateur.
         </EmptyState>
       ) : (
-        <section className="card-section">
-          <h2>Mes niveaux</h2>
-          <div className="checkbox-grid">
-            {pools.map((pool) => (
-              <button
-                key={pool.id}
-                type="button"
-                className={`level-pool-card${selectedPoolId === pool.id ? ' active' : ''}`}
-                onClick={() => openPool(pool)}
-              >
-                <strong>{pool.schoolLevel.name}</strong>
-                <span>
-                  {pool.activeMemberCount} élève{pool.activeMemberCount > 1 ? 's' : ''} en attente
-                </span>
-                <span className="form-hint">{pool.academicYear.label}</span>
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
+        pools.map((pool) => {
+          const members = membersByPool[pool.id] ?? [];
+          const selectedStudentIds = selectedByPool[pool.id] ?? new Set<string>();
+          const eligibleGroups = eligibleGroupsByLevel[pool.id] ?? [];
+          const targetGroupId = targetGroupByPool[pool.id] ?? '';
 
-      {selectedPool && (
-        <section className="card-section">
-          <h2>Salle d'attente — {selectedPool.schoolLevel.name}</h2>
-
-          {membersLoading ? (
-            <p>Chargement...</p>
-          ) : members.length === 0 ? (
-            <EmptyState title="Aucun élève en attente">
-              Personne n'est actuellement rattaché à cette salle d'attente.
-            </EmptyState>
-          ) : (
-            <>
-              <div className="table-wrap">
-                <table className="admin-table">
-                  <thead>
-                    <tr>
-                      <th></th>
-                      <th>Élève</th>
-                      <th>Établissement / Classe</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {members.map((member) => (
-                      <tr key={member.id}>
-                        <td data-label="">
-                          <input
-                            type="checkbox"
-                            checked={selectedStudentIds.has(member.student.id)}
-                            onChange={(e) => toggleStudent(member.student.id, e.target.checked)}
-                          />
-                        </td>
-                        <td data-label="Élève">
-                          {member.student.firstName} {member.student.lastName}
-                        </td>
-                        <td data-label="Établissement / Classe">
-                          {member.student.currentSchoolSituation
-                            ? `${member.student.currentSchoolSituation.school.name}${
-                                member.student.currentSchoolSituation.class
-                                  ? ` (${member.student.currentSchoolSituation.class})`
-                                  : ''
-                              }`
-                            : '-'}
-                        </td>
-                        <td data-label="">
-                          <button type="button" className="ghost" onClick={() => handleRemove(member.student.id)}>
-                            Retirer
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+          return (
+            <section className="card-section" key={pool.id}>
+              <div className="page-header">
+                <div>
+                  <h2>{pool.schoolLevel.name}</h2>
+                  <p className="form-hint">
+                    {pool.academicYear.label} · {pool.activeMemberCount} élève
+                    {pool.activeMemberCount > 1 ? 's' : ''} en attente
+                  </p>
+                </div>
               </div>
 
-              <div className="field-row" style={{ alignItems: 'flex-end' }}>
-                <label>
-                  Groupe cible
-                  <Select value={targetGroupId} onChange={(e) => setTargetGroupId(e.target.value)}>
-                    <option value="">Sélectionner un groupe standard...</option>
-                    {eligibleGroups.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.name} ({g.subject.name})
-                      </option>
-                    ))}
-                  </Select>
-                </label>
-                <button
-                  type="button"
-                  disabled={busy || !targetGroupId || selectedStudentIds.size === 0}
-                  onClick={handleAssign}
-                >
-                  Affecter {selectedStudentIds.size > 0 ? `(${selectedStudentIds.size})` : ''}
-                </button>
-              </div>
-              {eligibleGroups.length === 0 && (
-                <p className="form-notice" role="status">
-                  Aucun groupe standard actif pour ce niveau — créez-en un depuis « Mes groupes ».
-                </p>
+              {members.length === 0 ? (
+                <EmptyState title="Aucun élève en attente">
+                  Personne n'est actuellement rattaché à cette salle d'attente.
+                </EmptyState>
+              ) : (
+                <>
+                  <div className="table-wrap">
+                    <table className="admin-table">
+                      <thead>
+                        <tr>
+                          <th></th>
+                          <th>Élève</th>
+                          <th>Établissement / Classe</th>
+                          <th>Parent</th>
+                          <th>Téléphone</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {members.map((member) => (
+                          <tr key={member.id}>
+                            <td data-label="">
+                              <input
+                                type="checkbox"
+                                checked={selectedStudentIds.has(member.student.id)}
+                                onChange={(e) => toggleStudent(pool.id, member.student.id, e.target.checked)}
+                              />
+                            </td>
+                            <td data-label="Élève">
+                              {member.student.firstName} {member.student.lastName}
+                            </td>
+                            <td data-label="Établissement / Classe">
+                              {member.student.currentSchoolSituation
+                                ? `${member.student.currentSchoolSituation.school.name}${
+                                    member.student.currentSchoolSituation.class
+                                      ? ` (${member.student.currentSchoolSituation.class})`
+                                      : ''
+                                  }`
+                                : '-'}
+                            </td>
+                            <td data-label="Parent">
+                              {member.student.parent.firstName} {member.student.parent.lastName}
+                            </td>
+                            <td data-label="Téléphone">{member.student.parent.phone}</td>
+                            <td data-label="">
+                              <button
+                                type="button"
+                                className="ghost"
+                                onClick={() => handleRemove(pool.id, member.student.id)}
+                              >
+                                Retirer
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="field-row" style={{ alignItems: 'flex-end' }}>
+                    <label>
+                      Groupe cible
+                      <Select
+                        value={targetGroupId}
+                        onChange={(e) =>
+                          setTargetGroupByPool((prev) => ({ ...prev, [pool.id]: e.target.value }))
+                        }
+                      >
+                        <option value="">Sélectionner un groupe standard...</option>
+                        {eligibleGroups.map((g) => (
+                          <option key={g.id} value={g.id}>
+                            {g.name} ({g.subject.name})
+                          </option>
+                        ))}
+                      </Select>
+                    </label>
+                    <button
+                      type="button"
+                      disabled={busyPoolId === pool.id || !targetGroupId || selectedStudentIds.size === 0}
+                      onClick={() => handleAssign(pool.id)}
+                    >
+                      Affecter {selectedStudentIds.size > 0 ? `(${selectedStudentIds.size})` : ''}
+                    </button>
+                  </div>
+                  {eligibleGroups.length === 0 && (
+                    <p className="form-notice" role="status">
+                      Aucun groupe standard actif pour ce niveau — créez-en un depuis « Mes groupes ».
+                    </p>
+                  )}
+                </>
               )}
-            </>
-          )}
-        </section>
+            </section>
+          );
+        })
       )}
     </>
   );

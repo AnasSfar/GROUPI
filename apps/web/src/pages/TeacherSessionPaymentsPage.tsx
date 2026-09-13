@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 import { ApiError } from '../api/client';
@@ -104,6 +104,7 @@ function PaymentRow({
 /** Ch.16 : document "Paiements" d'une séance — pendant de TeacherAttendancePage pour l'appel. */
 export function TeacherSessionPaymentsPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
+  const navigate = useNavigate();
   const { getAccessToken } = useAuth();
   const { showToast } = useToast();
   const [view, setView] = useState<SessionPaymentsView | null>(null);
@@ -172,8 +173,12 @@ export function TeacherSessionPaymentsPage() {
           </p>
         </div>
         <div className="page-actions">
-          <Link to={`/teacher/groups/${session.groupId}/sessions`}>← Retour aux séances</Link>
-          <Link to={`/teacher/sessions/${session.id}/attendance`}>Présences de la séance</Link>
+          <button type="button" onClick={() => navigate(`/teacher/groups/${session.groupId}/sessions`)}>
+            ← Retour aux séances
+          </button>
+          <button type="button" onClick={() => navigate(`/teacher/sessions/${session.id}/attendance`)}>
+            Présences de la séance
+          </button>
         </div>
       </div>
 

@@ -3,6 +3,8 @@ import { apiRequest } from './client';
 /** Avenant 01, Ch. A — lien d'invitation général et réutilisable d'un Professeur. */
 export interface ParentInvitation {
   id: string;
+  /** Ch. A (extension) : renseigné si ce lien cible directement un groupe standard précis. */
+  groupId: string | null;
   status: 'ACTIVE' | 'DISABLED' | 'EXPIRED';
   expiresAt: string | null;
   rotatedAt: string | null;
@@ -17,6 +19,8 @@ export interface InvitationPreview {
   teacherFirstName: string;
   teacherLastName: string;
   academicYearLabel: string;
+  groupId: string | null;
+  groupName: string | null;
 }
 
 export interface AcceptInvitationPayload {
@@ -59,6 +63,33 @@ export function disable(accessToken: string): Promise<ParentInvitation> {
 
 export function enable(accessToken: string): Promise<ParentInvitation> {
   return apiRequest<ParentInvitation>('/teacher/invitation/enable', { method: 'POST', accessToken });
+}
+
+// --- Lien ciblant directement un groupe standard (nouvel élève en cours d'année) ---
+
+export function getForGroup(accessToken: string, groupId: string): Promise<ParentInvitation> {
+  return apiRequest<ParentInvitation>(`/teacher/invitation/group/${groupId}`, { accessToken });
+}
+
+export function rotateForGroup(accessToken: string, groupId: string): Promise<ParentInvitation> {
+  return apiRequest<ParentInvitation>(`/teacher/invitation/group/${groupId}/rotate`, {
+    method: 'POST',
+    accessToken,
+  });
+}
+
+export function disableForGroup(accessToken: string, groupId: string): Promise<ParentInvitation> {
+  return apiRequest<ParentInvitation>(`/teacher/invitation/group/${groupId}/disable`, {
+    method: 'POST',
+    accessToken,
+  });
+}
+
+export function enableForGroup(accessToken: string, groupId: string): Promise<ParentInvitation> {
+  return apiRequest<ParentInvitation>(`/teacher/invitation/group/${groupId}/enable`, {
+    method: 'POST',
+    accessToken,
+  });
 }
 
 // --- Page publique ---

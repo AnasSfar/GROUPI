@@ -75,11 +75,11 @@ export function TeacherWeekCalendar() {
     load();
   }, [load]);
 
-  function handleNavigate(direction: 'prev' | 'next' | 'today') {
+  function handleNavigate(direction: 'prev' | 'next' | 'today', dayCount: number) {
     if (direction === 'today') {
       setWeekStart(startOfWeek(new Date()));
     } else {
-      setWeekStart((w) => addDays(w, direction === 'next' ? 7 : -7));
+      setWeekStart((w) => addDays(w, direction === 'next' ? dayCount : -dayCount));
     }
   }
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Select } from '../components/Select';
 import { useToast } from '../components/Toast';
@@ -74,6 +74,7 @@ function sessionTimestamp(row: SessionRow): number {
 export function TeacherAllSessionsPage() {
   const { getAccessToken } = useAuth();
   const { showToast } = useToast();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [rows, setRows] = useState<SessionRow[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -238,7 +239,9 @@ export function TeacherAllSessionsPage() {
           >
             {showCreateForm ? 'Fermer' : 'Creer une seance'}
           </button>
-          <Link to="/teacher/groups">Mes groupes</Link>
+          <button type="button" onClick={() => navigate('/teacher/groups')}>
+            Mes groupes
+          </button>
         </div>
       </div>
 

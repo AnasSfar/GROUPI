@@ -226,7 +226,7 @@ describe('Pre-enrollments (e2e)', () => {
       },
     });
     await prisma.enrollment.create({
-      data: { studentId: studentAId, groupId: linkGroup.id, status: 'PENDING_VALIDATION', requestedAt: now },
+      data: { studentId: studentAId, groupId: linkGroup.id, status: 'ACTIVE', requestedAt: now },
     });
   });
 
@@ -436,7 +436,7 @@ describe('Pre-enrollments (e2e)', () => {
       expect(res.body.proposedGroupId).toBe(groupId);
     });
 
-    it('confirms the proposal -> TRANSFORMED, and creates a PENDING_VALIDATION Enrollment', async () => {
+    it('confirms the proposal -> TRANSFORMED, and creates an ACTIVE Enrollment directly (Avenant 02)', async () => {
       const res = await api()
         .post(`/api/v1/pre-enrollments/${preEnrollmentBId}/confirm`)
         .set('Authorization', `Bearer ${parentToken}`)
@@ -444,9 +444,14 @@ describe('Pre-enrollments (e2e)', () => {
       expect(res.body.status).toBe('TRANSFORMED');
 
       const enrollment = await prisma.enrollment.findFirst({
-        where: { studentId: studentAId, groupId, status: 'PENDING_VALIDATION' },
+        where: { studentId: studentAId, groupId, status: 'ACTIVE' },
       });
       expect(enrollment).not.toBeNull();
+
+      const account = await prisma.accountingAccount.findUnique({
+        where: { enrollmentId: enrollment!.id },
+      });
+      expect(account).not.toBeNull();
     });
   });
 

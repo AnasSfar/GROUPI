@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useConfirm } from '../components/ConfirmDialog';
 import { ApiError } from '../api/client';
@@ -29,6 +29,7 @@ function formatDateTime(iso: string): string {
 /** Ch.19.4 : gestion des annonces de groupe par le Professeur — création, programmation, suivi de lecture. */
 export function TeacherGroupAnnouncementsPage() {
   const { groupId } = useParams<{ groupId: string }>();
+  const navigate = useNavigate();
   const { getAccessToken } = useAuth();
   const confirm = useConfirm();
   const [group, setGroup] = useState<Group | null>(null);
@@ -156,7 +157,9 @@ export function TeacherGroupAnnouncementsPage() {
           <p>Publiez une information collective à destination de tous les Parents du groupe.</p>
         </div>
         <div className="page-actions">
-          <Link to="/teacher/groups">← Retour à mes groupes</Link>
+          <button type="button" onClick={() => navigate('/teacher/groups')}>
+            ← Retour à mes groupes
+          </button>
         </div>
       </div>
 

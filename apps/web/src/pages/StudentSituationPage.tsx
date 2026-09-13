@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Select } from '../components/Select';
 import { ApiError } from '../api/client';
@@ -16,12 +16,25 @@ const STATUS_LABELS: Record<StudentSituation['status'], string> = {
   REJECTED: 'Refusée',
 };
 
-const STATUS_BADGE: Record<StudentSituation['status'], string> = {
-  ACTIVE: 'badge-success',
-  PENDING_VALIDATION: 'badge-warning',
-  CLOSED: 'badge-neutral',
-  REJECTED: 'badge-danger',
+const STATUS_TONE: Record<StudentSituation['status'], string> = {
+  ACTIVE: 'tone-success',
+  PENDING_VALIDATION: 'tone-warning',
+  CLOSED: 'tone-neutral',
+  REJECTED: 'tone-danger',
 };
+
+/** Statut "en tête de fiche" à afficher devant le nom de l'élève — une validation en attente
+ * prime toujours (c'est l'action la plus urgente pour le Parent), sinon la situation active,
+ * sinon le statut de la dernière situation connue (typiquement clôturée). */
+function headlineSituationStatus(history: StudentSituation[]): { tone: string; label: string } | null {
+  if (history.length === 0) return null;
+  if (history.some((s) => s.status === 'PENDING_VALIDATION')) {
+    return { tone: STATUS_TONE.PENDING_VALIDATION, label: STATUS_LABELS.PENDING_VALIDATION };
+  }
+  const active = history.find((s) => s.status === 'ACTIVE');
+  if (active) return { tone: STATUS_TONE.ACTIVE, label: STATUS_LABELS.ACTIVE };
+  return { tone: STATUS_TONE[history[0].status], label: STATUS_LABELS[history[0].status] };
+}
 
 function formatSchoolOption(school: School) {
   const city = school.city?.name ? ` - ${school.city.name}` : '';
@@ -30,6 +43,7 @@ function formatSchoolOption(school: School) {
 }
 export function StudentSituationPage() {
   const { studentId } = useParams<{ studentId: string }>();
+  const navigate = useNavigate();
   const { getAccessToken } = useAuth();
   const [student, setStudent] = useState<Student | null>(null);
   const [history, setHistory] = useState<StudentSituation[]>([]);
@@ -108,18 +122,26 @@ export function StudentSituationPage() {
   }
 
   const hasPending = history.some((s) => s.status === 'PENDING_VALIDATION');
+  const headlineStatus = headlineSituationStatus(history);
+  const mostRecent = history[0];
 
   return (
     <>
       <div className="page-header">
         <div>
           <h1>
-            Situation scolaire — {student.firstName} {student.lastName}
+            Situation scolaire —{' '}
+            <span className="status-dot-row">
+              {headlineStatus && <span className={`status-dot ${headlineStatus.tone}`} title={headlineStatus.label} />}
+              {student.firstName} {student.lastName}
+            </span>
           </h1>
           <p>Historique et évolutions de la scolarité de l'élève.</p>
         </div>
         <div className="page-actions">
-          <Link to="/parent/children">← Retour à mes enfants</Link>
+          <button type="button" onClick={() => navigate('/parent/children')}>
+            ← Retour à mes enfants
+          </button>
         </div>
       </div>
 
@@ -143,10 +165,6 @@ export function StudentSituationPage() {
                 <th>Année académique</th>
                 <th>Niveau</th>
                 <th>Établissement</th>
-                <th>Classe</th>
-                <th>Statut</th>
-                <th>Début</th>
-                <th>Fin</th>
               </tr>
             </thead>
             <tbody>
@@ -155,17 +173,6 @@ export function StudentSituationPage() {
                   <td data-label="Année académique">{situation.academicYear.label}</td>
                   <td data-label="Niveau">{situation.schoolLevel.name}</td>
                   <td data-label="Établissement">{situation.school.name}</td>
-                  <td data-label="Classe">{situation.class ?? '—'}</td>
-                  <td data-label="Statut">
-                    <span className={`badge ${STATUS_BADGE[situation.status]}`}>
-                      {STATUS_LABELS[situation.status]}
-                    </span>
-                    {situation.status === 'REJECTED' && situation.rejectionReason && (
-                      <span className="table-hint"> — {situation.rejectionReason}</span>
-                    )}
-                  </td>
-                  <td data-label="Début">{new Date(situation.startDate).toLocaleDateString('fr-FR')}</td>
-                  <td data-label="Fin">{situation.endDate ? new Date(situation.endDate).toLocaleDateString('fr-FR') : '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -175,6 +182,11 @@ export function StudentSituationPage() {
 
       <section className="card-section">
         <h2>Déclarer une évolution</h2>
+        {!hasPending && mostRecent?.status === 'REJECTED' && mostRecent.rejectionReason && (
+          <p className="form-error" role="alert">
+            Votre dernière demande a été refusée : {mostRecent.rejectionReason}
+          </p>
+        )}
         {hasPending && (
           <p className="form-notice" role="status">
             Une modification est déjà en attente de validation par un administrateur.

@@ -3,6 +3,7 @@ import { AcademicYear, PreEnrollmentStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { AccountingService } from '../accounting/accounting.service';
 import { CreatePreEnrollmentDto } from './dto/create-pre-enrollment.dto';
 import { UpdatePreEnrollmentDto } from './dto/update-pre-enrollment.dto';
 import { ProposePreEnrollmentDto } from './dto/propose-pre-enrollment.dto';
@@ -43,6 +44,7 @@ export class PreEnrollmentsService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly subscriptions: SubscriptionsService,
+    private readonly accounting: AccountingService,
   ) {}
 
   /**
@@ -464,10 +466,11 @@ export class PreEnrollmentsService {
   }
 
   /**
-   * Ch.11.9/11.11, RM-PRE-011/012/021/022/024/030, ERR-PRE-004/005/011/015/016 : le Parent
-   * confirme — capacité du groupe revérifiée à cet instant précis (premier arrivé/premier servi,
-   * ce qui couvre la priorité chronologique RM-PRE-014 sans file d'attente formelle), et la
-   * préinscription est transformée en demande d'inscription (Enrollment, PENDING_VALIDATION).
+   * Avenant 02 : le Parent confirme — capacité du groupe ET de l'abonnement du Professeur
+   * revérifiées à cet instant précis (premier arrivé/premier servi, ce qui couvre la priorité
+   * chronologique RM-PRE-014 sans file d'attente formelle) — et la préinscription est transformée
+   * directement en `Enrollment ACTIVE` (même principe que `GroupMembersService.assignOne` : plus
+   * d'étape de décision du Professeur, la confirmation du Parent suffit).
    */
   async confirm(parentId: string, id: string) {
     const pe = await this.loadOwned(id);
@@ -503,22 +506,41 @@ export class PreEnrollmentsService {
       if (group.status === 'ARCHIVED') {
         throw new BadRequestException('Transformation impossible : groupe archivé (ERR-PRE-016)');
       }
-      if (group._count.enrollments >= group.capacity) {
+      const activeCount = await tx.enrollment.count({ where: { groupId: group.id, status: 'ACTIVE' } });
+      if (activeCount >= group.capacity) {
         // RM-PRE-030 : la préinscription reste PROPOSAL_SENT, le Parent est informé (ERR-PRE-004/011).
         throw new BadRequestException(
-          'Groupe déjà complet : transformation en demande d’inscription refusée (ERR-PRE-004/011)',
+          'Groupe déjà complet : transformation en inscription refusée (ERR-PRE-004/011)',
         );
       }
 
-      await tx.enrollment.create({
+      const enrollment = await tx.enrollment.create({
         data: {
           studentId: pe.studentId,
           groupId: group.id,
-          status: 'PENDING_VALIDATION',
+          status: 'ACTIVE',
           requestedAt: new Date(),
+          decidedAt: new Date(),
           // Avenant 01, Ch. C.5 : origine correcte pour les statistiques/indicateurs d'inscription —
           // cette Enrollment naît d'une préinscription confirmée, jamais d'une affectation Professeur.
           origin: 'PRE_ENROLLMENT',
+        },
+      });
+
+      // RM-CPT-002 : compte de suivi comptable créé automatiquement à l'activation.
+      await this.accounting.createAccountForEnrollment(tx, enrollment.id, group.academicYearId);
+
+      if (activeCount + 1 >= group.capacity) {
+        await tx.group.update({ where: { id: group.id }, data: { status: 'FULL' } });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          userId: parentId,
+          action: 'ENROLLMENT_CREATED_FROM_PRE_ENROLLMENT',
+          targetType: 'Enrollment',
+          targetId: enrollment.id,
+          newValues: { studentId: pe.studentId, groupId: group.id, preEnrollmentId: id },
         },
       });
 
@@ -526,46 +548,6 @@ export class PreEnrollmentsService {
       return tx.preEnrollment.update({
         where: { id },
         data: { status: 'TRANSFORMED' },
-        include: INCLUDE_DETAILS,
-      });
-    });
-  }
-
-  /**
-   * RM-PRE-026 : le Parent peut retirer sa confirmation tant que la demande d'inscription qui en
-   * est issue (Enrollment PENDING_VALIDATION) n'a pas encore été traitée par le Professeur. Annule
-   * cette demande — même effet que `EnrollmentsService.cancel`, réappliqué ici directement en base :
-   * `EnrollmentsModule` n'exporte pas `EnrollmentsService` et est hors périmètre de ce chantier, donc
-   * ce module ne peut pas l'injecter proprement — puis remet la préinscription en `PROPOSAL_SENT`
-   * pour permettre une nouvelle décision du Parent (confirmer à nouveau ou refuser).
-   */
-  async withdrawConfirmation(parentId: string, id: string) {
-    const pe = await this.loadOwned(id);
-    if (pe.parentId !== parentId) {
-      throw new ForbiddenException("Cette préinscription n'appartient pas à votre compte");
-    }
-    if (pe.status !== 'TRANSFORMED') {
-      throw new BadRequestException('Aucune confirmation à retirer pour cette préinscription');
-    }
-    if (!pe.proposedGroupId) {
-      throw new BadRequestException('Aucun groupe associé à cette préinscription');
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      const enrollment = await tx.enrollment.findFirst({
-        where: { studentId: pe.studentId, groupId: pe.proposedGroupId!, status: 'PENDING_VALIDATION' },
-        orderBy: { requestedAt: 'desc' },
-      });
-      if (!enrollment) {
-        throw new BadRequestException(
-          'La demande d’inscription associée a déjà été traitée par le Professeur : retrait impossible (RM-PRE-026)',
-        );
-      }
-      await tx.enrollment.update({ where: { id: enrollment.id }, data: { status: 'CANCELLED' } });
-
-      return tx.preEnrollment.update({
-        where: { id },
-        data: { status: 'PROPOSAL_SENT' },
         include: INCLUDE_DETAILS,
       });
     });

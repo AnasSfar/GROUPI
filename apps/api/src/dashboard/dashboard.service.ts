@@ -104,7 +104,7 @@ export class DashboardService {
       };
     });
 
-    const [todaysSessions, upcomingSessions, pendingEnrollmentsCount, pendingGroupChangesCount] = await Promise.all([
+    const [todaysSessions, upcomingSessions] = await Promise.all([
       this.prisma.session.findMany({
         where: { groupId: { in: groupIds }, date: today },
         include: { group: { select: { id: true, name: true } } },
@@ -116,8 +116,6 @@ export class DashboardService {
         orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
         take: 10,
       }),
-      this.prisma.enrollment.count({ where: { status: 'PENDING_VALIDATION', groupId: { in: groupIds } } }),
-      this.prisma.groupChangeRequest.count({ where: { status: 'PENDING', targetGroupId: { in: groupIds } } }),
     ]);
 
     const { unreadCommentsCount, unreadAnnouncementsCount } = await this.unreadCommentAndAnnouncementCounts(teacherId);
@@ -126,8 +124,6 @@ export class DashboardService {
       totalActiveStudents: activeStudentIds.size,
       todaysSessions: todaysSessions.map((s) => this.sessionSummary(s)),
       upcomingSessions: upcomingSessions.map((s) => this.sessionSummary(s)),
-      pendingEnrollmentsCount,
-      pendingGroupChangesCount,
       unreadCommentsCount,
       unreadAnnouncementsCount,
     };
@@ -234,8 +230,6 @@ export class DashboardService {
       groupsView,
       abandonmentAlerts,
       debtorAccounts,
-      pendingEnrollmentsCount,
-      pendingGroupChangesCount,
       preEnrollmentsPendingCount: preEnrollmentsView.pendingCount,
       subs,
       profile: profileView,
@@ -336,28 +330,12 @@ export class DashboardService {
       account: { student: { firstName: string; lastName: string }; group: { name: string } };
       alert: boolean;
     }[];
-    pendingEnrollmentsCount: number;
-    pendingGroupChangesCount: number;
     preEnrollmentsPendingCount: number;
     subs: { status: string; expiresAt: Date | null; plan: { name: string } }[];
     profile: { pendingAdminValidation: boolean; completenessScore: number };
   }): DashboardAlert[] {
     const alerts: DashboardAlert[] = [];
 
-    if (input.pendingEnrollmentsCount > 0) {
-      alerts.push({
-        level: toAlertLevel('IMPORTANT'),
-        code: 'PENDING_ENROLLMENTS',
-        message: `${input.pendingEnrollmentsCount} demande(s) d'inscription en attente de décision.`,
-      });
-    }
-    if (input.pendingGroupChangesCount > 0) {
-      alerts.push({
-        level: toAlertLevel('IMPORTANT'),
-        code: 'PENDING_GROUP_CHANGES',
-        message: `${input.pendingGroupChangesCount} demande(s) de changement de groupe en attente.`,
-      });
-    }
     const fullGroups = input.groupsView.filter((g) => g.category === 'FULL');
     if (fullGroups.length > 0) {
       alerts.push({
@@ -533,7 +511,7 @@ export class DashboardService {
         alerts.push({
           level: toAlertLevel('IMPORTANT'),
           code: 'CHILD_DEBTOR_BALANCE',
-          message: `Solde débiteur${suffix(childName)} : ${Math.abs(c.globalBalance).toFixed(3)} TND restant à régler.`,
+          message: `Séances non payées${suffix(childName)} : ${Math.abs(c.globalBalance).toFixed(3)} TND à régler.`,
         });
       }
       if (c.cancelledOrPostponedSessions.length > 0) {

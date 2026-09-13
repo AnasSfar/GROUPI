@@ -3,7 +3,6 @@ import { AbsenceNoticeButton } from './ChildDetailCard';
 import { EnrollmentCommentThread } from './EnrollmentCommentThread';
 import { GroupAnnouncementsFeed } from './GroupAnnouncementsFeed';
 import { EnrollmentAccountingPanel } from './EnrollmentAccountingPanel';
-import { GroupChangeTargetPicker } from './GroupChangeTargetPicker';
 import { formatDateTime } from '../utils/format';
 import type { ParentChildDashboard } from '../api/dashboardApi';
 import type { PendingLevelPoolAssignment } from '../api/parentProfileApi';
@@ -163,10 +162,6 @@ export function ChildSubjectsPanel({
 
       <p className="table-hint section-spacer">Solde et relevé de cette inscription</p>
       <EnrollmentAccountingPanel enrollmentId={selected.enrollmentId} canWrite={false} />
-
-      <p className="table-hint section-spacer">
-        <GroupChangeTargetPicker enrollmentId={selected.enrollmentId} onRequested={onRefresh} />
-      </p>
     </>
   );
 }

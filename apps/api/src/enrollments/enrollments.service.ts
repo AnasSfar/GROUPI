@@ -1,12 +1,11 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { EnrollmentStatus, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AccountingService } from '../accounting/accounting.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
-import { AcceptEnrollmentDto } from './dto/accept-enrollment.dto';
-import { RejectEnrollmentDto } from './dto/reject-enrollment.dto';
 import { UpdateEnrollmentPriceDto } from './dto/update-enrollment-price.dto';
+import { ChangeEnrollmentGroupDto } from './dto/change-enrollment-group.dto';
 
 /** Ch.12 : vue Parent — infos du groupe/professeur/matière/niveau, jamais le téléphone du Professeur ici. */
 const INCLUDE_PARENT_VIEW = {
@@ -70,8 +69,6 @@ type TeacherViewEnrollmentWithPaymentBehavior = TeacherViewEnrollment & {
   parentPaymentBehavior: ParentPaymentBehavior;
 };
 
-const EXPIRY_DELAY_MS = 7 * 24 * 60 * 60 * 1000; // RM-INS-026 : délai de réponse de 7 jours
-
 @Injectable()
 export class EnrollmentsService {
   constructor(
@@ -81,84 +78,23 @@ export class EnrollmentsService {
     private readonly subscriptions: SubscriptionsService,
   ) {}
 
-  // -------------------------------------------------------------------------
-  // RM-INS-026/ERR-INS-011 : expiration paresseuse.
-  // Ce projet ne dispose d'aucun mécanisme de job planifié (cron). Plutôt que d'introduire une
-  // dépendance de scheduling pour ce seul besoin, l'expiration à J+7 est appliquée à la lecture :
-  // chaque fois qu'une Enrollment PENDING_VALIDATION est chargée (liste ou détail) et que son
-  // délai de réponse est dépassé, elle est transformée en EXPIRED avant d'être retournée. Ce
-  // helper est réutilisé par toutes les méthodes de lecture ci-dessous.
-  // -------------------------------------------------------------------------
-  private async expireIfDue<T extends { id: string; status: EnrollmentStatus; requestedAt: Date }>(
-    enrollment: T,
-  ): Promise<T> {
-    if (enrollment.status !== 'PENDING_VALIDATION') {
-      return enrollment;
-    }
-    const deadline = new Date(enrollment.requestedAt.getTime() + EXPIRY_DELAY_MS);
-    if (deadline > new Date()) {
-      return enrollment;
-    }
-    await this.prisma.enrollment.update({ where: { id: enrollment.id }, data: { status: 'EXPIRED' } });
-    (enrollment as { status: EnrollmentStatus }).status = 'EXPIRED';
-    return enrollment;
-  }
-
-  private async expireManyIfDue<T extends { id: string; status: EnrollmentStatus; requestedAt: Date }>(
-    enrollments: T[],
-  ): Promise<T[]> {
-    return Promise.all(enrollments.map((e) => this.expireIfDue(e)));
-  }
-
   // --- Vue Parent -----------------------------------------------------------
 
-  /** RM-INS-047 : le Parent consulte à tout moment l'état de ses demandes d'inscription. */
+  /** RM-INS-047 : le Parent consulte à tout moment l'état des inscriptions de ses enfants. */
   async listMine(parentId: string): Promise<ParentViewEnrollment[]> {
-    const enrollments = await this.prisma.enrollment.findMany({
+    return this.prisma.enrollment.findMany({
       where: { student: { parentId } },
       include: INCLUDE_PARENT_VIEW,
       orderBy: { requestedAt: 'desc' },
     });
-    return this.expireManyIfDue(enrollments);
-  }
-
-  /** RM-PAR-011/018 (transposé Ch.12) : un Parent n'accède jamais à l'inscription d'un autre. */
-  private async loadOwnedByParent(parentId: string, enrollmentId: string): Promise<ParentViewEnrollment> {
-    const enrollment = await this.prisma.enrollment.findUnique({
-      where: { id: enrollmentId },
-      include: INCLUDE_PARENT_VIEW,
-    });
-    if (!enrollment) {
-      throw new NotFoundException('Inscription introuvable');
-    }
-    if (enrollment.student.parentId !== parentId) {
-      throw new ForbiddenException("Cette inscription n'appartient pas à votre compte");
-    }
-    return this.expireIfDue(enrollment);
   }
 
   // Avenant 01, Ch. C/D.2, RM-PAR-021 : `create()` (demande d'inscription à l'initiative du Parent,
   // ex-Ch.12.5/12.6) a été retiré avec `POST /enrollments` — voir le commentaire d'en-tête du
-  // contrôleur. L'entrée d'un enfant dans un groupe standard passe désormais par l'affectation
-  // Professeur (Ch. C, module séparé) ou par la transformation d'une préinscription confirmée
-  // (`PreEnrollmentsService.confirm()`, inchangée), qui crée directement l'`Enrollment`
-  // `PENDING_VALIDATION` sans repasser par cette méthode.
-
-  /** RM-INS-038/049 : annulation possible tant qu'aucune décision du Professeur n'est enregistrée. */
-  async cancel(parentId: string, enrollmentId: string): Promise<ParentViewEnrollment> {
-    const enrollment = await this.loadOwnedByParent(parentId, enrollmentId);
-    if (enrollment.status === 'CANCELLED') {
-      throw new BadRequestException('Cette demande est déjà annulée (ERR-INS-019)');
-    }
-    if (enrollment.status !== 'PENDING_VALIDATION') {
-      throw new BadRequestException('Cette demande a déjà été traitée : annulation impossible (ERR-INS-017/020)');
-    }
-    return this.prisma.enrollment.update({
-      where: { id: enrollmentId },
-      data: { status: 'CANCELLED' },
-      include: INCLUDE_PARENT_VIEW,
-    });
-  }
+  // contrôleur. Avenant 02 : toute inscription naît désormais directement `ACTIVE` — affectation
+  // Professeur depuis sa salle d'attente (Ch. C, module séparé) ou préinscription confirmée par le
+  // Parent (`PreEnrollmentsService.confirm()`) — il n'existe donc plus d'étape de décision du
+  // Professeur ni d'annulation par le Parent avant décision (`accept`/`reject`/`cancel` retirés).
 
   // --- Vue Professeur ---------------------------------------------------------
 
@@ -186,17 +122,15 @@ export class EnrollmentsService {
       include: INCLUDE_TEACHER_VIEW,
       orderBy: { requestedAt: 'desc' },
     });
-    const expired = await this.expireManyIfDue(enrollments);
-
     // Un seul calcul par Parent distinct (plusieurs enfants du même Parent peuvent être inscrits
     // dans le même groupe) plutôt qu'un calcul par ligne.
-    const parentIds = [...new Set(expired.map((e) => e.student.parentId))];
+    const parentIds = [...new Set(enrollments.map((e) => e.student.parentId))];
     const behaviorEntries = await Promise.all(
       parentIds.map(async (parentId) => [parentId, await this.computeParentPaymentBehavior(parentId)] as const),
     );
     const behaviorByParent = new Map(behaviorEntries);
 
-    return expired.map((e) => ({
+    return enrollments.map((e) => ({
       ...e,
       parentPaymentBehavior: behaviorByParent.get(e.student.parentId) ?? 'NON_DISPONIBLE',
     }));
@@ -268,136 +202,7 @@ export class EnrollmentsService {
     if (!enrollment || enrollment.groupId !== groupId) {
       throw new NotFoundException('Inscription introuvable');
     }
-    return this.expireIfDue(enrollment);
-  }
-
-  /**
-   * Ch.12.7/RM-INS-025/039/054/055/056 : la capacité du groupe est revérifiée au moment exact de
-   * la décision. Si l'acceptation fait atteindre la capacité, le groupe passe automatiquement
-   * FULL (miroir de GroupsService, appliqué directement ici pour ne pas coupler les deux modules).
-   */
-  async accept(
-    teacherId: string,
-    groupId: string,
-    enrollmentId: string,
-    dto: AcceptEnrollmentDto,
-  ): Promise<TeacherViewEnrollment> {
-    const enrollment = await this.loadOwnedEnrollment(teacherId, groupId, enrollmentId);
-    if (enrollment.status !== 'PENDING_VALIDATION') {
-      throw new BadRequestException('Cette demande a déjà été traitée (ERR-INS-017)');
-    }
-
-    const group = await this.prisma.group.findUniqueOrThrow({ where: { id: groupId } });
-    if (group.status === 'ARCHIVED' || group.status === 'SUSPENDED' || group.status === 'CLOSED') {
-      throw new BadRequestException(
-        'Groupe fermé, suspendu ou archivé : acceptation de la demande impossible (ERR-INS-026)',
-      );
-    }
-
-    const activeCount = await this.prisma.enrollment.count({ where: { groupId, status: 'ACTIVE' } });
-    await this.subscriptions.assertActiveEnrollmentCapacity(teacherId, 1, 'ERR-INS-008/ERR-INS-013');
-    if (activeCount >= group.capacity) {
-      throw new BadRequestException(
-        "La capacité du groupe n'est plus disponible au moment de l'acceptation (ERR-INS-030/039/056)",
-      );
-    }
-
-    // RM-GRP-022 : le tarif effectif est toujours figé par inscription au moment de l'activation,
-    // jamais recalculé depuis `group.publicPrice` après coup. Si le Professeur ne fixe pas de tarif
-    // personnalisé à l'acceptation, `customPrice` est explicitement figé à la valeur actuelle du
-    // tarif public du groupe — un changement ultérieur de ce tarif n'impacte donc plus jamais cette
-    // inscription déjà active.
-    const fixedCustomPrice = dto.customPrice !== undefined ? dto.customPrice : enrollment.customPrice ?? group.publicPrice;
-
-    const updated = await this.prisma.$transaction(async (tx) => {
-      await tx.enrollment.update({
-        where: { id: enrollmentId },
-        data: {
-          status: 'ACTIVE',
-          decidedAt: new Date(),
-          decidedById: teacherId,
-          customPrice: fixedCustomPrice,
-        },
-      });
-
-      // RM-CPT-002 : compte de suivi comptable créé automatiquement à l'activation de l'inscription.
-      await this.accounting.createAccountForEnrollment(tx, enrollmentId, group.academicYearId);
-
-      if (activeCount + 1 >= group.capacity) {
-        await tx.group.update({ where: { id: groupId }, data: { status: 'FULL' } });
-      }
-
-      // RM-ACC-019/020 : traçabilité centralisée de l'acceptation d'une demande d'inscription.
-      await tx.auditLog.create({
-        data: {
-          userId: teacherId,
-          action: 'ENROLLMENT_ACCEPTED',
-          targetType: 'Enrollment',
-          targetId: enrollmentId,
-          oldValues: { status: 'PENDING_VALIDATION' },
-          newValues: { status: 'ACTIVE', customPrice: Number(fixedCustomPrice) },
-        },
-      });
-
-      // Relu après toutes les mutations : le `group` inclus doit refléter l'état final (ex. FULL),
-      // pas un instantané capturé avant la mise à jour du groupe dans cette même transaction.
-      return tx.enrollment.findUniqueOrThrow({ where: { id: enrollmentId }, include: INCLUDE_TEACHER_VIEW });
-    });
-
-    // NOT-INS-002 : hors transaction — un échec d'envoi ne doit jamais annuler la décision.
-    // Avenant 01, Ch. I.4/I.7 (RM-NOT-050/051) : notification in-app uniquement, plus d'e-mail.
-    await this.notifications.notify({
-      recipientUserId: updated.student.parentId,
-      type: 'INS_ACCEPTED',
-      priority: 'IMPORTANT',
-      title: 'Demande d’inscription acceptée',
-      body: `La demande d'inscription de ${updated.student.firstName} ${updated.student.lastName} au groupe "${updated.group.name}" a été acceptée.`,
-      refType: 'Enrollment',
-      refId: updated.id,
-    });
-    return updated;
-  }
-
-  async reject(
-    teacherId: string,
-    groupId: string,
-    enrollmentId: string,
-    _dto: RejectEnrollmentDto,
-  ): Promise<TeacherViewEnrollment> {
-    const enrollment = await this.loadOwnedEnrollment(teacherId, groupId, enrollmentId);
-    if (enrollment.status !== 'PENDING_VALIDATION') {
-      throw new BadRequestException('Cette demande a déjà été traitée (ERR-INS-017)');
-    }
-    const updated = await this.prisma.enrollment.update({
-      where: { id: enrollmentId },
-      data: { status: 'REJECTED', decidedAt: new Date(), decidedById: teacherId },
-      include: INCLUDE_TEACHER_VIEW,
-    });
-
-    // RM-ACC-019/020 : traçabilité du refus — pas de transaction Prisma existante ici (simple mise
-    // à jour), donc journalisation best-effort, non bloquante.
-    await this.prisma.auditLog.create({
-      data: {
-        userId: teacherId,
-        action: 'ENROLLMENT_REJECTED',
-        targetType: 'Enrollment',
-        targetId: enrollmentId,
-        oldValues: { status: 'PENDING_VALIDATION' },
-        newValues: { status: 'REJECTED' },
-      },
-    });
-
-    // NOT-INS-003 — Avenant 01, Ch. I.4/I.7 (RM-NOT-050/051) : notification in-app uniquement.
-    await this.notifications.notify({
-      recipientUserId: updated.student.parentId,
-      type: 'INS_REJECTED',
-      priority: 'IMPORTANT',
-      title: 'Demande d’inscription refusée',
-      body: `La demande d'inscription de ${updated.student.firstName} ${updated.student.lastName} au groupe "${updated.group.name}" a été refusée.`,
-      refType: 'Enrollment',
-      refId: updated.id,
-    });
-    return updated;
+    return enrollment;
   }
 
   /**
@@ -507,6 +312,113 @@ export class EnrollmentsService {
       }
       return tx.enrollment.findUniqueOrThrow({ where: { id: enrollmentId }, include: INCLUDE_TEACHER_VIEW });
     });
+  }
+
+  /**
+   * Avenant 02 : le changement de groupe est désormais une décision unilatérale et immédiate du
+   * Professeur (plus de proposition ni de confirmation Parent, contrairement à l'ancien module
+   * `group-change`) — même mécanique qu'une affectation depuis une salle d'attente
+   * (`GroupMembersService.assignOne`) : le groupe cible doit appartenir au même Professeur, à la
+   * même matière et au même niveau scolaire que l'inscription d'origine ; l'ancienne inscription
+   * est archivée et une nouvelle inscription ACTIVE est créée dans le groupe cible, avec report du
+   * solde comptable (`AccountingService.carryOverBalanceForGroupChange`, réutilisé tel quel).
+   */
+  async changeGroup(
+    teacherId: string,
+    groupId: string,
+    enrollmentId: string,
+    dto: ChangeEnrollmentGroupDto,
+  ): Promise<TeacherViewEnrollment> {
+    const enrollment = await this.loadOwnedEnrollment(teacherId, groupId, enrollmentId);
+    if (enrollment.status !== 'ACTIVE') {
+      throw new BadRequestException('Seule une inscription active peut changer de groupe');
+    }
+    if (dto.targetGroupId === groupId) {
+      throw new BadRequestException('Le groupe cible est identique au groupe actuel');
+    }
+
+    const [originGroup, targetGroup] = await Promise.all([
+      this.prisma.group.findUniqueOrThrow({ where: { id: groupId } }),
+      this.prisma.group.findUnique({ where: { id: dto.targetGroupId } }),
+    ]);
+    if (!targetGroup || targetGroup.teacherId !== teacherId || targetGroup.kind !== 'STANDARD') {
+      throw new NotFoundException('Groupe cible introuvable');
+    }
+    if (targetGroup.status === 'ARCHIVED' || targetGroup.status === 'CLOSED' || targetGroup.status === 'SUSPENDED') {
+      throw new BadRequestException('Groupe cible fermé, suspendu ou archivé : changement impossible');
+    }
+    if (targetGroup.subjectId !== originGroup.subjectId || targetGroup.schoolLevelId !== originGroup.schoolLevelId) {
+      throw new BadRequestException(
+        'Le groupe cible doit enseigner la même matière et le même niveau scolaire que le groupe d’origine',
+      );
+    }
+
+    const existingInTarget = await this.prisma.enrollment.findFirst({
+      where: { studentId: enrollment.student.id, groupId: targetGroup.id, status: 'ACTIVE' },
+    });
+    if (existingInTarget) {
+      throw new BadRequestException('Une inscription active existe déjà pour cet élève dans le groupe cible');
+    }
+
+    const activeCount = await this.prisma.enrollment.count({ where: { groupId: targetGroup.id, status: 'ACTIVE' } });
+    if (activeCount >= targetGroup.capacity) {
+      throw new BadRequestException('Changement de groupe impossible : groupe cible complet');
+    }
+
+    const newEnrollment = await this.prisma.$transaction(async (tx) => {
+      await tx.enrollment.update({ where: { id: enrollmentId }, data: { status: 'ARCHIVED' } });
+      await this.reopenGroupIfBelowCapacity(tx, groupId);
+
+      const created = await tx.enrollment.create({
+        data: {
+          studentId: enrollment.student.id,
+          groupId: targetGroup.id,
+          status: 'ACTIVE',
+          customPrice: enrollment.customPrice ?? undefined,
+          requestedAt: new Date(),
+          decidedAt: new Date(),
+          decidedById: teacherId,
+          origin: 'GROUP_CHANGE',
+        },
+      });
+
+      const newAccount = await this.accounting.createAccountForEnrollment(tx, created.id, targetGroup.academicYearId);
+      await this.accounting.carryOverBalanceForGroupChange(tx, {
+        originalEnrollmentId: enrollmentId,
+        newAccount,
+        authorId: teacherId,
+      });
+
+      if (activeCount + 1 >= targetGroup.capacity) {
+        await tx.group.update({ where: { id: targetGroup.id }, data: { status: 'FULL' } });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          userId: teacherId,
+          action: 'ENROLLMENT_GROUP_CHANGED',
+          targetType: 'Enrollment',
+          targetId: created.id,
+          oldValues: { enrollmentId, groupId },
+          newValues: { enrollmentId: created.id, groupId: targetGroup.id },
+        },
+      });
+
+      return tx.enrollment.findUniqueOrThrow({ where: { id: created.id }, include: INCLUDE_TEACHER_VIEW });
+    });
+
+    // NOT-INS : hors transaction — un échec d'envoi ne doit jamais annuler le changement.
+    await this.notifications.notify({
+      recipientUserId: newEnrollment.student.parentId,
+      type: 'ENROLLMENT_GROUP_CHANGED',
+      priority: 'IMPORTANT',
+      title: 'Changement de groupe',
+      body: `${newEnrollment.student.firstName} ${newEnrollment.student.lastName} a été déplacé·e vers le groupe "${targetGroup.name}".`,
+      refType: 'Enrollment',
+      refId: newEnrollment.id,
+    });
+
+    return newEnrollment;
   }
 
   private async reopenGroupIfBelowCapacity(tx: Prisma.TransactionClient, groupId: string): Promise<void> {

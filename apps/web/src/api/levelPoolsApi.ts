@@ -24,6 +24,7 @@ export interface LevelPoolMember {
       school: { name: string };
       class: string | null;
     } | null;
+    parent: { firstName: string; lastName: string; phone: string };
   };
 }
 

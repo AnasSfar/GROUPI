@@ -1,56 +1,28 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useToast } from '../components/Toast';
 import { ApiError } from '../api/client';
 import * as enrollmentsApi from '../api/enrollmentsApi';
-import * as groupChangeApi from '../api/groupChangeApi';
 import { ScheduleList } from '../components/ScheduleList';
 import type { ParentEnrollment, EnrollmentStatus } from '../api/enrollmentsApi';
-import type { GroupChangeRequestView, GroupChangeStatus } from '../api/groupChangeApi';
 import { EnrollmentCommentThread } from '../components/EnrollmentCommentThread';
 import { GroupAnnouncementsFeed } from '../components/GroupAnnouncementsFeed';
 import { EnrollmentAccountingPanel } from '../components/EnrollmentAccountingPanel';
-import { GroupChangeTargetPicker } from '../components/GroupChangeTargetPicker';
-
-const CHANGE_STATUS_LABELS: Record<GroupChangeStatus, string> = {
-  PENDING: 'En attente',
-  ACCEPTED: 'Acceptée',
-  REJECTED: 'Refusée',
-  CANCELLED: 'Annulée',
-};
-
-const CHANGE_STATUS_BADGE: Record<GroupChangeStatus, string> = {
-  PENDING: 'badge-warning',
-  ACCEPTED: 'badge-success',
-  REJECTED: 'badge-danger',
-  CANCELLED: 'badge-neutral',
-};
 
 const STATUS_LABELS: Record<EnrollmentStatus, string> = {
-  PENDING_VALIDATION: 'En attente',
   ACTIVE: 'Active',
   SUSPENDED: 'Suspendue',
-  REJECTED: 'Refusée',
   ARCHIVED: 'Archivée',
-  CANCELLED: 'Annulée',
-  EXPIRED: 'Expirée',
 };
 
 const STATUS_BADGE: Record<EnrollmentStatus, string> = {
-  PENDING_VALIDATION: 'badge-warning',
   ACTIVE: 'badge-success',
   SUSPENDED: 'badge-danger',
-  REJECTED: 'badge-danger',
   ARCHIVED: 'badge-neutral',
-  CANCELLED: 'badge-neutral',
-  EXPIRED: 'badge-neutral',
 };
 
 export function ParentEnrollmentsPage() {
   const { getAccessToken } = useAuth();
-  const { showToast } = useToast();
   const [enrollments, setEnrollments] = useState<ParentEnrollment[]>([]);
-  const [groupChanges, setGroupChanges] = useState<GroupChangeRequestView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedComments, setExpandedComments] = useState<string | null>(null);
@@ -71,11 +43,10 @@ export function ParentEnrollmentsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [result, changes] = await Promise.all([enrollmentsApi.listMine(token), groupChangeApi.listMine(token)]);
+      const result = await enrollmentsApi.listMine(token);
       setEnrollments(result);
-      setGroupChanges(changes);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Impossible de charger vos demandes.');
+      setError(err instanceof ApiError ? err.message : 'Impossible de charger vos inscriptions.');
     } finally {
       setLoading(false);
     }
@@ -85,60 +56,6 @@ export function ParentEnrollmentsPage() {
     load();
   }, [load]);
 
-  async function handleCancel(enrollmentId: string) {
-    const token = getAccessToken();
-    if (!token) return;
-    setError(null);
-    try {
-      const updated = await enrollmentsApi.cancelEnrollment(token, enrollmentId);
-      setEnrollments((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
-      showToast('Demande d’inscription annulée');
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "L'annulation a échoué.");
-    }
-  }
-
-  async function handleCancelGroupChange(id: string) {
-    const token = getAccessToken();
-    if (!token) return;
-    setError(null);
-    try {
-      const updated = await groupChangeApi.cancelGroupChangeRequest(token, id);
-      setGroupChanges((prev) => prev.map((g) => (g.id === updated.id ? updated : g)));
-      showToast('Demande de changement de groupe annulée');
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "L'annulation a échoué.");
-    }
-  }
-
-  // RM-CHG-002/003 (Ch.20.3) : confirmation/refus d'une proposition de changement de groupe émise
-  // par le Professeur — le Parent est ici le décideur, symétrique du Professeur pour ses propres demandes.
-  async function handleConfirmProposal(id: string) {
-    const token = getAccessToken();
-    if (!token) return;
-    setError(null);
-    try {
-      const updated = await groupChangeApi.confirmGroupChangeProposal(token, id);
-      setGroupChanges((prev) => prev.map((g) => (g.id === updated.id ? updated : g)));
-      showToast('Changement de groupe confirmé');
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'La confirmation a échoué.');
-    }
-  }
-
-  async function handleDeclineProposal(id: string) {
-    const token = getAccessToken();
-    if (!token) return;
-    setError(null);
-    try {
-      const updated = await groupChangeApi.declineGroupChangeProposal(token, id);
-      setGroupChanges((prev) => prev.map((g) => (g.id === updated.id ? updated : g)));
-      showToast('Proposition déclinée');
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Le refus a échoué.');
-    }
-  }
-
   if (loading) {
     return <p>Chargement...</p>;
   }
@@ -147,8 +64,8 @@ export function ParentEnrollmentsPage() {
     <>
       <div className="page-header">
         <div>
-          <h1>Mes demandes d'inscription</h1>
-          <p>Suivez l'état de vos demandes d'inscription pour chaque enfant.</p>
+          <h1>Mes inscriptions</h1>
+          <p>Suivez les inscriptions de vos enfants. Avenant 02 : le Professeur décide seul de tout changement de groupe.</p>
         </div>
       </div>
 
@@ -159,8 +76,8 @@ export function ParentEnrollmentsPage() {
       )}
 
       <section className="card-section">
-        <h2>Demandes ({enrollments.length})</h2>
-        {enrollments.length === 0 && <p>Aucune demande d'inscription pour le moment.</p>}
+        <h2>Inscriptions ({enrollments.length})</h2>
+        {enrollments.length === 0 && <p>Aucune inscription pour le moment.</p>}
         {enrollments.length > 0 && (
           <div className="table-wrap">
             <table className="admin-table">
@@ -170,9 +87,8 @@ export function ParentEnrollmentsPage() {
                   <th>Groupe</th>
                   <th>Professeur</th>
                   <th>Jour / Horaire</th>
-                  <th>Demandée le</th>
+                  <th>Depuis le</th>
                   <th>Statut</th>
-                  <th>Actions</th>
                   <th>Commentaires</th>
                   <th>Annonces</th>
                   <th>Comptabilité</th>
@@ -197,21 +113,11 @@ export function ParentEnrollmentsPage() {
                     <td data-label="Jour / Horaire">
                       <ScheduleList schedules={enrollment.group.schedules} />
                     </td>
-                    <td data-label="Demandée le">{new Date(enrollment.requestedAt).toLocaleDateString('fr-FR')}</td>
+                    <td data-label="Depuis le">{new Date(enrollment.requestedAt).toLocaleDateString('fr-FR')}</td>
                     <td data-label="Statut">
                       <span className={`badge ${STATUS_BADGE[enrollment.status]}`}>
                         {STATUS_LABELS[enrollment.status]}
                       </span>
-                    </td>
-                    <td className="admin-actions">
-                      {enrollment.status === 'PENDING_VALIDATION' && (
-                        <button type="button" className="danger" onClick={() => handleCancel(enrollment.id)}>
-                          Annuler
-                        </button>
-                      )}
-                      {enrollment.status === 'ACTIVE' && (
-                        <GroupChangeTargetPicker enrollmentId={enrollment.id} onRequested={load} />
-                      )}
                     </td>
                     <td data-label="Commentaires">
                       <button
@@ -256,14 +162,14 @@ export function ParentEnrollmentsPage() {
                   </tr>
                   {expandedComments === enrollment.id && (
                     <tr ref={commentsRowRef}>
-                      <td colSpan={10}>
+                      <td colSpan={9}>
                         <EnrollmentCommentThread enrollmentId={enrollment.id} />
                       </td>
                     </tr>
                   )}
                   {expandedAnnouncements === enrollment.group.id && (
                     <tr>
-                      <td colSpan={10}>
+                      <td colSpan={9}>
                         {/* RM-COM-020 : lien vers le fil de commentaires de CETTE inscription — pas
                             du groupe, qui peut être partagé par plusieurs enfants/inscriptions. */}
                         <GroupAnnouncementsFeed
@@ -275,81 +181,12 @@ export function ParentEnrollmentsPage() {
                   )}
                   {expandedAccounting === enrollment.id && (
                     <tr>
-                      <td colSpan={10}>
+                      <td colSpan={9}>
                         <EnrollmentAccountingPanel enrollmentId={enrollment.id} canWrite={false} />
                       </td>
                     </tr>
                   )}
                   </Fragment>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <section className="card-section">
-        <h2>Mes demandes de changement de groupe ({groupChanges.length})</h2>
-        {groupChanges.length === 0 && <p>Aucune demande de changement de groupe pour le moment.</p>}
-        {groupChanges.length > 0 && (
-          <div className="table-wrap">
-            <table className="admin-table">
-              <thead>
-                <tr>
-                  <th>Enfant</th>
-                  <th>Groupe actuel</th>
-                  <th>Groupe cible</th>
-                  <th>Initiateur</th>
-                  <th>Date effective</th>
-                  <th>Statut</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {groupChanges.map((change) => (
-                  <tr key={change.id}>
-                    <td data-label="Enfant">
-                      {change.originalEnrollment.student.firstName} {change.originalEnrollment.student.lastName}
-                    </td>
-                    <td data-label="Groupe actuel">{change.originalEnrollment.group.name}</td>
-                    <td data-label="Groupe cible">
-                      {change.targetGroup.name} ({change.targetGroup.teacher.firstName}{' '}
-                      {change.targetGroup.teacher.lastName})
-                    </td>
-                    <td data-label="Initiateur">
-                      {change.initiatedBy === 'TEACHER' ? 'Proposition du Professeur' : 'Vous'}
-                    </td>
-                    <td data-label="Date effective">{change.effectiveDate ? new Date(change.effectiveDate).toLocaleDateString('fr-FR') : '—'}</td>
-                    <td data-label="Statut">
-                      <span className={`badge ${CHANGE_STATUS_BADGE[change.status]}`}>
-                        {CHANGE_STATUS_LABELS[change.status]}
-                      </span>
-                      {change.status === 'REJECTED' && change.rejectionReason && (
-                        <span className="table-hint"> — {change.rejectionReason}</span>
-                      )}
-                    </td>
-                    <td className="admin-actions">
-                      {/* RM-CHG-002/003 (Ch.20.3) : une proposition du Professeur se confirme ou se
-                          décline — une demande initiée par vous-même s'annule (statuts symétriques
-                          mais décideur différent, cf. GroupChangeService.confirmTeacherProposal). */}
-                      {change.status === 'PENDING' && change.initiatedBy === 'TEACHER' && (
-                        <>
-                          <button type="button" onClick={() => handleConfirmProposal(change.id)}>
-                            Confirmer
-                          </button>
-                          <button type="button" className="danger" onClick={() => handleDeclineProposal(change.id)}>
-                            Décliner
-                          </button>
-                        </>
-                      )}
-                      {((change.status === 'PENDING' && change.initiatedBy === 'PARENT') ||
-                        (change.status === 'ACCEPTED' && !change.appliedAt)) && (
-                        <button type="button" className="danger" onClick={() => handleCancelGroupChange(change.id)}>
-                          Annuler
-                        </button>
-                      )}
-                    </td>
-                  </tr>
                 ))}
               </tbody>
             </table>

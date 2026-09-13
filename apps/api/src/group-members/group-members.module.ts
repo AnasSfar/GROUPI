@@ -12,5 +12,7 @@ import { GroupMembersService } from './group-members.service';
   imports: [AuthModule, NotificationsModule, SubscriptionsModule, AccountingModule, SessionsModule, LevelPoolsModule],
   controllers: [GroupMembersController],
   providers: [GroupMembersService],
+  // Exporté pour l'affectation directe depuis un lien d'invitation ciblant un groupe (Ch. A extension).
+  exports: [GroupMembersService],
 })
 export class GroupMembersModule {}

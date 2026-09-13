@@ -7,6 +7,7 @@ import * as authApi from '../api/authApi';
 import type { Role } from '../api/authApi';
 import * as referentialsApi from '../api/referentialsApi';
 import type { SchoolLevel, Subject } from '../api/referentialsApi';
+import * as parentProfileApi from '../api/parentProfileApi';
 import { SchoolLevelSectionPicker } from '../components/SchoolLevelSectionPicker';
 
 const ROLE_LABELS: Record<string, string> = {
@@ -175,6 +176,78 @@ function AddRoleSection({ targetRole }: { targetRole: Role }) {
             </button>
           </div>
         </form>
+      )}
+    </section>
+  );
+}
+
+/** Coordonnées du profil Parent (téléphone/ville) — déplacé depuis ParentChildrenPage, qui reste
+ *  centré sur les enfants plutôt que sur les infos de compte. */
+function ParentContactSection() {
+  const { getAccessToken } = useAuth();
+  const { showToast } = useToast();
+  const [phone, setPhone] = useState('');
+  const [city, setCity] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const token = getAccessToken();
+    if (!token) return;
+    parentProfileApi
+      .getMyProfile(token)
+      .then((profile) => {
+        setPhone(profile.phone);
+        setCity(profile.city);
+      })
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Impossible de charger vos coordonnées.'))
+      .finally(() => setLoading(false));
+  }, [getAccessToken]);
+
+  async function handleSave() {
+    const token = getAccessToken();
+    if (!token) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await parentProfileApi.updateMyProfile(token, { phone, city });
+      setPhone(updated.phone);
+      setCity(updated.city);
+      showToast('Coordonnées mises à jour.');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Impossible de mettre à jour vos coordonnées.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="card-section">
+      <h2>Mes coordonnées</h2>
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      )}
+      {loading ? (
+        <p className="table-hint">Chargement...</p>
+      ) : (
+        <>
+          <label>
+            Téléphone
+            <input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} />
+          </label>
+          <label>
+            Ville
+            <input type="text" value={city} onChange={(e) => setCity(e.target.value)} />
+          </label>
+          <div className="page-actions" style={{ marginTop: 12 }}>
+            <button type="button" onClick={handleSave} disabled={saving}>
+              {saving ? 'Enregistrement...' : 'Enregistrer'}
+            </button>
+          </div>
+        </>
       )}
     </section>
   );
@@ -436,6 +509,8 @@ export function AccountSettingsPage() {
           </p>
         )}
       </section>
+
+      {currentUser?.roles.includes('PARENT') && <ParentContactSection />}
 
       {addableRole && <AddRoleSection targetRole={addableRole} />}
 

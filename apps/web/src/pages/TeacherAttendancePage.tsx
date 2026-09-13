@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/ConfirmDialog';
@@ -74,6 +74,7 @@ function isRowDirty(entry: AttendanceEntry, row: PendingRow): boolean {
 
 export function TeacherAttendancePage() {
   const { sessionId } = useParams<{ sessionId: string }>();
+  const navigate = useNavigate();
   const { getAccessToken } = useAuth();
   const { showToast } = useToast();
   const confirm = useConfirm();
@@ -280,8 +281,12 @@ export function TeacherAttendancePage() {
           </p>
         </div>
         <div className="page-actions">
-          <Link to={`/teacher/groups/${session.groupId}/sessions`}>← Retour aux séances</Link>
-          <Link to={`/teacher/groups/${session.groupId}/attendance`}>Statistiques du groupe</Link>
+          <button type="button" onClick={() => navigate(`/teacher/groups/${session.groupId}/sessions`)}>
+            ← Retour aux séances
+          </button>
+          <button type="button" onClick={() => navigate(`/teacher/groups/${session.groupId}/attendance`)}>
+            Statistiques du groupe
+          </button>
         </div>
       </div>
 

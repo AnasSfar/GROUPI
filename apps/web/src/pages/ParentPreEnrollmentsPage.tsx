@@ -309,19 +309,6 @@ export function ParentPreEnrollmentsPage() {
                           </button>
                         </>
                       )}
-                      {pe.status === 'TRANSFORMED' && (
-                        <button
-                          type="button"
-                          className="danger"
-                          onClick={() =>
-                            runAction(() =>
-                              preEnrollmentsApi.withdrawPreEnrollmentConfirmation(getAccessToken()!, pe.id),
-                            )
-                          }
-                        >
-                          Retirer ma confirmation
-                        </button>
-                      )}
                     </td>
                   </tr>
                 ))}

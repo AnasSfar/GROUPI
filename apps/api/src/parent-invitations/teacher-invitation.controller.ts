@@ -1,4 +1,4 @@
-import { Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { ParentInvitationsService } from './parent-invitations.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -42,5 +42,31 @@ export class TeacherInvitationController {
   @Post('enable')
   enable(@CurrentUser() user: AuthenticatedUser) {
     return this.service.setEnabled(user.id, true);
+  }
+
+  /**
+   * Ch. A (extension) : lien ciblant directement un groupe standard précis — pour rattacher un
+   * nouvel élève en cours d'année sans passer par la salle d'attente. Génère à la volée, comme le
+   * lien général.
+   */
+  @Get('group/:groupId')
+  getForGroup(@CurrentUser() user: AuthenticatedUser, @Param('groupId') groupId: string) {
+    return this.service.getOrCreateForGroup(user.id, groupId);
+  }
+
+  @Post('group/:groupId/rotate')
+  @UseGuards(SubscriptionGuard)
+  rotateForGroup(@CurrentUser() user: AuthenticatedUser, @Param('groupId') groupId: string) {
+    return this.service.rotate(user.id, groupId);
+  }
+
+  @Post('group/:groupId/disable')
+  disableForGroup(@CurrentUser() user: AuthenticatedUser, @Param('groupId') groupId: string) {
+    return this.service.setEnabled(user.id, false, groupId);
+  }
+
+  @Post('group/:groupId/enable')
+  enableForGroup(@CurrentUser() user: AuthenticatedUser, @Param('groupId') groupId: string) {
+    return this.service.setEnabled(user.id, true, groupId);
   }
 }

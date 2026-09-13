@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { EmptyState } from '../components/UiState';
+import { AddStudentFromLevelPoolModal } from '../components/AddStudentFromLevelPoolModal';
+import { GroupInvitationModal } from '../components/GroupInvitationModal';
 import { ApiError } from '../api/client';
 import * as groupsApi from '../api/groupsApi';
 import * as enrollmentsApi from '../api/enrollmentsApi';
@@ -22,11 +24,14 @@ const STATUS_BADGE: Record<'ACTIVE' | 'SUSPENDED', string> = {
  * pas les demandes en attente ni les changements de groupe, contrairement à la page Inscriptions. */
 export function TeacherGroupStudentsPage() {
   const { groupId } = useParams<{ groupId: string }>();
+  const navigate = useNavigate();
   const { getAccessToken } = useAuth();
   const [group, setGroup] = useState<Group | null>(null);
   const [enrollments, setEnrollments] = useState<TeacherEnrollment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showAddStudent, setShowAddStudent] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
 
   const load = useCallback(async () => {
     const token = getAccessToken();
@@ -63,6 +68,7 @@ export function TeacherGroupStudentsPage() {
     (e): e is TeacherEnrollment & { status: 'ACTIVE' | 'SUSPENDED' } =>
       e.status === 'ACTIVE' || e.status === 'SUSPENDED',
   );
+  const enrolledStudentIds = new Set(students.map((e) => e.student.id));
 
   return (
     <>
@@ -72,10 +78,38 @@ export function TeacherGroupStudentsPage() {
           <p>Liste des élèves actuellement inscrits à ce groupe uniquement.</p>
         </div>
         <div className="page-actions">
-          <Link to="/teacher/groups">← Retour à mes groupes</Link>
-          <Link to={`/teacher/enrollments?groupId=${group.id}`}>Gérer les inscriptions</Link>
+          <button type="button" onClick={() => navigate('/teacher/groups')}>
+            ← Retour à mes groupes
+          </button>
+          <button type="button" onClick={() => navigate(`/teacher/enrollments?groupId=${group.id}`)}>
+            Gérer les inscriptions
+          </button>
+          <button type="button" onClick={() => setShowInvite(true)}>
+            Inviter un nouvel élève
+          </button>
+          <button type="button" onClick={() => setShowAddStudent(true)}>
+            Ajouter un élève
+          </button>
         </div>
       </div>
+
+      {showInvite && (
+        <GroupInvitationModal groupId={group.id} groupName={group.name} onClose={() => setShowInvite(false)} />
+      )}
+
+      {showAddStudent && (
+        <AddStudentFromLevelPoolModal
+          groupId={group.id}
+          schoolLevelId={group.schoolLevel.id}
+          academicYearId={group.academicYear.id}
+          excludeStudentIds={enrolledStudentIds}
+          onClose={() => setShowAddStudent(false)}
+          onAssigned={() => {
+            setShowAddStudent(false);
+            load();
+          }}
+        />
+      )}
 
       {error && (
         <p className="form-error" role="alert">

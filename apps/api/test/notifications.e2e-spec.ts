@@ -4,7 +4,7 @@ import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { grantActiveSubscription } from './helpers/grant-subscription';
-import { createPendingEnrollmentDirect } from './helpers/create-enrollment';
+import { createActiveEnrollmentDirect } from './helpers/create-enrollment';
 import { registerParentDirect } from './helpers/register-parent-direct';
 
 /**
@@ -139,7 +139,7 @@ describe('Notifications (e2e)', () => {
   }
 
   async function enroll(_parentToken: string, studentId: string, groupId: string): Promise<string> {
-    const res = await createPendingEnrollmentDirect(prisma, studentId, groupId);
+    const res = await createActiveEnrollmentDirect(prisma, studentId, groupId);
     return res.id;
   }
 
@@ -272,20 +272,21 @@ describe('Notifications (e2e)', () => {
   describe('centre d’activités — visibilité et lecture', () => {
     it('creates an activity only for the recipient, never for another user (RM-NOT-003)', async () => {
       const group = await createOpenGroup(teacher.token, `E2E-NOT-${runId} Groupe Visibilité`);
+      const targetGroup = await createOpenGroup(teacher.token, `E2E-NOT-${runId} Groupe Visibilité Cible`);
       const student = await createStudent(parent1.token, `S-Vis-${runId}`);
       const enrollmentId = await enroll(parent1.token, student.id, group.id);
-
-      await api()
-        .post(`/api/v1/groups/${group.id}/enrollments/${enrollmentId}/accept`)
+      const changeRes = await api()
+        .post(`/api/v1/groups/${group.id}/enrollments/${enrollmentId}/change-group`)
         .set('Authorization', `Bearer ${teacher.token}`)
-        .send({})
+        .send({ targetGroupId: targetGroup.id })
         .expect(201);
+      const newEnrollmentId = changeRes.body.id as string;
 
       const mine = await api()
         .get('/api/v1/notifications/me')
         .set('Authorization', `Bearer ${parent1.token}`)
         .expect(200);
-      const activity = mine.body.find((a: any) => a.type === 'INS_ACCEPTED' && a.refId === enrollmentId);
+      const activity = mine.body.find((a: any) => a.type === 'ENROLLMENT_GROUP_CHANGED' && a.refId === newEnrollmentId);
       expect(activity).toBeDefined();
       expect(activity.priority).toBe('IMPORTANT');
       expect(activity.readAt).toBeNull();
@@ -294,30 +295,32 @@ describe('Notifications (e2e)', () => {
         .get('/api/v1/notifications/me')
         .set('Authorization', `Bearer ${parent2.token}`)
         .expect(200);
-      expect(other.body.find((a: any) => a.refId === enrollmentId)).toBeUndefined();
+      expect(other.body.find((a: any) => a.refId === newEnrollmentId)).toBeUndefined();
 
       const teacherOwn = await api()
         .get('/api/v1/notifications/me')
         .set('Authorization', `Bearer ${teacher.token}`)
         .expect(200);
-      expect(teacherOwn.body.find((a: any) => a.refId === enrollmentId)).toBeUndefined();
+      expect(teacherOwn.body.find((a: any) => a.refId === newEnrollmentId)).toBeUndefined();
     });
 
     it('reflects unread count and marks an activity read idempotently (RM-NOT-011)', async () => {
       const group = await createOpenGroup(teacher.token, `E2E-NOT-${runId} Groupe Lecture`);
+      const targetGroup = await createOpenGroup(teacher.token, `E2E-NOT-${runId} Groupe Lecture Cible`);
       const student = await createStudent(parent1.token, `S-Read-${runId}`);
       const enrollmentId = await enroll(parent1.token, student.id, group.id);
-      await api()
-        .post(`/api/v1/groups/${group.id}/enrollments/${enrollmentId}/reject`)
+      const changeRes = await api()
+        .post(`/api/v1/groups/${group.id}/enrollments/${enrollmentId}/change-group`)
         .set('Authorization', `Bearer ${teacher.token}`)
-        .send({})
+        .send({ targetGroupId: targetGroup.id })
         .expect(201);
+      const newEnrollmentId = changeRes.body.id as string;
 
       const mine = await api()
         .get('/api/v1/notifications/me')
         .set('Authorization', `Bearer ${parent1.token}`)
         .expect(200);
-      const activity = mine.body.find((a: any) => a.type === 'INS_REJECTED' && a.refId === enrollmentId);
+      const activity = mine.body.find((a: any) => a.type === 'ENROLLMENT_GROUP_CHANGED' && a.refId === newEnrollmentId);
       expect(activity).toBeDefined();
 
       const before = await api()
@@ -353,19 +356,20 @@ describe('Notifications (e2e)', () => {
 
     it('rejects marking an activity read for another user’s notification', async () => {
       const group = await createOpenGroup(teacher.token, `E2E-NOT-${runId} Groupe Isolation`);
+      const targetGroup = await createOpenGroup(teacher.token, `E2E-NOT-${runId} Groupe Isolation Cible`);
       const student = await createStudent(parent1.token, `S-Iso-${runId}`);
       const enrollmentId = await enroll(parent1.token, student.id, group.id);
-      await api()
-        .post(`/api/v1/groups/${group.id}/enrollments/${enrollmentId}/accept`)
+      const changeRes = await api()
+        .post(`/api/v1/groups/${group.id}/enrollments/${enrollmentId}/change-group`)
         .set('Authorization', `Bearer ${teacher.token}`)
-        .send({})
+        .send({ targetGroupId: targetGroup.id })
         .expect(201);
-
+      const newEnrollmentId = changeRes.body.id as string;
       const mine = await api()
         .get('/api/v1/notifications/me')
         .set('Authorization', `Bearer ${parent1.token}`)
         .expect(200);
-      const activity = mine.body.find((a: any) => a.refId === enrollmentId);
+      const activity = mine.body.find((a: any) => a.refId === newEnrollmentId);
 
       await api()
         .post(`/api/v1/notifications/${activity.id}/read`)
@@ -379,12 +383,6 @@ describe('Notifications (e2e)', () => {
       const group = await createOpenGroup(teacher.token, `E2E-NOT-${runId} Groupe Info`);
       const student = await createStudent(parent1.token, `S-Info-${runId}`);
       const enrollmentId = await enroll(parent1.token, student.id, group.id);
-      await api()
-        .post(`/api/v1/groups/${group.id}/enrollments/${enrollmentId}/accept`)
-        .set('Authorization', `Bearer ${teacher.token}`)
-        .send({})
-        .expect(201);
-
       const session = await createSession(teacher.token, group.id, addDays(today, -1));
       await setAndValidate(teacher.token, session.id, student.id, 'PRESENT');
 
@@ -408,12 +406,6 @@ describe('Notifications (e2e)', () => {
       const group = await createOpenGroup(teacher.token, `E2E-NOT-${runId} Groupe Important`);
       const student = await createStudent(parent1.token, `S-Imp-${runId}`);
       const enrollmentId = await enroll(parent1.token, student.id, group.id);
-      await api()
-        .post(`/api/v1/groups/${group.id}/enrollments/${enrollmentId}/accept`)
-        .set('Authorization', `Bearer ${teacher.token}`)
-        .send({})
-        .expect(201);
-
       const session = await createSession(teacher.token, group.id, addDays(today, -1));
       await setAndValidate(teacher.token, session.id, student.id, 'UNEXCUSED_ABSENT');
 
@@ -440,12 +432,6 @@ describe('Notifications (e2e)', () => {
       const group = await createOpenGroup(teacher.token, `E2E-NOT-${runId} Groupe Abandon`, 2);
       const student = await createStudent(parent2.token, `S-Abandon-${runId}`);
       const enrollmentId = await enroll(parent2.token, student.id, group.id);
-      await api()
-        .post(`/api/v1/groups/${group.id}/enrollments/${enrollmentId}/accept`)
-        .set('Authorization', `Bearer ${teacher.token}`)
-        .send({})
-        .expect(201);
-
       for (const offset of [-10, -9]) {
         const session = await createSession(teacher.token, group.id, addDays(today, offset));
         await setAndValidate(teacher.token, session.id, student.id, 'UNEXCUSED_ABSENT');

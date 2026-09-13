@@ -57,8 +57,6 @@ export interface TeacherDashboard {
     totalActiveStudents: number;
     todaysSessions: DashboardSessionSummary[];
     upcomingSessions: DashboardSessionSummary[];
-    pendingEnrollmentsCount: number;
-    pendingGroupChangesCount: number;
     /** RM-COM-019 : compteurs distincts, en plus du total global des notifications non lues. */
     unreadCommentsCount: number;
     unreadAnnouncementsCount: number;

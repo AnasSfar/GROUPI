@@ -5,6 +5,7 @@ import { ParentInvitation, ParentInvitationStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { LevelPoolsService } from '../level-pools/level-pools.service';
+import { GroupMembersService } from '../group-members/group-members.service';
 import { StudentService } from '../parent-profile/student.service';
 import { PasswordService } from '../auth/password.service';
 import { AuthService, type TokenPair } from '../auth/auth.service';
@@ -38,6 +39,7 @@ export class ParentInvitationsService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly levelPools: LevelPoolsService,
+    private readonly groupMembers: GroupMembersService,
     private readonly students: StudentService,
     private readonly password: PasswordService,
     private readonly authService: AuthService,
@@ -67,6 +69,7 @@ export class ParentInvitationsService {
     const rawToken = this.rawTokenFor(invitation);
     return {
       id: invitation.id,
+      groupId: invitation.groupId,
       status: invitation.status,
       expiresAt: invitation.expiresAt,
       rotatedAt: invitation.rotatedAt,
@@ -107,8 +110,8 @@ export class ParentInvitationsService {
     }
     const academicYear = await this.currentOpenAcademicYear();
 
-    let invitation = await this.prisma.parentInvitation.findUnique({
-      where: { teacherId_academicYearId: { teacherId, academicYearId: academicYear.id } },
+    let invitation = await this.prisma.parentInvitation.findFirst({
+      where: { teacherId, academicYearId: academicYear.id, groupId: null },
     });
 
     if (!invitation) {
@@ -150,20 +153,88 @@ export class ParentInvitationsService {
     return this.toPublicView(invitation);
   }
 
-  private async loadMine(teacherId: string): Promise<ParentInvitation> {
-    const academicYear = await this.currentOpenAcademicYear();
-    const invitation = await this.prisma.parentInvitation.findUnique({
-      where: { teacherId_academicYearId: { teacherId, academicYearId: academicYear.id } },
-    });
-    if (!invitation) {
-      throw new NotFoundException("Aucun lien d'invitation pour l'instant — consultez d'abord GET /teacher/invitation");
+  /**
+   * Ch. A (extension) : lien d'invitation ciblant directement UN groupe standard du Professeur —
+   * pour rattacher un nouvel élève en cours d'année sans passer par la salle d'attente. Un groupe
+   * de niveau (`kind = LEVEL_POOL`) n'est jamais une cible valable (RM-POOL-009, même logique que
+   * l'affectation Ch. C).
+   */
+  async getOrCreateForGroup(teacherId: string, groupId: string) {
+    const teacher = await this.prisma.teacherProfile.findUnique({ where: { id: teacherId } });
+    if (!teacher || teacher.status !== 'VALIDATED') {
+      throw new ForbiddenException(
+        "Votre profil doit être validé par un Administrateur avant de disposer d'un lien d'invitation (RM-INV-001)",
+      );
     }
+    const group = await this.prisma.group.findUnique({ where: { id: groupId }, include: { academicYear: true } });
+    if (!group || group.teacherId !== teacherId) {
+      throw new NotFoundException('Groupe introuvable');
+    }
+    if (group.kind !== 'STANDARD') {
+      throw new BadRequestException("Une salle d'attente ne peut pas recevoir de lien d'invitation dédié");
+    }
+    if (group.academicYear.status !== 'OPEN') {
+      throw new BadRequestException("Année académique clôturée : impossible de générer ce lien");
+    }
+
+    let invitation = await this.prisma.parentInvitation.findFirst({ where: { teacherId, groupId } });
+
+    if (!invitation) {
+      const id = randomUUID();
+      const rawToken = this.rawTokenFor({ id, createdAt: new Date(), rotatedAt: null });
+      invitation = await this.prisma.parentInvitation.create({
+        data: {
+          id,
+          teacherId,
+          academicYearId: group.academicYearId,
+          groupId: group.id,
+          tokenHash: this.hashToken(rawToken),
+          status: 'ACTIVE',
+          expiresAt: group.academicYear.endDate,
+        },
+      });
+      await this.prisma.auditLog.create({
+        data: {
+          userId: teacherId,
+          action: 'PARENT_INVITATION_GENERATED',
+          targetType: 'ParentInvitation',
+          targetId: invitation.id,
+          newValues: { academicYearId: group.academicYearId, groupId: group.id },
+        },
+      });
+      await this.notifications.notify({
+        recipientUserId: teacherId,
+        type: 'INV_LINK_READY',
+        priority: 'INFORMATION',
+        title: 'Votre lien d’invitation est prêt',
+        body: `Partagez ce lien pour rattacher directement une famille au groupe "${group.name}".`,
+        refType: 'ParentInvitation',
+        refId: invitation.id,
+      });
+    } else {
+      invitation = await this.expireIfDue(invitation, group.academicYear.status);
+    }
+
+    return this.toPublicView(invitation);
+  }
+
+  /** Recharge un lien existant (général si `groupId` est `null`, ciblé sinon) pour rotation/(dés)activation. */
+  private async loadInvitation(teacherId: string, groupId: string | null): Promise<ParentInvitation> {
+    const invitation = await this.prisma.parentInvitation.findFirst({ where: { teacherId, groupId } });
+    if (!invitation) {
+      throw new NotFoundException(
+        groupId
+          ? "Aucun lien d'invitation pour ce groupe — consultez d'abord GET /teacher/invitation/group/:groupId"
+          : "Aucun lien d'invitation pour l'instant — consultez d'abord GET /teacher/invitation",
+      );
+    }
+    const academicYear = await this.prisma.academicYear.findUniqueOrThrow({ where: { id: invitation.academicYearId } });
     return this.expireIfDue(invitation, academicYear.status);
   }
 
   /** RM-INV-004 : rotation — l'ancien jeton devient immédiatement invalide (nouvel epoch HMAC). */
-  async rotate(teacherId: string) {
-    const invitation = await this.loadMine(teacherId);
+  async rotate(teacherId: string, groupId: string | null = null) {
+    const invitation = await this.loadInvitation(teacherId, groupId);
     const rotatedAt = new Date();
     const rawToken = this.rawTokenFor({ id: invitation.id, createdAt: invitation.createdAt, rotatedAt });
     const updated = await this.prisma.parentInvitation.update({
@@ -192,8 +263,8 @@ export class ParentInvitationsService {
   }
 
   /** RM-INV-005 : désactivation/réactivation — désactivé, aucune consommation n'aboutit. */
-  async setEnabled(teacherId: string, enabled: boolean) {
-    const invitation = await this.loadMine(teacherId);
+  async setEnabled(teacherId: string, enabled: boolean, groupId: string | null = null) {
+    const invitation = await this.loadInvitation(teacherId, groupId);
     if (invitation.status === 'EXPIRED') {
       throw new BadRequestException('Ce lien est expiré : régénérez-le plutôt que de le réactiver');
     }
@@ -224,6 +295,8 @@ export class ParentInvitationsService {
       teacherFirstName: invitation.teacher.firstName,
       teacherLastName: invitation.teacher.lastName,
       academicYearLabel: invitation.academicYear.label,
+      groupId: invitation.group?.id ?? null,
+      groupName: invitation.group?.name ?? null,
     };
   }
 
@@ -232,7 +305,11 @@ export class ParentInvitationsService {
     const tokenHash = this.hashToken(token);
     const invitation = await this.prisma.parentInvitation.findUnique({
       where: { tokenHash },
-      include: { teacher: { select: { firstName: true, lastName: true, id: true } }, academicYear: true },
+      include: {
+        teacher: { select: { firstName: true, lastName: true, id: true } },
+        academicYear: true,
+        group: { select: { id: true, name: true, schoolLevelId: true, academicYearId: true, status: true } },
+      },
     });
     // ERR-INV-001/004 : jeton inexistant, malformé, ou rotationné (l'ancien jeton ne correspond plus
     // à aucun tokenHash) — indistinguable, même résultat.
@@ -390,7 +467,34 @@ export class ParentInvitationsService {
           invitationId: invitation.id,
         });
         attached = true;
-        if (created) {
+
+        // Ch. A (extension) : lien ciblant un groupe standard précis dont le niveau/l'année
+        // correspondent à la situation scolaire déclarée — affectation directe (même mécanisme que
+        // Ch. C, `GroupMembersService.assign`), pour un nouvel élève en cours d'année qui n'a donc
+        // jamais besoin de passer par la salle d'attente. Un échec (groupe complet/fermé, capacité
+        // d'abonnement...) n'est jamais bloquant : l'élève reste alors dans la salle d'attente,
+        // déjà rattachée ci-dessus.
+        let assignedToTargetGroup = false;
+        if (
+          invitation.group &&
+          invitation.group.schoolLevelId === situation.schoolLevelId &&
+          invitation.group.academicYearId === situation.academicYearId
+        ) {
+          try {
+            const { assigned } = await this.groupMembers.assign(invitation.teacherId, invitation.group.id, {
+              studentIds: [student.id],
+            });
+            assignedToTargetGroup = assigned.length > 0;
+          } catch (err) {
+            this.logger.warn(
+              `Affectation directe au groupe ${invitation.group.id} depuis l'invitation ${invitation.id} impossible : ${
+                err instanceof Error ? err.message : String(err)
+              }`,
+            );
+          }
+        }
+
+        if (created && !assignedToTargetGroup) {
           // NOT-INV-002 : le Professeur est notifié qu'un élève a rejoint sa salle d'attente.
           const schoolLevel = await this.prisma.schoolLevel.findUnique({ where: { id: situation.schoolLevelId } });
           await this.notifications.notify({
@@ -402,7 +506,10 @@ export class ParentInvitationsService {
             refType: 'Student',
             refId: student.id,
           });
-          // NOT-INV-004 : bienvenue au Parent, rattachement effectif.
+        }
+        if (created || assignedToTargetGroup) {
+          // NOT-INV-004 : bienvenue au Parent, rattachement effectif (affecté directement au groupe
+          // ciblé, ou rattaché à la salle d'attente selon le lien utilisé).
           const teacher = await this.prisma.teacherProfile.findUnique({ where: { id: invitation.teacherId } });
           await this.notifications.notify({
             recipientUserId: parentId,
@@ -458,8 +565,8 @@ export class ParentInvitationsService {
     });
     let created = 0;
     for (const teacher of validatedTeachers) {
-      const existing = await this.prisma.parentInvitation.findUnique({
-        where: { teacherId_academicYearId: { teacherId: teacher.id, academicYearId } },
+      const existing = await this.prisma.parentInvitation.findFirst({
+        where: { teacherId: teacher.id, academicYearId, groupId: null },
       });
       if (existing) continue;
       const id = randomUUID();

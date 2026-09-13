@@ -1,0 +1,74 @@
+(node:6524) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 14836  - [39m11/08/2026 21:57:27 [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use :::3000[39m[38;5;3m +1ms[39m
+node:net:1940
+    const ex = new UVExceptionWithHostPort(err, 'listen', address, port);
+               ^
+
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at ExpressAdapter.listen (C:\Users\sfara\Documents\GitHub\GROUPI\node_modules\@nestjs\platform-express\adapters\express-adapter.js:95:32)
+    at C:\Users\sfara\Documents\GitHub\GROUPI\node_modules\@nestjs\core\nest-application.js:183:30
+    at new Promise (<anonymous>)
+    at NestApplication.listen (C:\Users\sfara\Documents\GitHub\GROUPI\node_modules\@nestjs\core\nest-application.js:173:16)
+    at async bootstrap (C:\Users\sfara\Documents\GitHub\GROUPI\apps\api\src\main.ts:8:3) {
+  code: 'EADDRINUSE',
+  errno: -4091,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+Node.js v24.12.0
+node:internal/child_process:421
+    throw new ErrnoException(err, 'spawn');
+    ^
+
+Error: spawn EPERM
+    at ChildProcess.spawn (node:internal/child_process:421:11)
+    at spawn (node:child_process:796:9)
+    at Object.execFile (node:child_process:349:17)
+    at exec (node:child_process:236:25)
+    at module.exports (C:\Users\sfara\Documents\GitHub\GROUPI\node_modules\tree-kill\index.js:29:9)
+    at C:\Users\sfara\Documents\GitHub\GROUPI\node_modules\@nestjs\cli\actions\start.action.js:57:17
+    at Object.onWatchStatusChange (C:\Users\sfara\Documents\GitHub\GROUPI\node_modules\@nestjs\cli\lib\compiler\watch-compiler.js:83:17)
+    at C:\Users\sfara\Documents\GitHub\GROUPI\node_modules\typescript\lib\typescript.js:133916:30
+    at emitFilesAndReportErrors (C:\Users\sfara\Documents\GitHub\GROUPI\node_modules\typescript\lib\typescript.js:133737:5)
+    at result.afterProgramCreate (C:\Users\sfara\Documents\GitHub\GROUPI\node_modules\typescript\lib\typescript.js:133912:5) {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'spawn'
+}
+
+Node.js v24.12.0
+npm error Lifecycle script `start:dev` failed with error:
+npm error code 1
+npm error path C:\Users\sfara\Documents\GitHub\GROUPI\apps\api
+npm error workspace @groupi/api@0.0.1
+npm error location C:\Users\sfara\Documents\GitHub\GROUPI\apps\api
+npm error command failed
+npm error command C:\Windows\system32\cmd.exe /d /s /c nest start --watch
+[31m[Nest] 38332  - [39m11/08/2026 23:04:44 [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use :::3000[39m[38;5;3m +2ms[39m
+node:net:1940
+    const ex = new UVExceptionWithHostPort(err, 'listen', address, port);
+               ^
+
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at ExpressAdapter.listen (C:\Users\sfara\Documents\GitHub\GROUPI\node_modules\@nestjs\platform-express\adapters\express-adapter.js:95:32)
+    at C:\Users\sfara\Documents\GitHub\GROUPI\node_modules\@nestjs\core\nest-application.js:183:30
+    at new Promise (<anonymous>)
+    at NestApplication.listen (C:\Users\sfara\Documents\GitHub\GROUPI\node_modules\@nestjs\core\nest-application.js:173:16)
+    at async bootstrap (C:\Users\sfara\Documents\GitHub\GROUPI\apps\api\src\main.ts:8:3) {
+  code: 'EADDRINUSE',
+  errno: -4091,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+Node.js v24.12.0

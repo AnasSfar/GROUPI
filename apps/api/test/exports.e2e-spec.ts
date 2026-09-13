@@ -4,7 +4,7 @@ import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { PasswordService } from '../src/auth/password.service';
-import { createPendingEnrollmentDirect } from './helpers/create-enrollment';
+import { createActiveEnrollmentDirect } from './helpers/create-enrollment';
 import { registerParentDirect } from './helpers/register-parent-direct';
 
 /**
@@ -157,9 +157,8 @@ describe('Exports (e2e)', () => {
     return res.body;
   }
 
-  async function enrollAndAccept(_parentToken: string, teacherToken: string, studentId: string, groupId: string): Promise<string> {
-    const reqRes = await createPendingEnrollmentDirect(prisma, studentId, groupId);
-    await api().post(`/api/v1/groups/${groupId}/enrollments/${reqRes.id}/accept`).set('Authorization', `Bearer ${teacherToken}`).send({}).expect(201);
+  async function enrollAndAccept(_parentToken: string, _teacherToken: string, studentId: string, groupId: string): Promise<string> {
+    const reqRes = await createActiveEnrollmentDirect(prisma, studentId, groupId);
     return reqRes.id;
   }
 

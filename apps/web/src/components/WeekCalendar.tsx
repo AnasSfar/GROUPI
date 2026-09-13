@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { IconChevronLeft, IconChevronRight } from './icons';
 
@@ -52,6 +52,23 @@ function minutesFromMidnight(time: string): number {
   return h * 60 + (m || 0);
 }
 
+/** Nombre de jours affichés : 3 sur mobile (pas de scroll horizontal), 7 sur desktop. Utilisé à
+ * la fois pour l'affichage et pour le pas de navigation, afin que "suivant"/"précédent" avance
+ * exactement de la largeur de la fenêtre visible. */
+export function useWeekCalendarDayCount(): number {
+  const [count, setCount] = useState(() => (typeof window !== 'undefined' && window.innerWidth <= 640 ? 3 : 7));
+
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 640px)');
+    const update = () => setCount(query.matches ? 3 : 7);
+    update();
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+
+  return count;
+}
+
 /** Vue calendrier hebdomadaire façon "semaine" d'Apple Calendar : une colonne par jour, l'heure de
  * chaque séance affichée dans son bloc plutôt que positionnée sur une grille horaire. */
 export function WeekCalendar({
@@ -64,12 +81,14 @@ export function WeekCalendar({
 }: {
   events: WeekCalendarEvent[];
   weekStart: Date;
-  onNavigate: (direction: 'prev' | 'next' | 'today') => void;
+  onNavigate: (direction: 'prev' | 'next' | 'today', dayCount: number) => void;
   canGoPrev?: boolean;
   canGoNext?: boolean;
   loading?: boolean;
 }) {
+  const dayCount = useWeekCalendarDayCount();
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
+  const visibleDays = days.slice(0, dayCount);
   const today = useMemo(() => new Date(), []);
 
   const eventsByDay = useMemo(() => {
@@ -85,7 +104,8 @@ export function WeekCalendar({
     return map;
   }, [days, events]);
 
-  const rangeLabel = `${days[0].toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })} – ${days[6].toLocaleDateString(
+  const rangeEnd = visibleDays[visibleDays.length - 1];
+  const rangeLabel = `${visibleDays[0].toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })} – ${rangeEnd.toLocaleDateString(
     'fr-FR',
     { day: '2-digit', month: 'short', year: 'numeric' },
   )}`;
@@ -97,19 +117,19 @@ export function WeekCalendar({
           <button
             type="button"
             className="ghost"
-            onClick={() => onNavigate('prev')}
+            onClick={() => onNavigate('prev', dayCount)}
             disabled={!canGoPrev}
             aria-label="Semaine précédente"
           >
             <IconChevronLeft aria-hidden="true" />
           </button>
-          <button type="button" className="ghost" onClick={() => onNavigate('today')}>
+          <button type="button" className="ghost" onClick={() => onNavigate('today', dayCount)}>
             Aujourd'hui
           </button>
           <button
             type="button"
             className="ghost"
-            onClick={() => onNavigate('next')}
+            onClick={() => onNavigate('next', dayCount)}
             disabled={!canGoNext}
             aria-label="Semaine suivante"
           >
@@ -119,8 +139,8 @@ export function WeekCalendar({
         <p className="week-calendar-range">{rangeLabel}</p>
       </div>
 
-      <div className="week-calendar-grid">
-        {days.map((day) => {
+      <div className="week-calendar-grid" style={{ gridTemplateColumns: `repeat(${dayCount}, minmax(108px, 1fr))` }}>
+        {visibleDays.map((day) => {
           const dayEvents = eventsByDay.get(dateKey(day)) ?? [];
           const isToday = isSameDay(day, today);
           return (

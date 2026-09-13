@@ -122,16 +122,14 @@ enum SessionStatus {
   LOCKED
 }
 
+/// Avenant 02 : toute inscription naît directement ACTIVE (affectation Professeur ou préinscription
+/// confirmée) — il n'existe plus d'état intermédiaire en attente de décision, donc plus de rejet, de
+/// délai d'expiration ni d'annulation par le Parent avant décision (l'ancien PENDING_VALIDATION /
+/// REJECTED / CANCELLED / EXPIRED disparaissent avec ce chantier).
 enum EnrollmentStatus {
-  PENDING_VALIDATION
   ACTIVE
   SUSPENDED
-  REJECTED
   ARCHIVED
-  /// Ch.12.11 : demande annulée par le Parent avant toute décision du Professeur (RM-INS-038/040).
-  CANCELLED
-  /// Ch.12.11 : demande sans décision du Professeur au-delà du délai de 7 jours (RM-INS-026/058).
-  EXPIRED
 }
 
 /// Avenant 01, Ch. C.5 : d'où vient une inscription ACTIVE — défaut `TEACHER_ASSIGNMENT` car c'est
@@ -161,16 +159,6 @@ enum MembershipSource {
   INVITATION
   TEACHER_MANUAL
   SITUATION_SYNC
-}
-
-/// Ch.12.12 : cycle de vie d'une demande de changement de groupe (variante définitive uniquement,
-/// voir le commentaire du modèle `GroupChangeRequest`).
-enum GroupChangeStatus {
-  PENDING
-  ACCEPTED
-  REJECTED
-  /// Annulée par le Parent avant toute décision du Professeur (miroir RM-INS-038/040).
-  CANCELLED
 }
 
 enum PreEnrollmentStatus {
@@ -386,7 +374,6 @@ model User {
   administrator                    Administrator?
   administratorsCreated            Administrator[]          @relation("AdministratorCreatedBy")
   enrollmentsDecided               Enrollment[]             @relation("EnrollmentDecidedBy")
-  groupChangeRequestsDecided       GroupChangeRequest[]     @relation("GroupChangeDecidedBy")
   attendancesRecorded              Attendance[]             @relation("AttendanceRecordedBy")
   attendanceHistoryEntries         AttendanceHistory[]      @relation("AttendanceHistoryChangedBy")
   sessions                         UserSession[]
@@ -914,17 +901,18 @@ model Group {
   /// Professeur (défaut : pas d'alerte si non renseigné).
   latenessAlertThreshold     Int?                 @map("lateness_alert_threshold")
 
-  schedules                   GroupSchedule[]
-  sessions                    Session[]
-  enrollments                 Enrollment[]
+  schedules                GroupSchedule[]
+  sessions                 Session[]
+  enrollments              Enrollment[]
   /// Ch.11.7/11.8 : préinscriptions auxquelles ce groupe a été proposé.
-  proposedToPreEnrollments    PreEnrollment[]
-  /// Ch.12.12 : demandes de changement de groupe reçues (ce groupe est la cible B).
-  incomingGroupChangeRequests GroupChangeRequest[]
+  proposedToPreEnrollments PreEnrollment[]
   /// Ch.19.4 : annonces publiées par le Professeur à destination des Parents du groupe.
-  announcements               GroupAnnouncement[]
+  announcements            GroupAnnouncement[]
   /// Avenant 01, Ch. B.5 : rattachements reçus par ce groupe (peuplé seulement si `kind = LEVEL_POOL`).
-  levelPoolMemberships        LevelPoolMembership[]
+  levelPoolMemberships     LevelPoolMembership[]
+  /// Ch. A (extension) : liens d'invitation ciblant directement CE groupe standard (jamais un
+  /// `kind = LEVEL_POOL`) — voir `ParentInvitation.groupId`.
+  parentInvitations        ParentInvitation[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -1030,18 +1018,14 @@ model Enrollment {
   sourceMembershipId String?              @map("source_membership_id") @db.Uuid
   sourceMembership   LevelPoolMembership? @relation(fields: [sourceMembershipId], references: [id])
 
-  attendances             Attendance[]
-  /// Ch.12.12 : demandes de changement de groupe faites DEPUIS cette inscription (groupe A).
-  groupChangeRequestsFrom GroupChangeRequest[] @relation("GroupChangeOriginalEnrollment")
-  /// Ch.12.12 : inscription créée dans le groupe B à l'acceptation d'un changement de groupe.
-  groupChangeArrival      GroupChangeRequest?  @relation("GroupChangeNewEnrollment")
+  attendances       Attendance[]
   /// Ch.19.3 : fil de commentaires privé Professeur/Parent (pas de table "conversation" séparée —
   /// le fil EST l'ensemble ordonné des commentaires de cette inscription).
-  comments                EnrollmentComment[]
+  comments          EnrollmentComment[]
   /// Ch.15.3/RM-CPT-001/002 : créé automatiquement à l'activation de l'inscription (ACTIVE).
-  accountingAccount       AccountingAccount?
+  accountingAccount AccountingAccount?
   /// Ch.16.4 : signalements d'absence prévisible faits par le Parent pour cette inscription.
-  absenceNotices          AbsenceNotice[]
+  absenceNotices    AbsenceNotice[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -1058,6 +1042,12 @@ model ParentInvitation {
   teacher        TeacherProfile         @relation(fields: [teacherId], references: [id])
   academicYearId String                 @map("academic_year_id") @db.Uuid
   academicYear   AcademicYear           @relation(fields: [academicYearId], references: [id])
+  /// Ch. A (extension) : `NULL` = lien général du Professeur (comportement d'origine, A.3.1) ;
+  /// renseigné = lien ciblant directement un groupe standard précis de ce Professeur — utilisé pour
+  /// rattacher un nouvel élève en cours d'année sans passer par la salle d'attente. Un groupe de
+  /// niveau (`kind = LEVEL_POOL`) n'est jamais visé (contrainte applicative, `ParentInvitationsService`).
+  groupId        String?                @map("group_id") @db.Uuid
+  group          Group?                 @relation(fields: [groupId], references: [id])
   /// RM-INV-003 : jamais stocké en clair — seul le Professeur voit la valeur en clair, à l'émission.
   tokenHash      String                 @unique @map("token_hash")
   status         ParentInvitationStatus
@@ -1070,7 +1060,10 @@ model ParentInvitation {
   /// Traçabilité de la consommation : vit dans `LevelPoolMembership`, pas ici (A.4).
   levelPoolMemberships LevelPoolMembership[]
 
-  @@unique([teacherId, academicYearId])
+  /// Un seul lien général par (Professeur, année académique) — index unique PARTIEL (`groupId IS
+  /// NULL`, migration dédiée), et un seul lien par (Professeur, groupe) pour les liens ciblés
+  /// (index unique partiel `groupId IS NOT NULL`) : ni l'un ni l'autre n'est un `@@unique` Prisma
+  /// standard, cf. le même schéma déjà utilisé par `group_level_pool_teacher_level_year_key`.
   @@map("parent_invitation")
 }
 
@@ -1096,41 +1089,6 @@ model LevelPoolMembership {
 
   @@unique([studentId, groupId])
   @@map("level_pool_membership")
-}
-
-/// Ch.12.12 : demande de changement de groupe — variante définitive uniquement dans ce chantier.
-/// La variante provisoire (une séance précise couverte ponctuellement par le groupe B, avec
-/// présence "Absent excusé" enregistrée côté groupe A) suppose qu'une présence puisse exister
-/// sans inscription active dans le groupe où elle est enregistrée ; elle est délibérément hors
-/// scope (voir progress.md) plutôt que d'affaiblir `Attendance.enrollmentId` (RM-ATT-022) pour ce
-/// seul cas.
-///
-/// "Le changement de groupe crée systématiquement une nouvelle inscription indépendante" (12.12) :
-/// l'acceptation crée une nouvelle `Enrollment` ACTIVE dans le groupe cible (`newEnrollmentId`).
-/// L'inscription d'origine n'est archivée qu'à la date effective, appliquée paresseusement à la
-/// lecture — même principe que `EnrollmentsService.expireIfDue` / le verrouillage des séances.
-model GroupChangeRequest {
-  id                   String            @id @default(uuid()) @db.Uuid
-  originalEnrollmentId String            @map("original_enrollment_id") @db.Uuid
-  originalEnrollment   Enrollment        @relation("GroupChangeOriginalEnrollment", fields: [originalEnrollmentId], references: [id])
-  targetGroupId        String            @map("target_group_id") @db.Uuid
-  targetGroup          Group             @relation(fields: [targetGroupId], references: [id])
-  status               GroupChangeStatus
-  requestedAt          DateTime          @map("requested_at")
-  decidedAt            DateTime?         @map("decided_at")
-  decidedById          String?           @map("decided_by_id") @db.Uuid
-  decidedBy            User?             @relation("GroupChangeDecidedBy", fields: [decidedById], references: [id])
-  /// Choisie par le Professeur à l'acceptation (RM-INS/12.12 — jamais par le Parent).
-  effectiveDate        DateTime?         @map("effective_date") @db.Date
-  /// `true` une fois l'inscription d'origine effectivement archivée à la date effective.
-  appliedAt            DateTime?         @map("applied_at")
-  rejectionReason      String?           @map("rejection_reason")
-  newEnrollmentId      String?           @unique @map("new_enrollment_id") @db.Uuid
-  newEnrollment        Enrollment?       @relation("GroupChangeNewEnrollment", fields: [newEnrollmentId], references: [id])
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@map("group_change_request")
 }
 
 /// Manifestation d'intérêt d'un Parent pour une future année académique (Ch. 11)

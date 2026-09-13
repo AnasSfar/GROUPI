@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ApiError } from '../api/client';
 import * as attendanceApi from '../api/attendanceApi';
@@ -16,6 +16,7 @@ const STATUS_BADGE: Record<string, string> = {
 /** Ch.14.2 : le Parent consulte l'historique de présence de son enfant, tous groupes confondus. */
 export function ParentChildAttendancePage() {
   const { studentId } = useParams<{ studentId: string }>();
+  const navigate = useNavigate();
   const { getAccessToken } = useAuth();
   const [view, setView] = useState<ParentAttendanceView | null>(null);
   const [loading, setLoading] = useState(true);
@@ -60,7 +61,9 @@ export function ParentChildAttendancePage() {
           <p>Historique complet de présence, tous groupes confondus.</p>
         </div>
         <div className="page-actions">
-          <Link to="/parent/children">← Retour à mes enfants</Link>
+          <button type="button" onClick={() => navigate('/parent/children')}>
+            ← Retour à mes enfants
+          </button>
         </div>
       </div>
 

@@ -4,7 +4,7 @@ import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { grantActiveSubscription } from './helpers/grant-subscription';
-import { createPendingEnrollmentDirect } from './helpers/create-enrollment';
+import { createActiveEnrollmentDirect } from './helpers/create-enrollment';
 import { registerParentDirect } from './helpers/register-parent-direct';
 
 /**
@@ -137,14 +137,9 @@ describe('Enrollment conversations (e2e)', () => {
     return res.body;
   }
 
-  async function enrollAndAccept(_parentToken: string, teacherToken: string, studentId: string, groupId: string) {
-    const reqRes = await createPendingEnrollmentDirect(prisma, studentId, groupId);
-    await api()
-      .post(`/api/v1/groups/${groupId}/enrollments/${reqRes.id}/accept`)
-      .set('Authorization', `Bearer ${teacherToken}`)
-      .send({})
-      .expect(201);
-    return reqRes.id as string;
+  async function enrollAndAccept(_parentToken: string, _teacherToken: string, studentId: string, groupId: string) {
+    const reqRes = await createActiveEnrollmentDirect(prisma, studentId, groupId);
+    return reqRes.id;
   }
 
   let teacher: Actor;
@@ -253,16 +248,16 @@ describe('Enrollment conversations (e2e)', () => {
   });
 
   describe('création (ERR-COM-002) et notifications croisées (NOT-COM-001/002)', () => {
-    it('rejects a new comment on a request still pending validation', async () => {
+    it('allows a new comment as soon as the enrollment is active (Avenant 02 : plus de statut en attente)', async () => {
       const group = await createOpenGroup(teacher.token, `E2E-COM-${runId} Groupe Pending`);
       const student = await createStudent(parent1.token, `S-Pending-${runId}`);
-      const reqRes = await createPendingEnrollmentDirect(prisma, student.id, group.id);
+      const reqRes = await createActiveEnrollmentDirect(prisma, student.id, group.id);
 
       await api()
         .post(`/api/v1/enrollments/${reqRes.id}/comments`)
         .set('Authorization', `Bearer ${parent1.token}`)
         .send({ body: 'Trop tôt' })
-        .expect(400);
+        .expect(201);
     });
 
     it('lets the teacher and parent exchange comments and notifies the other party each time', async () => {

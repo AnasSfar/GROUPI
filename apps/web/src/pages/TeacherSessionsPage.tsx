@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Select } from '../components/Select';
 import { useToast } from '../components/Toast';
@@ -79,6 +79,7 @@ function PostponePrompt({
 
 export function TeacherSessionsPage() {
   const { groupId } = useParams<{ groupId: string }>();
+  const navigate = useNavigate();
   const { getAccessToken } = useAuth();
   const { showToast } = useToast();
   const confirm = useConfirm();
@@ -299,8 +300,12 @@ export function TeacherSessionsPage() {
           <p>Génération, séances exceptionnelles, report et annulation des séances du groupe.</p>
         </div>
         <div className="page-actions">
-          <Link to="/teacher/groups">← Retour à mes groupes</Link>
-          <Link to={`/teacher/groups/${groupId}/attendance`}>Statistiques de présence</Link>
+          <button type="button" onClick={() => navigate('/teacher/groups')}>
+            ← Retour à mes groupes
+          </button>
+          <button type="button" onClick={() => navigate(`/teacher/groups/${groupId}/attendance`)}>
+            Statistiques de présence
+          </button>
         </div>
       </div>
 

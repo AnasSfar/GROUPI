@@ -12,17 +12,15 @@ const RETENTION_YEARS = 7;
 
 /**
  * Ch.19.7/RM-COM-016 : statuts "clôturés" d'une inscription, point de départ du délai de
- * conservation de 7 ans. `EnrollmentStatus` ne compte pas de valeur `CLOSED` (à la différence de
- * `GroupStatus`/`AccountingAccountStatus`) : les statuts terminaux réels sont REJECTED, ARCHIVED,
- * CANCELLED, EXPIRED (ACTIVE/SUSPENDED/PENDING_VALIDATION restent "vivants").
+ * conservation de 7 ans. Avenant 02 : `EnrollmentStatus` se limite désormais à ACTIVE/SUSPENDED/
+ * ARCHIVED — seul ARCHIVED est un statut terminal réel.
  */
-const CLOSED_ENROLLMENT_STATUSES = ['REJECTED', 'ARCHIVED', 'CANCELLED', 'EXPIRED'] as const;
+const CLOSED_ENROLLMENT_STATUSES = ['ARCHIVED'] as const;
 
 /**
  * Ch.19.3, ERR-COM-002 : un nouveau commentaire ne peut être ajouté que sur une inscription dont
- * la relation pédagogique est encore vivante. Le référentiel n'énumère pas les statuts exacts
- * couverts par "terminée ou archivée" — choix documenté ici : ACTIVE/SUSPENDED restent ouverts à
- * l'écriture, tout le reste (PENDING_VALIDATION/REJECTED/CANCELLED/EXPIRED/ARCHIVED) est fermé.
+ * la relation pédagogique est encore vivante — ACTIVE/SUSPENDED restent ouverts à l'écriture,
+ * ARCHIVED est fermé.
  */
 const OPEN_STATUSES = new Set(['ACTIVE', 'SUSPENDED']);
 

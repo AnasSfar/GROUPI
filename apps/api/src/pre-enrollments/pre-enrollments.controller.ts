@@ -66,14 +66,6 @@ export class PreEnrollmentsController {
     return this.service.confirm(user.id, id);
   }
 
-  /** RM-PRE-026 : le Parent retire sa confirmation tant que la demande d'inscription résultante
-   *  n'a pas été traitée par le Professeur. */
-  @Post(':id/withdraw-confirmation')
-  @Roles(Role.PARENT)
-  withdrawConfirmation(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
-    return this.service.withdrawConfirmation(user.id, id);
-  }
-
   @Post(':id/reject')
   @Roles(Role.PARENT)
   reject(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {

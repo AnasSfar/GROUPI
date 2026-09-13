@@ -270,6 +270,7 @@ export class LevelPoolsService {
             lastName: true,
             status: true,
             currentSchoolSituation: { select: { schoolLevelId: true, school: { select: { name: true } }, class: true } },
+            parent: { select: { firstName: true, lastName: true, phone: true } },
           },
         },
       },

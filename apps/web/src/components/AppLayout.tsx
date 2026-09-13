@@ -183,6 +183,7 @@ export function AppLayout() {
       result.push({
         title: 'Professeur',
         items: [
+          { to: '/teacher/level-pools', icon: <IconUsers />, label: "Salles d'attente" },
           { to: '/teacher/groups', icon: <IconLayers />, label: 'Mes groupes' },
           { to: '/teacher/students', icon: <IconChildren />, label: 'Mes eleves' },
           { to: '/teacher/sessions', icon: <IconCalendarCheck />, label: 'Mes seances' },
@@ -242,8 +243,8 @@ export function AppLayout() {
     <div className="app-shell">
       <aside className="app-dock" aria-label="Navigation principale">
         <Link to="/dashboard" className="app-dock-brand">
-          <img src="/favicon.png" alt="" />
-          <span>GROUPI</span>
+          <img src="/favicon.png" alt="" className="app-dock-brand-icon" />
+          <img src="/logo.png" alt="GROUPI" className="app-dock-brand-full" />
         </Link>
         <nav className="app-dock-nav">
           {sections.map((section) => (

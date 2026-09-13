@@ -1,6 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { NotificationsService } from '../notifications/notifications.service';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
 
@@ -18,10 +17,7 @@ function expectedSchoolTypeForLevelCode(code: string): 'PRIMARY' | 'COLLEGE' | '
 }
 @Injectable()
 export class StudentService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly notifications: NotificationsService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async listMine(parentId: string) {
     return this.prisma.student.findMany({
@@ -140,53 +136,18 @@ const academicYear = await this.prisma.academicYear.findFirst({
     });
   }
 
-  /**
-   * Ch.6.6, ERR-PAR-008 : un enfant déjà archivé ne peut pas être ré-archivé.
-   * ERR-INS-025 : toute demande d'inscription encore PENDING_VALIDATION visant cet élève est
-   * automatiquement clôturée (REJECTED, sans décideur) et le Professeur en est informé.
-   */
+  /** Ch.6.6, ERR-PAR-008 : un enfant déjà archivé ne peut pas être ré-archivé. */
   async archive(parentId: string, studentId: string) {
     const student = await this.loadOwned(parentId, studentId);
     if (student.status === 'ARCHIVED') {
       throw new BadRequestException('Cet élève est déjà archivé (ERR-PAR-008)');
     }
 
-    const { updatedStudent, autoClosed } = await this.prisma.$transaction(async (tx) => {
-      const updatedStudent = await tx.student.update({
-        where: { id: studentId },
-        data: { status: 'ARCHIVED' },
-        include: INCLUDE_CURRENT_SITUATION,
-      });
-
-      const pending = await tx.enrollment.findMany({
-        where: { studentId, status: 'PENDING_VALIDATION' },
-        include: { group: { select: { id: true, name: true, teacherId: true } } },
-      });
-
-      for (const enrollment of pending) {
-        await tx.enrollment.update({
-          where: { id: enrollment.id },
-          data: { status: 'REJECTED', decidedAt: new Date(), decidedById: null },
-        });
-      }
-
-      return { updatedStudent, autoClosed: pending };
+    return this.prisma.student.update({
+      where: { id: studentId },
+      data: { status: 'ARCHIVED' },
+      include: INCLUDE_CURRENT_SITUATION,
     });
-
-    // NOT-INS : hors transaction — un échec d'envoi ne doit jamais annuler l'archivage.
-    for (const enrollment of autoClosed) {
-      await this.notifications.notify({
-        recipientUserId: enrollment.group.teacherId,
-        type: 'INS_AUTO_CLOSED_STUDENT_ARCHIVED',
-        priority: 'IMPORTANT',
-        title: 'Demande d’inscription automatiquement clôturée',
-        body: `L'élève ${updatedStudent.firstName} ${updatedStudent.lastName} a été archivé par son Parent : la demande d'inscription au groupe "${enrollment.group.name}" a été automatiquement clôturée (ERR-INS-025).`,
-        refType: 'Enrollment',
-        refId: enrollment.id,
-      });
-    }
-
-    return updatedStudent;
   }
 
   /** RM-PAR-015 : le profil élève archivé peut être réactivé à tout moment par le Parent. */

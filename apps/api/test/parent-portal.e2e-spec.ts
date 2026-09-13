@@ -4,7 +4,7 @@ import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { grantActiveSubscription } from './helpers/grant-subscription';
-import { createPendingEnrollmentDirect } from './helpers/create-enrollment';
+import { createActiveEnrollmentDirect } from './helpers/create-enrollment';
 import { registerParentDirect } from './helpers/register-parent-direct';
 
 /**
@@ -12,11 +12,6 @@ import { registerParentDirect } from './helpers/register-parent-direct';
  * `groupi_test` Postgres database (see test/jest-e2e.setup.ts) :
  *  - RM-PAR-024/ERR-PAR-021 : préinscription restreinte aux Professeurs déjà rattachés/inscrits
  *    (`pre-enrollments.service.ts`), y compris la liste `GET /pre-enrollments/eligible-teachers`.
- *  - RM-PAR-025/ERR-PAR-022 : `GET /group-changes/eligible-target-groups`, endpoint introduit par
- *    ce chantier pour remplacer, côté changement de groupe, la recherche de groupes supprimée
- *    (D.2) — restreint au même Professeur. (La restriction elle-même, RM-CHG-010/ERR-CHG-008, a
- *    déjà sa propre couverture dans group-change.e2e-spec.ts ; ce fichier teste le NOUVEL
- *    endpoint de listing.)
  *  - RM-PAR-019/026, ERR-PAR-020 : cloisonnement croisé refusé, jamais de divulgation d'existence
  *    (réponse identique — liste vide — qu'une ressource n'existe pas ou appartienne à un autre
  *    Parent), sur les endpoints ci-dessus et sur `GET /parent-profile/me/pending-assignments`.
@@ -329,7 +324,7 @@ describe('Parent portal cloisonné (Avenant 01, Ch. D) (e2e)', () => {
     it("liste et autorise le Professeur si l'enfant a déjà été inscrit (Enrollment, même archivée)", async () => {
       const student = await createStudent(parent1.token, `pre-hist-${runId}`);
       const group = await createOpenGroup(teacherLinked.token, `E2E-PAR Groupe Hist ${runId}`);
-      const enrollment = await createPendingEnrollmentDirect(prisma, student.id, group.id);
+      const enrollment = await createActiveEnrollmentDirect(prisma, student.id, group.id);
       await prisma.enrollment.update({ where: { id: enrollment.id }, data: { status: 'ARCHIVED' } });
 
       const listRes = await api()
@@ -344,65 +339,6 @@ describe('Parent portal cloisonné (Avenant 01, Ch. D) (e2e)', () => {
       const res = await api()
         .get(`/api/v1/pre-enrollments/eligible-teachers?studentId=${studentOfParent2.id}`)
         .set('Authorization', `Bearer ${parent1.token}`)
-        .expect(200);
-      expect(res.body).toEqual([]);
-    });
-  });
-
-  describe('RM-PAR-025/ERR-PAR-022 : GET /group-changes/eligible-target-groups', () => {
-    it('propose un autre groupe du même Professeur, même matière/niveau, hors le groupe d’origine', async () => {
-      const student = await createStudent(parent1.token, `chg-ok-${runId}`);
-      const groupOrigin = await createOpenGroup(teacherLinked.token, `E2E-PAR Origine ${runId}`);
-      const groupTarget = await createOpenGroup(teacherLinked.token, `E2E-PAR Cible ${runId}`);
-      const pending = await createPendingEnrollmentDirect(prisma, student.id, groupOrigin.id);
-      await api()
-        .post(`/api/v1/groups/${groupOrigin.id}/enrollments/${pending.id}/accept`)
-        .set('Authorization', `Bearer ${teacherLinked.token}`)
-        .send({})
-        .expect(201);
-
-      const res = await api()
-        .get(`/api/v1/group-changes/eligible-target-groups?enrollmentId=${pending.id}`)
-        .set('Authorization', `Bearer ${parent1.token}`)
-        .expect(200);
-
-      const ids = res.body.map((g: any) => g.id);
-      expect(ids).toContain(groupTarget.id);
-      expect(ids).not.toContain(groupOrigin.id);
-    });
-
-    it("n'inclut jamais un groupe d'un autre Professeur, même même matière/niveau (RM-PAR-025/ERR-PAR-022)", async () => {
-      const student = await createStudent(parent1.token, `chg-cross-${runId}`);
-      const groupOrigin = await createOpenGroup(teacherLinked.token, `E2E-PAR Origine2 ${runId}`);
-      const groupOtherTeacher = await createOpenGroup(teacherStranger.token, `E2E-PAR AutreProf ${runId}`);
-      const pending = await createPendingEnrollmentDirect(prisma, student.id, groupOrigin.id);
-      await api()
-        .post(`/api/v1/groups/${groupOrigin.id}/enrollments/${pending.id}/accept`)
-        .set('Authorization', `Bearer ${teacherLinked.token}`)
-        .send({})
-        .expect(201);
-
-      const res = await api()
-        .get(`/api/v1/group-changes/eligible-target-groups?enrollmentId=${pending.id}`)
-        .set('Authorization', `Bearer ${parent1.token}`)
-        .expect(200);
-
-      expect(res.body.map((g: any) => g.id)).not.toContain(groupOtherTeacher.id);
-    });
-
-    it("ERR-PAR-020 : une inscription d'un autre Parent renvoie une liste vide, jamais une erreur qui confirmerait son existence", async () => {
-      const studentOfParent1 = await createStudent(parent1.token, `chg-owner-${runId}`);
-      const group = await createOpenGroup(teacherLinked.token, `E2E-PAR OwnerCheck ${runId}`);
-      const pending = await createPendingEnrollmentDirect(prisma, studentOfParent1.id, group.id);
-      await api()
-        .post(`/api/v1/groups/${group.id}/enrollments/${pending.id}/accept`)
-        .set('Authorization', `Bearer ${teacherLinked.token}`)
-        .send({})
-        .expect(201);
-
-      const res = await api()
-        .get(`/api/v1/group-changes/eligible-target-groups?enrollmentId=${pending.id}`)
-        .set('Authorization', `Bearer ${parent2.token}`)
         .expect(200);
       expect(res.body).toEqual([]);
     });
@@ -444,12 +380,7 @@ describe('Parent portal cloisonné (Avenant 01, Ch. D) (e2e)', () => {
 
         // Ch. C (affectation, module séparé) : simule l'activation d'une inscription standard.
         const standardGroup = await createOpenGroup(teacherLinked.token, `E2E-PAR StandardAffecte ${runId}`);
-        const pending = await createPendingEnrollmentDirect(prisma, student.id, standardGroup.id);
-        await api()
-          .post(`/api/v1/groups/${standardGroup.id}/enrollments/${pending.id}/accept`)
-          .set('Authorization', `Bearer ${teacherLinked.token}`)
-          .send({})
-          .expect(201);
+        await createActiveEnrollmentDirect(prisma, student.id, standardGroup.id);
 
         const afterRes = await api()
           .get('/api/v1/parent-profile/me/pending-assignments')

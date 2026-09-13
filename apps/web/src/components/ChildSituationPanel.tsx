@@ -8,19 +8,32 @@ import * as schoolSituationApi from '../api/schoolSituationApi';
 import type { AcademicYear, School, SchoolLevel } from '../api/referentialsApi';
 import type { StudentSituation } from '../api/parentProfileApi';
 
-const STATUS_LABELS: Record<StudentSituation['status'], string> = {
+export const SITUATION_STATUS_LABELS: Record<StudentSituation['status'], string> = {
   ACTIVE: 'Active',
   PENDING_VALIDATION: 'En attente de validation',
   CLOSED: 'Clôturée',
   REJECTED: 'Refusée',
 };
 
-const STATUS_BADGE: Record<StudentSituation['status'], string> = {
-  ACTIVE: 'badge-success',
-  PENDING_VALIDATION: 'badge-warning',
-  CLOSED: 'badge-neutral',
-  REJECTED: 'badge-danger',
+const STATUS_TONE: Record<StudentSituation['status'], string> = {
+  ACTIVE: 'tone-success',
+  PENDING_VALIDATION: 'tone-warning',
+  CLOSED: 'tone-neutral',
+  REJECTED: 'tone-danger',
 };
+
+/** Statut "en tête de fiche" à afficher devant le nom de l'élève (ParentChildrenPage) — une
+ * validation en attente prime toujours (action la plus urgente pour le Parent), sinon la
+ * situation active, sinon le statut de la dernière situation connue (typiquement clôturée). */
+export function headlineSituationStatus(history: StudentSituation[]): { tone: string; label: string } | null {
+  if (history.length === 0) return null;
+  if (history.some((s) => s.status === 'PENDING_VALIDATION')) {
+    return { tone: STATUS_TONE.PENDING_VALIDATION, label: SITUATION_STATUS_LABELS.PENDING_VALIDATION };
+  }
+  const active = history.find((s) => s.status === 'ACTIVE');
+  if (active) return { tone: STATUS_TONE.ACTIVE, label: SITUATION_STATUS_LABELS.ACTIVE };
+  return { tone: STATUS_TONE[history[0].status], label: SITUATION_STATUS_LABELS[history[0].status] };
+}
 
 function formatSchoolOption(school: School) {
   const city = school.city?.name ? ` - ${school.city.name}` : '';
@@ -102,6 +115,7 @@ export function ChildSituationPanel({ studentId }: { studentId: string }) {
   }
 
   const hasPending = history.some((s) => s.status === 'PENDING_VALIDATION');
+  const mostRecent = history[0];
 
   return (
     <>
@@ -124,10 +138,6 @@ export function ChildSituationPanel({ studentId }: { studentId: string }) {
               <th>Année académique</th>
               <th>Niveau</th>
               <th>Établissement</th>
-              <th>Classe</th>
-              <th>Statut</th>
-              <th>Début</th>
-              <th>Fin</th>
             </tr>
           </thead>
           <tbody>
@@ -136,17 +146,6 @@ export function ChildSituationPanel({ studentId }: { studentId: string }) {
                 <td data-label="Année académique">{situation.academicYear.label}</td>
                 <td data-label="Niveau">{situation.schoolLevel.name}</td>
                 <td data-label="Établissement">{situation.school.name}</td>
-                <td data-label="Classe">{situation.class ?? '—'}</td>
-                <td data-label="Statut">
-                  <span className={`badge ${STATUS_BADGE[situation.status]}`}>
-                    {STATUS_LABELS[situation.status]}
-                  </span>
-                  {situation.status === 'REJECTED' && situation.rejectionReason && (
-                    <span className="table-hint"> — {situation.rejectionReason}</span>
-                  )}
-                </td>
-                <td data-label="Début">{new Date(situation.startDate).toLocaleDateString('fr-FR')}</td>
-                <td data-label="Fin">{situation.endDate ? new Date(situation.endDate).toLocaleDateString('fr-FR') : '—'}</td>
               </tr>
             ))}
           </tbody>
@@ -154,6 +153,11 @@ export function ChildSituationPanel({ studentId }: { studentId: string }) {
       </div>
 
       <p className="table-hint section-spacer">Déclarer une évolution</p>
+      {!hasPending && mostRecent?.status === 'REJECTED' && mostRecent.rejectionReason && (
+        <p className="form-error" role="alert">
+          Votre dernière demande a été refusée : {mostRecent.rejectionReason}
+        </p>
+      )}
       {hasPending && (
         <p className="form-notice" role="status">
           Une modification est déjà en attente de validation par un administrateur.

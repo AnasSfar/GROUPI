@@ -91,15 +91,11 @@ export function TeacherGroupsPage() {
   // RM-GRP-007 : override du mode d'enseignement pour ce créneau — '' = hérite du mode du groupe.
   const [scheduleTeachingMode, setScheduleTeachingMode] = useState<TeachingMode | ''>('');
 
-  // Ch.10.11/ERR-GRP-016/017 : édition du planning d'un groupe existant.
+  // Ch.10.11/ERR-GRP-016/017 : édition du planning d'un groupe existant — chaque créneau existant
+  // se modifie directement en place (pas de formulaire séparé "ajouter un créneau" : un groupe n'a
+  // en pratique qu'un seul créneau récurrent, modifiable, jamais empilé).
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [editSchedules, setEditSchedules] = useState<GroupScheduleInput[]>([]);
-  const [editDayOfWeek, setEditDayOfWeek] = useState<DayOfWeek>('MONDAY');
-  const [editStartTime, setEditStartTime] = useState('18:00');
-  const [editDurationMinutes, setEditDurationMinutes] = useState('120');
-  const [editTeachingLocationId, setEditTeachingLocationId] = useState('');
-  // RM-GRP-007 : override du mode d'enseignement pour ce créneau — '' = hérite du mode du groupe.
-  const [editScheduleTeachingMode, setEditScheduleTeachingMode] = useState<TeachingMode | ''>('');
   const [scheduleConflict, setScheduleConflict] = useState<{ groupId: string; message: string } | null>(
     null,
   );
@@ -307,17 +303,8 @@ export function TeacherGroupsPage() {
     setScheduleConflict(null);
   }
 
-  function addEditSchedule() {
-    setEditSchedules((prev) => [
-      ...prev,
-      {
-        dayOfWeek: editDayOfWeek,
-        startTime: editStartTime,
-        durationMinutes: Number(editDurationMinutes),
-        teachingLocationId: editTeachingLocationId || undefined,
-        teachingMode: editScheduleTeachingMode || undefined,
-      },
-    ]);
+  function updateEditSchedule(index: number, patch: Partial<GroupScheduleInput>) {
+    setEditSchedules((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
   }
 
   function removeEditSchedule(index: number) {
@@ -450,7 +437,7 @@ export function TeacherGroupsPage() {
             </div>
           )}
 
-          <div className="admin-actions teacher-group-links">
+          <div className="admin-actions action-chips">
             <Link to={`/teacher/groups/${group.id}/sessions`}>Séances</Link>
             <Link to={`/teacher/groups/${group.id}/students`}>Élèves</Link>
             <Link to={`/teacher/accounting?groupId=${group.id}`}>Paiements</Link>
@@ -491,130 +478,148 @@ export function TeacherGroupsPage() {
               </>
             )}
             {group.status === 'CLOSED' && (
-              <button type="button" className="danger" onClick={() => handleArchive(group)}>
-                Supprimer
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => runAction(() => groupsApi.openGroup(getAccessToken()!, group.id))}
+                >
+                  Ouvrir
+                </button>
+                <button type="button" className="danger" onClick={() => handleArchive(group)}>
+                  Supprimer
+                </button>
+              </>
             )}
           </div>
 
-          {editingGroupId === group.id && (
-            <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-              <h3>Planning de « {group.name} »</h3>
-              <ul className="tag-list">
-                {editSchedules.map((s, i) => (
-                  <li key={i} className="tag">
-                    {DAY_LABELS[s.dayOfWeek]} {s.startTime} ({formatDuration(s.durationMinutes)})
-                    <button type="button" onClick={() => removeEditSchedule(i)}>
-                      ×
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              <div className="field-row">
-                <label>
-                  Jour
-                  <Select value={editDayOfWeek} onChange={(e) => setEditDayOfWeek(e.target.value as DayOfWeek)}>
-                    {Object.entries(DAY_LABELS).map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
-                <label>
-                  Heure de début
-                  <input type="time" value={editStartTime} onChange={(e) => setEditStartTime(e.target.value)} />
-                </label>
-                <label>
-                  Durée (min)
-                  <input
-                    type="number"
-                    min={1}
-                    value={editDurationMinutes}
-                    onChange={(e) => setEditDurationMinutes(e.target.value)}
-                  />
-                </label>
-                <label>
-                  Lieu (optionnel)
-                  <Select
-                    value={editTeachingLocationId}
-                    onChange={(e) => setEditTeachingLocationId(e.target.value)}
-                  >
-                    <option value="">—</option>
-                    {locations.map((loc) => (
-                      <option key={loc.id} value={loc.id}>
-                        {loc.label}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
-                <label>
-                  Mode du créneau (optionnel)
-                  <Select
-                    value={editScheduleTeachingMode}
-                    onChange={(e) => setEditScheduleTeachingMode(e.target.value as TeachingMode | '')}
-                  >
-                    <option value="">Hérite du mode du groupe</option>
-                    <option value="PRESENTIAL">Présentiel</option>
-                    <option value="ONLINE">En ligne</option>
-                  </Select>
-                </label>
-              </div>
-              <button type="button" onClick={addEditSchedule}>
-                Ajouter ce créneau
-              </button>
+        </section>
+      ))}
+      </div>
 
-              {scheduleConflict?.groupId === group.id ? (
+      {editingGroupId && (() => {
+        const editingGroup = groups.find((g) => g.id === editingGroupId);
+        if (!editingGroup) return null;
+        return (
+          <div className="terms-modal-backdrop group-modal-backdrop" onClick={cancelEditSchedules}>
+            <div className="terms-modal group-modal" onClick={(e) => e.stopPropagation()}>
+              <h2>Planning de « {editingGroup.name} »</h2>
+              <div className="group-form">
+                {editSchedules.map((s, i) => (
+                  <div className="group-schedule-slot" key={i}>
+                    <div className="field-row group-schedule-row">
+                      <label>
+                        Jour
+                        <Select
+                          value={s.dayOfWeek}
+                          onChange={(e) => updateEditSchedule(i, { dayOfWeek: e.target.value as DayOfWeek })}
+                        >
+                          {Object.entries(DAY_LABELS).map(([value, label]) => (
+                            <option key={value} value={value}>
+                              {label}
+                            </option>
+                          ))}
+                        </Select>
+                      </label>
+                      <label>
+                        Heure de début
+                        <input
+                          type="time"
+                          value={s.startTime}
+                          onChange={(e) => updateEditSchedule(i, { startTime: e.target.value })}
+                        />
+                      </label>
+                      <label>
+                        Durée (min)
+                        <input
+                          type="number"
+                          min={1}
+                          value={s.durationMinutes}
+                          onChange={(e) => updateEditSchedule(i, { durationMinutes: Number(e.target.value) })}
+                        />
+                      </label>
+                      <label>
+                        Lieu (optionnel)
+                        <Select
+                          value={s.teachingLocationId ?? ''}
+                          onChange={(e) => updateEditSchedule(i, { teachingLocationId: e.target.value || undefined })}
+                        >
+                          <option value="">—</option>
+                          {locations.map((loc) => (
+                            <option key={loc.id} value={loc.id}>
+                              {loc.label}
+                            </option>
+                          ))}
+                        </Select>
+                      </label>
+                      <label>
+                        Mode du créneau (optionnel)
+                        <Select
+                          value={s.teachingMode ?? ''}
+                          onChange={(e) =>
+                            updateEditSchedule(i, { teachingMode: (e.target.value || undefined) as TeachingMode | undefined })
+                          }
+                        >
+                          <option value="">Hérite du mode du groupe</option>
+                          <option value="PRESENTIAL">Présentiel</option>
+                          <option value="ONLINE">En ligne</option>
+                        </Select>
+                      </label>
+                    </div>
+                    {editSchedules.length > 1 && (
+                      <button type="button" className="ghost-link" onClick={() => removeEditSchedule(i)}>
+                        Supprimer ce créneau
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {scheduleConflict?.groupId === editingGroup.id ? (
                 <>
                   <p className="form-notice" role="alert">
                     {scheduleConflict.message}
                   </p>
-                  <div className="page-actions" style={{ marginTop: 12 }}>
-                    <button
-                      type="button"
-                      onClick={() => submitScheduleUpdate(group.id, true)}
-                      disabled={savingSchedule}
-                    >
-                      Conserver les séances existantes
+                  <div className="terms-modal-actions group-modal-actions">
+                    <button type="button" className="ghost" onClick={() => setScheduleConflict(null)} disabled={savingSchedule}>
+                      Annuler
                     </button>
                     <button
                       type="button"
                       className="danger"
-                      onClick={() => submitScheduleUpdate(group.id, false)}
+                      onClick={() => submitScheduleUpdate(editingGroup.id, false)}
                       disabled={savingSchedule}
                     >
                       Supprimer et laisser le planning se régénérer
                     </button>
                     <button
                       type="button"
-                      className="ghost"
-                      onClick={() => setScheduleConflict(null)}
+                      className="btn-primary"
+                      onClick={() => submitScheduleUpdate(editingGroup.id, true)}
                       disabled={savingSchedule}
                     >
-                      Annuler
+                      Conserver les séances existantes
                     </button>
                   </div>
                 </>
               ) : (
-                <div className="page-actions" style={{ marginTop: 12 }}>
+                <div className="terms-modal-actions group-modal-actions">
+                  <button type="button" className="ghost" onClick={cancelEditSchedules} disabled={savingSchedule}>
+                    Annuler
+                  </button>
                   <button
                     type="button"
-                    onClick={() => submitScheduleUpdate(group.id)}
+                    className="btn-primary"
+                    onClick={() => submitScheduleUpdate(editingGroup.id)}
                     disabled={editSchedules.length === 0 || savingSchedule}
                   >
                     {savingSchedule ? 'Enregistrement...' : 'Enregistrer le planning'}
                   </button>
-                  <button type="button" className="ghost" onClick={cancelEditSchedules} disabled={savingSchedule}>
-                    Annuler
-                  </button>
                 </div>
               )}
             </div>
-          )}
-
-        </section>
-      ))}
-      </div>
+          </div>
+        );
+      })()}
 
       {showCreateModal && (
         <div className="terms-modal-backdrop group-modal-backdrop" onClick={() => setShowCreateModal(false)}>

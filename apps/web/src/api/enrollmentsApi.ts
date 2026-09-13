@@ -9,15 +9,8 @@ export interface EnrollmentGroupSchedule {
   durationMinutes: number;
 }
 
-/** Ch.12.11/12.16 : les 7 états du cycle de vie d'une inscription. */
-export type EnrollmentStatus =
-  | 'PENDING_VALIDATION'
-  | 'ACTIVE'
-  | 'SUSPENDED'
-  | 'REJECTED'
-  | 'ARCHIVED'
-  | 'CANCELLED'
-  | 'EXPIRED';
+/** Avenant 02 : toute inscription naît directement ACTIVE — plus d'état intermédiaire en attente. */
+export type EnrollmentStatus = 'ACTIVE' | 'SUSPENDED' | 'ARCHIVED';
 
 export interface EnrollmentStudentSummary {
   id: string;
@@ -95,42 +88,23 @@ export function listMine(accessToken: string): Promise<ParentEnrollment[]> {
   return apiRequest<ParentEnrollment[]>('/enrollments/mine', { accessToken });
 }
 
-export function cancelEnrollment(accessToken: string, enrollmentId: string): Promise<ParentEnrollment> {
-  return apiRequest<ParentEnrollment>(`/enrollments/${enrollmentId}/cancel`, {
-    method: 'POST',
-    accessToken,
-  });
-}
-
 // --- Vue Professeur ----------------------------------------------------------
 
 export function listByGroup(accessToken: string, groupId: string): Promise<TeacherEnrollment[]> {
   return apiRequest<TeacherEnrollment[]>(`/groups/${groupId}/enrollments`, { accessToken });
 }
 
-export function acceptEnrollment(
+/** Avenant 02 : décision unilatérale et immédiate du Professeur, sans confirmation Parent. */
+export function changeEnrollmentGroup(
   accessToken: string,
   groupId: string,
   enrollmentId: string,
-  payload: { customPrice?: number } = {},
+  targetGroupId: string,
 ): Promise<TeacherEnrollment> {
-  return apiRequest<TeacherEnrollment>(`/groups/${groupId}/enrollments/${enrollmentId}/accept`, {
+  return apiRequest<TeacherEnrollment>(`/groups/${groupId}/enrollments/${enrollmentId}/change-group`, {
     method: 'POST',
     accessToken,
-    body: payload,
-  });
-}
-
-export function rejectEnrollment(
-  accessToken: string,
-  groupId: string,
-  enrollmentId: string,
-  payload: { comment?: string } = {},
-): Promise<TeacherEnrollment> {
-  return apiRequest<TeacherEnrollment>(`/groups/${groupId}/enrollments/${enrollmentId}/reject`, {
-    method: 'POST',
-    accessToken,
-    body: payload,
+    body: { targetGroupId },
   });
 }
 

@@ -13,7 +13,7 @@ import { SubscriptionGuard } from '../subscriptions/subscription.guard';
 /**
  * Avenant 01, Ch. C — affectation d'élèves de la salle d'attente à un groupe standard. Contrôleur
  * distinct de `GroupsController` (même convention que `group-sessions`/`group-enrollments`/
- * `group-accounting`/`group-change` : un sous-chemin `groups/:groupId/...` porté par son propre
+ * `group-accounting` : un sous-chemin `groups/:groupId/...` porté par son propre
  * module), pour ne pas toucher `groups.controller.ts` (chantiers parallèles sur ce fichier).
  */
 @Controller('groups/:groupId/members')

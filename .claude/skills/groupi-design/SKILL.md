@@ -58,7 +58,12 @@ Ces classes existent déjà dans `index.css` et sont utilisées par la quasi-tot
 - **`.badge` + `.badge-success/-danger/-warning/-info/-neutral`** — statut. Toujours une couleur sémantique, jamais la couleur de marque.
 - **`.dash-card`** — carte cliquable avec icône (grille "Accès rapide" du tableau de bord). Icône dans un chip `--link`-teinté (`.dash-card-icon`), pas navy.
 - **`.alert-banner`** — bandeau d'avertissement inline (ex. profil incomplet, alerte d'abandon).
-- **Boutons** : primaire = fond `--accent` (navy) ; `.ghost` = transparent, bordure au survol ; `.danger` = bordure/texte `--danger`. Toujours `border-radius: var(--radius-sm)`.
+- **Boutons** — trois niveaux, jamais un `<Link>`/`.ghost` nu comme seule action visible d'un bloc :
+  - **`<button className="btn-primary">`** — action unique et très importante d'un bloc (ex. "Inviter des parents" en haut de « Salles d'attente »). Fond `--accent` (navy), toujours dans `.page-actions` pour hériter du style (nécessite un vrai `<button>`, pas un `<a>` : le encadré/padding vient de la règle de base `button {}`, pas de `.btn-primary` seule).
+  - **`<button>` normal (sans classe)** — action courante, isolée ou à poids égal avec 1-2 autres (ex. "Créer un groupe", "Ajouter un élève"). Encadré neutre (`--border-strong`/`--surface`) via la règle `button {}` de base.
+  - **`.action-chips`** — plusieurs actions de même niveau côte à côte (ex. les raccourcis Séances/Élèves/Paiements/Stats/Annonces d'une carte de groupe) : chaque `a`/`button` devient une puce arrondie (`--radius-pill`) bordée, teintée `--link` au survol — jamais de simples liens texte nus quand il y en a plusieurs groupés, ça ne se lit plus comme des boutons.
+  - `.ghost` (bordure transparente) et `.ghost-link` (texte souligné, sans bordure) sont réservés aux actions volontairement discrètes (ex. "Annuler" dans une modale) — jamais pour le point d'entrée principal d'une fonctionnalité.
+  - `.danger` = bordure/texte `--danger`. Tous les boutons encadrés utilisent `border-radius: var(--radius-sm)`, sauf `.action-chips` (pill) et `.dash-shortcut` (pill, cas particulier d'un `<Link>` intégralement stylé comme un bouton).
 
 ## À éviter
 

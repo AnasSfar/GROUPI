@@ -1,7 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { GroupStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { NotificationsService } from '../notifications/notifications.service';
 import { CreateGroupDto } from './dto/create-group.dto';
 import { UpdateGroupDto } from './dto/update-group.dto';
 import { PauseGenerationDto } from './dto/pause-generation.dto';
@@ -51,13 +50,18 @@ const INCLUDE_DETAILS = {
  * documenté comme un état terminal immuable) — activé à la demande explicite du Professeur, qui a
  * été prévenu que les demandes d'inscription auto-rejetées lors de l'archivage (ERR-INS-029/031)
  * ne sont pas restaurées par cette réactivation.
+ *
+ * Avenant 03 : `CLOSED -> ACTIVE` amende RM-GRP-045 (« un groupe clôturé ne peut plus être rouvert »)
+ * — un Professeur peut désormais revenir sur une clôture, via le même endpoint `POST
+ * /groups/:id/open` que `DRAFT -> ACTIVE`. `ARCHIVED` reste un état terminal pour l'ouverture
+ * (RM-GRP-038, inchangée) : seule la clôture (pas l'archivage) est réversible vers OUVERT.
  */
 const ALLOWED_TRANSITIONS: Record<GroupStatus, GroupStatus[]> = {
   DRAFT: ['ACTIVE'],
   ACTIVE: ['FULL', 'CLOSED'],
   FULL: ['ACTIVE', 'CLOSED'],
   SUSPENDED: [],
-  CLOSED: ['ARCHIVED'],
+  CLOSED: ['ARCHIVED', 'ACTIVE'],
   ARCHIVED: ['CLOSED'],
 };
 
@@ -66,7 +70,6 @@ export class GroupsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly subscriptions: SubscriptionsService,
-    private readonly notifications: NotificationsService,
   ) {}
 
   private async loadOwned(teacherId: string, groupId: string) {
@@ -711,6 +714,19 @@ export class GroupsService {
         },
       });
     }
+    if (toStatus === 'ACTIVE' && group.status === 'CLOSED') {
+      // Avenant 03 : traçabilité symétrique de la réouverture d'un groupe clôturé.
+      await this.prisma.auditLog.create({
+        data: {
+          userId: teacherId,
+          action: 'GROUP_REOPENED',
+          targetType: 'Group',
+          targetId: groupId,
+          oldValues: { status: group.status },
+          newValues: { status: toStatus },
+        },
+      });
+    }
 
     return updated;
   }
@@ -728,11 +744,6 @@ export class GroupsService {
     return this.transition(teacherId, groupId, 'CLOSED');
   }
 
-  /**
-   * ERR-INS-029/031 : un groupe archivé ne peut plus recevoir de décision — toute demande encore
-   * PENDING_VALIDATION est automatiquement clôturée (REJECTED, sans décideur) et le Parent en est
-   * informé. Cascade appliquée dans la même transaction que le changement de statut du groupe.
-   */
   async archive(teacherId: string, groupId: string) {
     const group = await this.loadOwned(teacherId, groupId);
     const allowed = ALLOWED_TRANSITIONS[group.status] ?? [];
@@ -740,24 +751,12 @@ export class GroupsService {
       throw new BadRequestException(`Transition interdite : ${group.status} -> ARCHIVED`);
     }
 
-    const { updatedGroup, autoClosed } = await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
       const updatedGroup = await tx.group.update({
         where: { id: groupId },
         data: { status: 'ARCHIVED' },
         include: { ...INCLUDE_DETAILS, _count: { select: { enrollments: true } } },
       });
-
-      const pending = await tx.enrollment.findMany({
-        where: { groupId, status: 'PENDING_VALIDATION' },
-        include: { student: true },
-      });
-
-      for (const enrollment of pending) {
-        await tx.enrollment.update({
-          where: { id: enrollment.id },
-          data: { status: 'REJECTED', decidedAt: new Date(), decidedById: null },
-        });
-      }
 
       // RM-ACC-019/020 : traçabilité centralisée de l'archivage d'un groupe.
       await tx.auditLog.create({
@@ -767,27 +766,12 @@ export class GroupsService {
           targetType: 'Group',
           targetId: groupId,
           oldValues: { status: group.status },
-          newValues: { status: 'ARCHIVED', autoRejectedEnrollments: pending.length },
+          newValues: { status: 'ARCHIVED' },
         },
       });
 
-      return { updatedGroup, autoClosed: pending };
+      return updatedGroup;
     });
-
-    // NOT-INS : hors transaction — un échec d'envoi ne doit jamais annuler l'archivage.
-    for (const enrollment of autoClosed) {
-      await this.notifications.notify({
-        recipientUserId: enrollment.student.parentId,
-        type: 'INS_AUTO_CLOSED_GROUP_ARCHIVED',
-        priority: 'IMPORTANT',
-        title: 'Demande d’inscription automatiquement clôturée',
-        body: `Le groupe "${updatedGroup.name}" a été archivé par le Professeur : la demande d'inscription de ${enrollment.student.firstName} ${enrollment.student.lastName} a été automatiquement clôturée (ERR-INS-029/031).`,
-        refType: 'Enrollment',
-        refId: enrollment.id,
-      });
-    }
-
-    return updatedGroup;
   }
 
   /** ERR-GRP-020 : jamais de suppression physique dès qu'un historique existe. */

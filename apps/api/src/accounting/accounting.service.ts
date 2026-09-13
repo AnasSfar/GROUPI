@@ -147,15 +147,15 @@ export class AccountingService {
   }
 
   /**
-   * Ch.20.8/RM-CHG-013 : reporte le solde du compte de suivi comptable de l'inscription D'ORIGINE
-   * sur le NOUVEAU compte créé pour la nouvelle inscription lors d'un changement de groupe définitif
-   * (appelée par `GroupChangeService.finalizeAcceptance`, dans la même transaction que la création du
-   * nouveau compte). L'ancien compte n'est JAMAIS modifié (RM-CHG-007) : il reste intact et
-   * consultable tel quel. Le report est matérialisé par une écriture ADMIN_ADJUSTMENT sur le nouveau
-   * compte — crédit si le solde d'origine était créditeur (avance du Parent reportée), débit s'il
-   * était débiteur (dette reportée) — puisqu'aucune séance n'est associée à cette opération (donc
-   * hors du circuit normal d'ajustement Professeur sous 48h, RM-CPT-019). Ne poste rien si le solde
-   * d'origine est nul (RM-CPT-030 : un montant d'écriture est toujours strictement positif).
+   * Ch.20.8 : reporte le solde du compte de suivi comptable de l'inscription D'ORIGINE sur le
+   * NOUVEAU compte créé pour la nouvelle inscription lors d'un changement de groupe (appelée par
+   * `EnrollmentsService.changeGroup`, dans la même transaction que la création du nouveau compte).
+   * L'ancien compte n'est JAMAIS modifié : il reste intact et consultable tel quel. Le report est
+   * matérialisé par une écriture ADMIN_ADJUSTMENT sur le nouveau compte — crédit si le solde
+   * d'origine était créditeur (avance du Parent reportée), débit s'il était débiteur (dette
+   * reportée) — puisqu'aucune séance n'est associée à cette opération (donc hors du circuit normal
+   * d'ajustement Professeur sous 48h, RM-CPT-019). Ne poste rien si le solde d'origine est nul
+   * (RM-CPT-030 : un montant d'écriture est toujours strictement positif).
    */
   async carryOverBalanceForGroupChange(
     tx: Tx,
@@ -182,7 +182,7 @@ export class AccountingService {
       effectiveDate: new Date(),
       authorId: params.authorId,
       reason: 'ADMIN_CORRECTION',
-      reasonNote: `RM-CHG-013 : report du solde du compte de l'inscription d'origine ${params.originalEnrollmentId} suite à un changement de groupe.`,
+      reasonNote: `Report du solde du compte de l'inscription d'origine ${params.originalEnrollmentId} suite à un changement de groupe.`,
     });
   }
 
@@ -286,7 +286,7 @@ export class AccountingService {
   private async postEntry(
     tx: Tx,
     params: {
-      // Ch.20.8/RM-CHG-013 : `carryOverBalanceForGroupChange` poste sur un compte fraîchement créé
+      // Ch.20.8 : `carryOverBalanceForGroupChange` poste sur un compte fraîchement créé
       // (pas encore chargé avec ses relations `ACCOUNT_INCLUDE`) — seuls id/status/periodId sont
       // réellement utilisés ici, d'où cette signature volontairement plus étroite que `AccountWithRelations`.
       account: Pick<AccountingAccount, 'id' | 'status' | 'periodId'>;

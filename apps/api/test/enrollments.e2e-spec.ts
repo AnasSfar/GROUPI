@@ -4,7 +4,7 @@ import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { grantActiveSubscription } from './helpers/grant-subscription';
-import { createPendingEnrollmentDirect } from './helpers/create-enrollment';
+import { createActiveEnrollmentDirect } from './helpers/create-enrollment';
 import { registerParentDirect } from './helpers/register-parent-direct';
 
 /**
@@ -141,14 +141,14 @@ describe('Enrollments (e2e)', () => {
   }
 
   /**
-   * Avenant 01, Ch. C/D.2, RM-PAR-021 : `POST /enrollments` (demande d'inscription à l'initiative
-   * du Parent) est supprimé — voir le describe dédié plus bas. Les tests de ce fichier qui portent
-   * sur la DÉCISION du Professeur (accept/reject/suspend/reactivate/archive) ou sur l'annulation
-   * (`cancel`, conservée) ont seulement besoin d'une inscription `PENDING_VALIDATION` de départ,
-   * créée ici directement en base (voir `helpers/create-enrollment.ts`).
+   * Avenant 02 : toute inscription naît directement `ACTIVE` (affectation Professeur ou
+   * préinscription confirmée) — il n'existe plus d'endpoint de décision (`accept`/`reject`). Les
+   * tests de ce fichier qui portent sur le cycle de vie d'une inscription déjà active
+   * (suspend/reactivate/tarif/archive/changement de groupe) créent directement une inscription
+   * `ACTIVE` en base (voir `helpers/create-enrollment.ts`).
    */
-  function createPendingEnrollment(studentId: string, groupId: string) {
-    return createPendingEnrollmentDirect(prisma, studentId, groupId);
+  function createActiveEnrollment(studentId: string, groupId: string) {
+    return createActiveEnrollmentDirect(prisma, studentId, groupId);
   }
 
   let teacher1: Actor;
@@ -285,68 +285,7 @@ describe('Enrollments (e2e)', () => {
     });
   });
 
-  describe('POST /enrollments/:id/cancel (conservé)', () => {
-    let student1: any;
-    let enrollment1: any;
-
-    it('annule une demande en attente -> CANCELLED (RM-INS-038)', async () => {
-      student1 = await createStudent(parent1.token, `S1-${runId}`);
-      enrollment1 = await createPendingEnrollment(student1.id, groupA.id);
-
-      const res = await api()
-        .post(`/api/v1/enrollments/${enrollment1.id}/cancel`)
-        .set('Authorization', `Bearer ${parent1.token}`)
-        .expect(201);
-      expect(res.body.status).toBe('CANCELLED');
-    });
-
-    it("refuse l'annulation par un autre parent -> 403/404", async () => {
-      const otherStudent = await createStudent(parent1.token, `S1b-${runId}`);
-      const otherEnrollment = await createPendingEnrollment(otherStudent.id, groupA.id);
-      const res = await api()
-        .post(`/api/v1/enrollments/${otherEnrollment.id}/cancel`)
-        .set('Authorization', `Bearer ${parent2.token}`);
-      expect([403, 404]).toContain(res.status);
-    });
-
-    it('refuse une seconde annulation -> 400 (ERR-INS-019)', async () => {
-      const res = await api()
-        .post(`/api/v1/enrollments/${enrollment1.id}/cancel`)
-        .set('Authorization', `Bearer ${parent1.token}`)
-        .expect(400);
-      expect(res.body.message).toMatch(/ERR-INS-019/);
-    });
-  });
-
-  describe('Décision du Professeur', () => {
-    it('accepte une demande -> ACTIVE, et fait passer le groupe à FULL si la capacité est atteinte', async () => {
-      const student = await createStudent(parent1.token, `S-accept-${runId}`);
-      const reqRes = await createPendingEnrollment(student.id, groupD.id);
-
-      const res = await api()
-        .post(`/api/v1/groups/${groupD.id}/enrollments/${reqRes.id}/accept`)
-        .set('Authorization', `Bearer ${teacher1.token}`)
-        .send({ customPrice: 15 })
-        .expect(201);
-
-      expect(res.body.status).toBe('ACTIVE');
-      expect(res.body.group.status).toBe('FULL'); // capacité de groupD = 1
-      expect(Number(res.body.customPrice)).toBeCloseTo(15);
-    });
-
-    it('refuse une demande -> REJECTED', async () => {
-      const student = await createStudent(parent1.token, `S-reject-${runId}`);
-      const reqRes = await createPendingEnrollment(student.id, groupE.id);
-
-      const res = await api()
-        .post(`/api/v1/groups/${groupE.id}/enrollments/${reqRes.id}/reject`)
-        .set('Authorization', `Bearer ${teacher1.token}`)
-        .send({ comment: 'Groupe non adapté' })
-        .expect(201);
-
-      expect(res.body.status).toBe('REJECTED');
-    });
-
+  describe('Accès Professeur', () => {
     it("refuse l'accès à un professeur qui ne possède pas le groupe -> 403", async () => {
       await api()
         .get(`/api/v1/groups/${groupA.id}/enrollments`)
@@ -359,14 +298,11 @@ describe('Enrollments (e2e)', () => {
     let enrollmentId: string;
 
     beforeAll(async () => {
-      // Réutilise groupD (capacité 1) : après le test d'acceptation ci-dessus, il est FULL avec
-      // une inscription ACTIVE. On retrouve cette inscription pour la faire vivre son cycle complet.
-      const list = await api()
-        .get(`/api/v1/groups/${groupD.id}/enrollments`)
-        .set('Authorization', `Bearer ${teacher1.token}`)
-        .expect(200);
-      const active = list.body.find((e: any) => e.status === 'ACTIVE');
-      enrollmentId = active.id;
+      // groupD (capacité 1) : une inscription ACTIVE créée directement fait passer le groupe FULL.
+      const student = await createStudent(parent1.token, `S-lifecycle-${runId}`);
+      const created = await createActiveEnrollment(student.id, groupD.id);
+      enrollmentId = created.id;
+      await prisma.group.update({ where: { id: groupD.id }, data: { status: 'FULL' } });
     });
 
     it('suspend une inscription active : le groupe repasse ACTIVE (une place se libère)', async () => {
@@ -415,26 +351,49 @@ describe('Enrollments (e2e)', () => {
     });
   });
 
-  describe('Expiration automatique (RM-INS-026, appliquée à la lecture)', () => {
-    it('transforme une demande PENDING_VALIDATION en EXPIRED après le délai de 7 jours', async () => {
-      const student = await createStudent(parent1.token, `S-expire-${runId}`);
-      const reqRes = await createPendingEnrollment(student.id, groupA.id);
+  /**
+   * Avenant 02 : le changement de groupe est désormais une décision unilatérale et immédiate du
+   * Professeur (plus de proposition/confirmation Parent).
+   */
+  describe('POST /groups/:groupId/enrollments/:id/change-group', () => {
+    it('déplace immédiatement une inscription active vers un autre groupe du même Professeur', async () => {
+      const student = await createStudent(parent1.token, `S-change-${runId}`);
+      const created = await createActiveEnrollment(student.id, groupA.id);
 
-      const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
-      await prisma.enrollment.update({
-        where: { id: reqRes.id },
-        data: { requestedAt: eightDaysAgo },
-      });
+      const res = await api()
+        .post(`/api/v1/groups/${groupA.id}/enrollments/${created.id}/change-group`)
+        .set('Authorization', `Bearer ${teacher1.token}`)
+        .send({ targetGroupId: groupE.id })
+        .expect(201);
 
-      const mineRes = await api()
-        .get('/api/v1/enrollments/mine')
-        .set('Authorization', `Bearer ${parent1.token}`)
-        .expect(200);
-      const expired = mineRes.body.find((e: any) => e.id === reqRes.id);
-      expect(expired.status).toBe('EXPIRED');
+      expect(res.body.status).toBe('ACTIVE');
+      expect(res.body.group.id).toBe(groupE.id);
 
-      const persisted = await prisma.enrollment.findUniqueOrThrow({ where: { id: reqRes.id } });
-      expect(persisted.status).toBe('EXPIRED');
+      const origin = await prisma.enrollment.findUniqueOrThrow({ where: { id: created.id } });
+      expect(origin.status).toBe('ARCHIVED');
+    });
+
+    it("refuse un groupe cible appartenant à un autre Professeur -> 404", async () => {
+      const student = await createStudent(parent1.token, `S-change-other-${runId}`);
+      const created = await createActiveEnrollment(student.id, groupC.id);
+      const otherTeacherGroup = await createGroup(teacher2.token, `E2E-INS Groupe Autre Prof ${runId}`, 2, true);
+
+      await api()
+        .post(`/api/v1/groups/${groupC.id}/enrollments/${created.id}/change-group`)
+        .set('Authorization', `Bearer ${teacher1.token}`)
+        .send({ targetGroupId: otherTeacherGroup.id })
+        .expect(404);
+    });
+
+    it('refuse un groupe cible complet -> 400', async () => {
+      const student = await createStudent(parent1.token, `S-change-full-${runId}`);
+      const created = await createActiveEnrollment(student.id, groupB.id);
+      // groupC a une capacité de 1, déjà occupée par le test précédent.
+      await api()
+        .post(`/api/v1/groups/${groupB.id}/enrollments/${created.id}/change-group`)
+        .set('Authorization', `Bearer ${teacher1.token}`)
+        .send({ targetGroupId: groupC.id })
+        .expect(400);
     });
   });
 });

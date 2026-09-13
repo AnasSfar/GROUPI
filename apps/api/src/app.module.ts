@@ -12,7 +12,6 @@ import { EnrollmentsModule } from './enrollments/enrollments.module';
 import { SessionsModule } from './sessions/sessions.module';
 import { PreEnrollmentsModule } from './pre-enrollments/pre-enrollments.module';
 import { AttendanceModule } from './attendance/attendance.module';
-import { GroupChangeModule } from './group-change/group-change.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { EnrollmentConversationsModule } from './enrollment-conversations/enrollment-conversations.module';
 import { GroupAnnouncementsModule } from './group-announcements/group-announcements.module';
@@ -40,7 +39,6 @@ import { GroupMembersModule } from './group-members/group-members.module';
     SessionsModule,
     PreEnrollmentsModule,
     AttendanceModule,
-    GroupChangeModule,
     NotificationsModule,
     EnrollmentConversationsModule,
     GroupAnnouncementsModule,

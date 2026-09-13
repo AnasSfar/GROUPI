@@ -3,18 +3,19 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ApiError } from '../api/client';
 import * as dashboardApi from '../api/dashboardApi';
+import * as parentProfileApi from '../api/parentProfileApi';
+import * as teacherProfileApi from '../api/teacherProfileApi';
 import type {
   TeacherDashboard,
   ParentDashboard,
   AdminDashboard,
-  GroupOccupancyView,
   DashboardSessionSummary,
 } from '../api/dashboardApi';
 import { AlertList } from '../components/AlertList';
 import { EmptyState, LoadingState } from '../components/UiState';
 import { StatGrid } from '../components/StatGrid';
+import { RevenueGauge } from '../components/RevenueGauge';
 import { RadialGauge, gaugeToneFromRate } from '../components/RadialGauge';
-import { ChildDetailCard } from '../components/ChildDetailCard';
 import { TeacherWeekCalendar } from '../components/TeacherWeekCalendar';
 import { WeekCalendar, addDays, startOfWeek, type WeekCalendarEvent } from '../components/WeekCalendar';
 import { QuickAttendanceModal } from '../components/QuickAttendanceModal';
@@ -35,7 +36,6 @@ import {
   IconCreditCard,
   IconWallet,
   IconDownload,
-  IconBell,
   IconPlus,
   IconMegaphone,
   IconMessageCircle,
@@ -47,22 +47,6 @@ interface DashCard {
   title: string;
   description: string;
 }
-
-const GROUP_CATEGORY_BADGE: Record<GroupOccupancyView['category'], string> = {
-  FULL: 'badge-danger',
-  NEARLY_FULL: 'badge-warning',
-  NEEDS_STUDENTS: 'badge-info',
-  NORMAL: 'badge-success',
-  OTHER: 'badge-neutral',
-};
-
-const GROUP_CATEGORY_LABEL: Record<GroupOccupancyView['category'], string> = {
-  FULL: 'Complet',
-  NEARLY_FULL: 'Bientôt complet',
-  NEEDS_STUDENTS: 'Places disponibles',
-  NORMAL: 'Normal',
-  OTHER: '—',
-};
 
 // Journal d'audit (Super Admin) : `action`/`targetType` sont des codes techniques (voir chaque
 // `auditLog.create` métier) — on les traduit ici plutôt que de les exposer bruts à l'écran.
@@ -87,17 +71,13 @@ const AUDIT_ACTION_META: Record<string, { label: string; tone: 'success' | 'dang
   GROUP_CLOSED: { label: 'Groupe clôturé', tone: 'warning' },
   GROUP_ARCHIVED: { label: 'Groupe archivé', tone: 'warning' },
   GROUP_DELETED: { label: 'Groupe supprimé', tone: 'danger' },
-  ENROLLMENT_ACCEPTED: { label: 'Inscription acceptée', tone: 'success' },
-  ENROLLMENT_REJECTED: { label: 'Inscription refusée', tone: 'danger' },
+  ENROLLMENT_CREATED_FROM_PRE_ENROLLMENT: { label: 'Inscription créée depuis une préinscription', tone: 'success' },
   ENROLLMENT_SUSPENDED: { label: 'Inscription suspendue', tone: 'warning' },
+  ENROLLMENT_GROUP_CHANGED: { label: 'Changement de groupe', tone: 'info' },
   SCHOOL_SITUATION_VALIDATED: { label: 'Situation scolaire validée', tone: 'success' },
   SCHOOL_SITUATION_REJECTED: { label: 'Situation scolaire refusée', tone: 'danger' },
   SCHOOL_SITUATION_ADMIN_OVERRIDE: { label: 'Situation scolaire modifiée par un admin', tone: 'warning' },
   ATTENDANCE_RESET: { label: 'Présence réinitialisée', tone: 'warning' },
-  GROUP_CHANGE_PROPOSED_BY_TEACHER: { label: 'Changement de groupe proposé', tone: 'info' },
-  GROUP_CHANGE_ACCEPTED: { label: 'Changement de groupe accepté', tone: 'success' },
-  GROUP_CHANGE_PROPOSAL_DECLINED: { label: 'Changement de groupe refusé par le parent', tone: 'danger' },
-  GROUP_CHANGE_REJECTED: { label: 'Changement de groupe rejeté', tone: 'danger' },
   TEACHER_SUBJECT_VALIDATED: { label: 'Matière enseignant validée', tone: 'success' },
   TEACHER_SUBJECT_REJECTED: { label: 'Matière enseignant refusée', tone: 'danger' },
   TEACHER_SCHOOL_LEVEL_VALIDATED: { label: 'Niveau enseignant validé', tone: 'success' },
@@ -121,7 +101,6 @@ const AUDIT_TARGET_TYPE_LABEL: Record<string, string> = {
   Group: 'Groupe',
   AccountingEntry: 'Écriture comptable',
   Enrollment: 'Inscription',
-  GroupChangeRequest: 'Changement de groupe',
   TeacherProfile: 'Profil enseignant',
   AcademicYear: 'Année académique',
   Student: 'Élève',
@@ -156,6 +135,12 @@ function describeAuditEntry(entry: {
   return `${entry.actorName} · ${targetLabel} · réf. ${shortRef}`;
 }
 
+/** RM-ACC : ni l'Admin ni le Super Admin n'ont de prénom dans le système (identité = e-mail,
+ * Ch. H) — la salutation retombe alors sur un simple "Bonjour"/"Bonsoir" sans nom. */
+function greetingWord(date: Date = new Date()): string {
+  return date.getHours() >= 18 ? 'Bonsoir' : 'Bonjour';
+}
+
 function canOpenAttendance(session: DashboardSessionSummary): boolean {
   if (session.status === 'COMPLETED' || session.status === 'LOCKED') return true;
   if (session.status !== 'PLANNED') return false;
@@ -164,50 +149,6 @@ function canOpenAttendance(session: DashboardSessionSummary): boolean {
 
 function attendanceActionLabel(status: string): string {
   return status === 'PLANNED' ? "Faire l'appel" : "Voir l'appel";
-}
-
-function TeacherAccountingPeriodTable({ accounting }: { accounting: TeacherDashboard['accounting'] }) {
-  // Avenant 01, Ch. E.1 : suppression de la ventilation "trimestre en cours" ; l'année est
-  // l'année académique en cours (E.2/RM-DSH-051), jamais l'année civile.
-  const periods = [
-    { key: 'currentMonth' as const, label: 'Mois en cours', icon: <IconCalendarCheck />, tone: 'teal' },
-    { key: 'currentAcademicYear' as const, label: 'Année académique en cours', icon: <IconWallet />, tone: 'amber' },
-  ];
-  const metrics = [
-    {
-      key: 'forecastRevenue' as const,
-      label: 'CA prévisionnel',
-    },
-    {
-      key: 'realizedRevenue' as const,
-      label: 'CA réalisé',
-    },
-    {
-      key: 'collectedRevenue' as const,
-      label: 'CA encaissé',
-    },
-  ];
-
-  return (
-    <div className="accounting-period-list">
-      {periods.map((period) => (
-        <article key={period.key} className={`accounting-period-card tone-${period.tone}`}>
-          <div className="accounting-period-title">
-            <span className="accounting-period-icon">{period.icon}</span>
-            <h3>{period.label}</h3>
-          </div>
-          <div className="accounting-period-values">
-            {metrics.map((metric) => (
-              <div key={metric.key} className="accounting-period-value">
-                <span>{metric.label}</span>
-                <strong>{formatAmount(accounting.periodRevenue[period.key][metric.key])}</strong>
-              </div>
-            ))}
-          </div>
-        </article>
-      ))}
-    </div>
-  );
 }
 
 type TeacherQuickAction = 'attendance' | 'payment' | 'announcement' | 'message' | null;
@@ -226,7 +167,6 @@ function TeacherDashboardView({
     ...data.groups.filter((g) => g.status === 'ARCHIVED').map((g) => g.id),
     ...hiddenGroupIds,
   ]);
-  const visibleGroups = data.groups.filter((g) => !removedGroupIds.has(g.id));
   const visibleTodaysSessions = data.activity.todaysSessions.filter((s) => !removedGroupIds.has(s.group.id));
   const attendanceCandidates = [...visibleTodaysSessions, ...data.activity.upcomingSessions]
     .filter((s, index, all) => all.findIndex((other) => other.id === s.id) === index)
@@ -248,12 +188,17 @@ function TeacherDashboardView({
         </p>
       )}
 
+      <TeacherWeekCalendar />
+
       <div className="dash-shortcuts">
         <Link to="/teacher/groups?create=1" className="dash-shortcut">
           <IconPlus /> Nouveau groupe
         </Link>
         <Link to="/teacher/sessions?create=1" className="dash-shortcut">
           <IconCalendarCheck /> Créer une séance
+        </Link>
+        <Link to="/teacher/invitation" className="dash-shortcut">
+          <IconUserPlus /> Inviter des parents
         </Link>
         <button type="button" className="dash-shortcut" onClick={() => setQuickAction('attendance')}>
           <IconClipboardCheck /> Faire l'appel
@@ -284,8 +229,6 @@ function TeacherDashboardView({
         />
       )}
 
-      <TeacherWeekCalendar />
-
       {visibleTodaysSessions.length > 0 && (
         <section className="card-section">
           <h2>Aujourd'hui</h2>
@@ -315,58 +258,23 @@ function TeacherDashboardView({
 
       <section className="card-section">
         <h2>Comptabilité</h2>
-        <div className="gauge-row">
-          {data.accounting.collectionRate != null && (
-            <RadialGauge
-              value={data.accounting.collectionRate}
-              label="Taux d'encaissement"
-              tone={gaugeToneFromRate(data.accounting.collectionRate)}
-            />
-          )}
-          {data.accounting.debtRegularizationRate != null && (
-            <RadialGauge
-              value={data.accounting.debtRegularizationRate}
-              label="Régularisation des impayés"
-              tone={gaugeToneFromRate(data.accounting.debtRegularizationRate)}
-            />
-          )}
+        <div className="revenue-bar-row">
+          <RevenueGauge
+            label="Mois en cours"
+            forecast={data.accounting.periodRevenue.currentMonth.forecastRevenue}
+            realized={data.accounting.periodRevenue.currentMonth.realizedRevenue}
+            collected={data.accounting.periodRevenue.currentMonth.collectedRevenue}
+          />
+          <RevenueGauge
+            label="Année académique en cours"
+            forecast={data.accounting.periodRevenue.currentAcademicYear.forecastRevenue}
+            realized={data.accounting.periodRevenue.currentAcademicYear.realizedRevenue}
+            collected={data.accounting.periodRevenue.currentAcademicYear.collectedRevenue}
+          />
         </div>
-        <TeacherAccountingPeriodTable accounting={data.accounting} />
         <p className="section-link">
           <Link to="/teacher/accounting">Voir tous les indicateurs financiers →</Link>
         </p>
-      </section>
-
-      <section className="card-section">
-        <h2>Groupes</h2>
-        <div className="table-wrap">
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th>Groupe</th>
-                <th>Matière / Niveau</th>
-                <th>Occupation</th>
-                <th>État</th>
-              </tr>
-            </thead>
-            <tbody>
-            {visibleGroups.map((g) => (
-                <tr key={g.id}>
-                  <td data-label="Groupe">{g.name}</td>
-                  <td data-label="Matière / Niveau">
-                    {g.subject} — {g.schoolLevel}
-                  </td>
-                  <td data-label="Occupation">
-                    {g.activeCount}/{g.capacity}
-                  </td>
-                  <td data-label="État">
-                    <span className={`badge ${GROUP_CATEGORY_BADGE[g.category]}`}>{GROUP_CATEGORY_LABEL[g.category]}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       </section>
 
       <section className="card-section">
@@ -375,8 +283,6 @@ function TeacherDashboardView({
           <StatGrid
             tiles={[
               { label: "Taux d'assiduité moyen", value: data.statistics.averageAttendanceRate != null ? `${(data.statistics.averageAttendanceRate * 100).toFixed(1)}%` : '—', icon: <IconClipboardCheck />, tone: 'green' },
-              { label: 'CA du mois', value: formatAmount(data.statistics.revenueThisMonth ?? 0), icon: <IconWallet />, tone: 'teal' },
-              { label: "CA de l'année", value: formatAmount(data.statistics.revenueThisYear ?? 0), icon: <IconWallet />, tone: 'teal' },
               { label: 'Meilleur mois', value: data.statistics.bestCollectionMonth ?? '—', icon: <IconCalendarCheck />, tone: 'info' },
             ]}
           />
@@ -441,11 +347,11 @@ function ParentWeekCalendar({ data }: { data: ParentDashboard }) {
     ]);
   }, [data]);
 
-  function handleNavigate(direction: 'prev' | 'next' | 'today') {
+  function handleNavigate(direction: 'prev' | 'next' | 'today', dayCount: number) {
     if (direction === 'today') {
       setWeekStart(startOfWeek(new Date()));
     } else {
-      setWeekStart((w) => addDays(w, direction === 'next' ? 7 : -7));
+      setWeekStart((w) => addDays(w, direction === 'next' ? dayCount : -dayCount));
     }
   }
 
@@ -459,7 +365,37 @@ function ParentWeekCalendar({ data }: { data: ParentDashboard }) {
   );
 }
 
-function ParentDashboardView({ data, onRefresh }: { data: ParentDashboard; onRefresh: () => void }) {
+function ParentChildSummaryRow({ child }: { child: ParentDashboard['children'][number] }) {
+  const nextSession = child.upcomingSessions[0];
+  return (
+    <li className="activity-item child-summary-row">
+      <div className="child-summary-name">
+        <span className={`activity-row-dot ${child.globalBalance < 0 ? 'tone-red' : 'tone-green'}`} />
+        <p>
+          {child.student.firstName} {child.student.lastName}
+        </p>
+      </div>
+      <span className="activity-row-value">
+        {nextSession ? `${nextSession.group.name} — ${formatDateTime(nextSession.date, nextSession.startTime)}` : 'Aucune séance à venir'}
+      </span>
+      <span className={`badge ${child.globalBalance < 0 ? 'badge-danger' : 'badge-success'}`}>
+        {formatAmount(child.globalBalance)}
+      </span>
+      <Link className="attendance-shortcut" to="/parent/children">
+        Voir la fiche →
+      </Link>
+    </li>
+  );
+}
+
+function ParentDashboardView({ data }: { data: ParentDashboard }) {
+  const totalBalance = data.children.reduce((sum, child) => sum + child.globalBalance, 0);
+  const attendanceRates = data.children
+    .map((child) => child.attendanceSummary.attendanceRate)
+    .filter((rate): rate is number => rate != null);
+  const averageAttendanceRate =
+    attendanceRates.length > 0 ? attendanceRates.reduce((sum, rate) => sum + rate, 0) / attendanceRates.length : null;
+
   return (
     <>
       {data.alerts.length > 0 && (
@@ -472,17 +408,47 @@ function ParentDashboardView({ data, onRefresh }: { data: ParentDashboard; onRef
         <EmptyState title="Aucun enfant actif déclaré">Ajoutez un enfant pour suivre ses inscriptions, présences et comptes.</EmptyState>
       )}
       {data.children.length > 0 && (
-        <StatGrid
-          tiles={[
-            { label: 'Commentaires non lus', value: String(data.unreadCommentsCount), icon: <IconBell />, tone: 'info' },
-            { label: 'Annonces non lues', value: String(data.unreadAnnouncementsCount), icon: <IconBell />, tone: 'info' },
-          ]}
-        />
+        <section className="card-section">
+          <h2>Où j'en suis</h2>
+          <div className="stat-tiles">
+            <div className="stat-tile">
+              <div className="stat-tile-value" style={{ color: totalBalance < 0 ? 'var(--danger)' : undefined }}>
+                {formatAmount(totalBalance)}
+              </div>
+              <div className="stat-tile-label">Solde global</div>
+            </div>
+            <div className="stat-tile">
+              <div className="stat-tile-value">
+                {averageAttendanceRate != null ? `${(averageAttendanceRate * 100).toFixed(1)}%` : '—'}
+              </div>
+              <div className="stat-tile-label">Taux d'assiduité moyen</div>
+            </div>
+            {data.unreadCommentsCount > 0 && (
+              <div className="stat-tile">
+                <div className="stat-tile-value">{data.unreadCommentsCount}</div>
+                <div className="stat-tile-label">Commentaires non lus</div>
+              </div>
+            )}
+            {data.unreadAnnouncementsCount > 0 && (
+              <div className="stat-tile">
+                <div className="stat-tile-value">{data.unreadAnnouncementsCount}</div>
+                <div className="stat-tile-label">Annonces non lues</div>
+              </div>
+            )}
+          </div>
+        </section>
       )}
       {data.children.length > 0 && <ParentWeekCalendar data={data} />}
-      {data.children.map((child) => (
-        <ChildDetailCard key={child.student.id} child={child} showName={data.multipleChildren} onRefresh={onRefresh} />
-      ))}
+      {data.children.length > 0 && (
+        <section className="card-section">
+          <h2>Mes enfants</h2>
+          <ul className="activity-list">
+            {data.children.map((child) => (
+              <ParentChildSummaryRow key={child.student.id} child={child} />
+            ))}
+          </ul>
+        </section>
+      )}
     </>
   );
 }
@@ -636,6 +602,7 @@ export function DashboardPage() {
   const isParent = currentUser?.roles.includes('PARENT') ?? false;
   const hiddenGroupIds = useMemo(() => readHiddenGroupIds(currentUser?.id), [currentUser?.id]);
 
+  const [displayFirstName, setDisplayFirstName] = useState<string | null>(null);
   const [teacherDashboard, setTeacherDashboard] = useState<TeacherDashboard | null>(null);
   const [parentDashboard, setParentDashboard] = useState<ParentDashboard | null>(null);
   const [adminDashboard, setAdminDashboard] = useState<AdminDashboard | null>(null);
@@ -662,6 +629,30 @@ export function DashboardPage() {
   useEffect(() => {
     loadDashboard();
   }, [loadDashboard]);
+
+  // Prénom pour la salutation d'en-tête — Admin/Super Admin n'en ont pas (identité = e-mail).
+  useEffect(() => {
+    const token = getAccessToken();
+    if (!token) return;
+    let cancelled = false;
+    async function loadDisplayName() {
+      try {
+        if (isTeacher) {
+          const profile = await teacherProfileApi.getMyProfile(token!);
+          if (!cancelled) setDisplayFirstName(profile.firstName);
+        } else if (isParent) {
+          const profile = await parentProfileApi.getMyProfile(token!);
+          if (!cancelled) setDisplayFirstName(profile.firstName);
+        }
+      } catch {
+        // Silencieux : l'en-tête retombe sur "Bonjour"/"Bonsoir" sans nom.
+      }
+    }
+    loadDisplayName();
+    return () => {
+      cancelled = true;
+    };
+  }, [getAccessToken, isTeacher, isParent]);
 
   const cards: DashCard[] = [
     ...(isAdmin
@@ -744,47 +735,16 @@ export function DashboardPage() {
           },
         ]
       : []),
-    ...(isParent
-      ? [
-          {
-            to: '/parent/children',
-            icon: <IconChildren />,
-            title: 'Mes enfants',
-            description: 'Déclarer vos enfants et suivre leur situation scolaire.',
-          },
-          {
-            to: '/parent/groups',
-            icon: <IconSearch />,
-            title: 'Rechercher un groupe',
-            description: 'Trouver un groupe par matière, niveau ou ville.',
-          },
-          {
-            to: '/parent/enrollments',
-            icon: <IconClipboardCheck />,
-            title: "Mes demandes d'inscription",
-            description: "Suivre l'état de vos demandes d'inscription en cours.",
-          },
-          {
-            to: '/parent/pre-enrollments',
-            icon: <IconUserPlus />,
-            title: 'Mes préinscriptions',
-            description: 'Manifester votre intérêt pour la prochaine année académique.',
-          },
-          {
-            to: '/parent/exports',
-            icon: <IconDownload />,
-            title: 'Exporter les données de mes enfants',
-            description: 'Présences, commentaires pédagogiques, comptabilité et paiements en PDF.',
-          },
-        ]
-      : []),
   ];
 
   return (
     <>
       <div className="page-header">
         <div>
-          <h1>Tableau de bord</h1>
+          <h1>
+            {greetingWord()}
+            {displayFirstName ? `, ${displayFirstName}` : ''}
+          </h1>
           <p>
             Connecté en tant que <strong>{currentUser?.email ?? currentUser?.phone}</strong>
           </p>
@@ -809,13 +769,13 @@ export function DashboardPage() {
         <TeacherDashboardView data={teacherDashboard} onRefresh={loadDashboard} hiddenGroupIds={hiddenGroupIds} />
       )}
       {!loadingDashboard && isParent && parentDashboard && (
-        <ParentDashboardView data={parentDashboard} onRefresh={loadDashboard} />
+        <ParentDashboardView data={parentDashboard} />
       )}
       {!loadingDashboard && isAdmin && adminDashboard && <AdminDashboardView data={adminDashboard} />}
 
-      <section className="card-section">
-        <h2>Accès rapide</h2>
-        {cards.length > 0 ? (
+      {cards.length > 0 && (
+        <section className="card-section">
+          <h2>Accès rapide</h2>
           <div className="card-grid">
             {cards.map((card) => (
               <Link key={card.to} to={card.to} className="dash-card">
@@ -825,10 +785,8 @@ export function DashboardPage() {
               </Link>
             ))}
           </div>
-        ) : (
-          <EmptyState title="Aucune action disponible">Votre rôle actuel ne donne accès à aucun raccourci.</EmptyState>
-        )}
-      </section>
+        </section>
+      )}
 
       <p className="debug-toggle">
         <button type="button" className="ghost-link" onClick={() => setShowDebug((v) => !v)}>

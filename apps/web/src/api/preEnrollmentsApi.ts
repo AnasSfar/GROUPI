@@ -161,15 +161,6 @@ export function confirmPreEnrollment(accessToken: string, id: string): Promise<P
   return apiRequest<PreEnrollment>(`/pre-enrollments/${id}/confirm`, { method: 'POST', accessToken });
 }
 
-/** RM-PRE-026 : retrait de la confirmation tant que la demande d'inscription résultante n'a pas
- *  encore été traitée par le Professeur. */
-export function withdrawPreEnrollmentConfirmation(accessToken: string, id: string): Promise<PreEnrollment> {
-  return apiRequest<PreEnrollment>(`/pre-enrollments/${id}/withdraw-confirmation`, {
-    method: 'POST',
-    accessToken,
-  });
-}
-
 export function rejectPreEnrollment(accessToken: string, id: string): Promise<PreEnrollment> {
   return apiRequest<PreEnrollment>(`/pre-enrollments/${id}/reject`, { method: 'POST', accessToken });
 }

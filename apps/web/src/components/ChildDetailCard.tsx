@@ -4,9 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { ApiError } from '../api/client';
 import * as absenceNoticeApi from '../api/absenceNoticeApi';
 import type { ParentChildDashboard } from '../api/dashboardApi';
-import { StatGrid } from './StatGrid';
 import { formatAmount, formatDateTime } from '../utils/format';
-import { IconLayers, IconWallet, IconClipboardCheck } from './icons';
 
 /** Exporté pour être réutilisé par `ChildSubjectsPanel` (Avenant 01, Ch. D.3, niveau 3 "Suivi"). */
 export function AbsenceNoticeButton({
@@ -90,18 +88,24 @@ export function ChildDetailCard({
           {child.student.firstName} {child.student.lastName}
         </h2>
       )}
-      <StatGrid
-        tiles={[
-          { label: 'Groupes suivis', value: String(child.groups.length), icon: <IconLayers />, tone: 'teal' },
-          { label: 'Solde global', value: formatAmount(child.globalBalance), icon: <IconWallet />, tone: child.globalBalance < 0 ? 'red' : 'green' },
-          {
-            label: "Taux d'assiduité",
-            value: child.attendanceSummary.attendanceRate != null ? `${(child.attendanceSummary.attendanceRate * 100).toFixed(1)}%` : '—',
-            icon: <IconClipboardCheck />,
-            tone: 'green',
-          },
-        ]}
-      />
+      <div className="stat-tiles">
+        <div className="stat-tile">
+          <div className="stat-tile-value">{child.groups.length}</div>
+          <div className="stat-tile-label">Groupes suivis</div>
+        </div>
+        <div className="stat-tile">
+          <div className="stat-tile-value" style={{ color: child.globalBalance < 0 ? 'var(--danger)' : undefined }}>
+            {formatAmount(child.globalBalance)}
+          </div>
+          <div className="stat-tile-label">Solde global</div>
+        </div>
+        <div className="stat-tile">
+          <div className="stat-tile-value">
+            {child.attendanceSummary.attendanceRate != null ? `${(child.attendanceSummary.attendanceRate * 100).toFixed(1)}%` : '—'}
+          </div>
+          <div className="stat-tile-label">Taux d'assiduité</div>
+        </div>
+      </div>
 
       <p className="table-hint section-spacer">
         Groupes suivis

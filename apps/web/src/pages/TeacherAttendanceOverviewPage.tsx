@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ApiError } from '../api/client';
 import * as groupsApi from '../api/groupsApi';
@@ -18,6 +18,7 @@ const PERIOD_LABELS: Record<AttendanceStatsPeriod, string> = {
 /** Ch.14.9/14.10/14.11 : vue d'ensemble des présences d'un groupe — statistiques, alertes, registre. */
 export function TeacherAttendanceOverviewPage() {
   const { groupId } = useParams<{ groupId: string }>();
+  const navigate = useNavigate();
   const { getAccessToken } = useAuth();
   const [group, setGroup] = useState<Group | null>(null);
   const [period, setPeriod] = useState<AttendanceStatsPeriod>('GROUP');
@@ -81,7 +82,9 @@ export function TeacherAttendanceOverviewPage() {
           <p>Assiduité, alertes d'abandon et registre officiel de présence du groupe.</p>
         </div>
         <div className="page-actions">
-          <Link to={`/teacher/groups/${groupId}/sessions`}>← Retour aux séances</Link>
+          <button type="button" onClick={() => navigate(`/teacher/groups/${groupId}/sessions`)}>
+            ← Retour aux séances
+          </button>
         </div>
       </div>
 
