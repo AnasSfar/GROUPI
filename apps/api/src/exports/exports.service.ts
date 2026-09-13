@@ -10,7 +10,6 @@ import { DataPortabilityRequest, ExportFormat, ExportJob, ExportType, Prisma } f
 import { PrismaService } from '../prisma/prisma.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { EmailService } from '../email/email.service';
 import { ExportDataBuilder, ExportCriteria } from './export-data.builder';
 import { renderCsv, renderExcel, renderPdf, ExportTableData } from './renderers';
 import { CreateExportDto } from './dto/create-export.dto';
@@ -78,14 +77,8 @@ export class ExportsService {
     private readonly prisma: PrismaService,
     private readonly subscriptions: SubscriptionsService,
     private readonly notifications: NotificationsService,
-    private readonly email: EmailService,
     private readonly builder: ExportDataBuilder,
   ) {}
-
-  private async getUserEmail(userId: string): Promise<string | null> {
-    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { email: true } });
-    return user.email;
-  }
 
   private toCriteria(dto: Partial<CreateExportDto>): ExportCriteria {
     return {
@@ -131,10 +124,6 @@ export class ExportsService {
         priority: 'IMPORTANT',
         title: 'Export refusé',
         body: reason,
-        sendEmail: async () => {
-          const email = await this.getUserEmail(userId);
-          if (email) await this.email.sendExportRefused(email, reason);
-        },
       });
     }
     if (outcome === 'REFUSED_SUBSCRIPTION') {
@@ -267,10 +256,6 @@ export class ExportsService {
         body: `La génération de l'export "${TYPE_LABEL[type]}" a échoué. Merci de réessayer ou de contacter l'administration.`,
         refType: 'ExportJob',
         refId: jobId,
-        sendEmail: async () => {
-          const email = await this.getUserEmail(requestedById);
-          if (email) await this.email.sendExportFailed(email, TYPE_LABEL[type]);
-        },
       });
       await this.writeAudit(requestedById, type, format, this.toCriteria(dto), 'FAILED', (err as Error).message, jobId);
       throw new InternalServerErrorException("Échec de génération de l'export (NOT-EXP-005)");

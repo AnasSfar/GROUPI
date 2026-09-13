@@ -5,6 +5,8 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { PasswordService } from '../src/auth/password.service';
 import { grantActiveSubscription } from './helpers/grant-subscription';
+import { createPendingEnrollmentDirect } from './helpers/create-enrollment';
+import { registerParentDirect } from './helpers/register-parent-direct';
 
 /**
  * E2E tests for the accounting engine (Ch.15 — Le moteur comptable), run against the real
@@ -44,39 +46,46 @@ describe('Accounting (e2e)', () => {
 
   interface Actor {
     id: string;
-    email: string;
+    identifier: string;
     token: string;
   }
 
   async function registerAndActivate(role: 'TEACHER' | 'PARENT', label: string): Promise<Actor> {
-    const email = `e2e-cpt-${role.toLowerCase()}-${label}-${runId}@example.com`;
-    const initialStudent =
-      role === 'PARENT'
-        ? {
-            firstName: 'Kid',
-            lastName: label,
-            schoolLevelId: (
-              await prisma.schoolLevel.findFirstOrThrow({ where: { isActive: true, code: { startsWith: 'PRIM' } } })
-            ).id,
-            schoolId: (await prisma.school.findFirstOrThrow({ where: { isActive: true, type: 'PRIMARY' } })).id,
-          }
-        : undefined;
-    const res = await api()
-      .post('/api/v1/auth/register')
-      .send({
-        email,
+    const identifier = `e2e-cpt-${role.toLowerCase()}-${label}-${runId}`;
+    let userId: string;
+    if (role === 'TEACHER') {
+      const res = await api()
+        .post('/api/v1/auth/register')
+        .send({
+          password,
+          firstName: 'Test',
+          lastName: label,
+          phone: identifier,
+          city: 'Tunis',
+          acceptTerms: true,
+          subjectIds: [subjectId],
+          schoolLevelIds: [schoolLevelId],
+        })
+        .expect(201);
+      userId = res.body.id as string;
+    } else {
+      const parentSchoolLevelId = (
+        await prisma.schoolLevel.findFirstOrThrow({ where: { isActive: true, code: { startsWith: 'PRIM' } } })
+      ).id;
+      const parentSchoolId = (await prisma.school.findFirstOrThrow({ where: { isActive: true, type: 'PRIMARY' } })).id;
+      const created = await registerParentDirect(prisma, {
+        phone: identifier,
         password,
-        role,
         firstName: 'Test',
         lastName: label,
-        phone: '20000000',
         city: 'Tunis',
-        acceptTerms: true,
-        ...(role === 'TEACHER' ? { subjectIds: [subjectId], schoolLevelIds: [schoolLevelId] } : {}),
-        ...(role === 'PARENT' ? { initialStudent } : {}),
-      })
-      .expect(201);
-    const userId = res.body.id as string;
+        studentFirstName: 'Kid',
+        studentLastName: label,
+        schoolLevelId: parentSchoolLevelId,
+        schoolId: parentSchoolId,
+      });
+      userId = created.userId;
+    }
 
     await prisma.user.update({ where: { id: userId }, data: { status: 'ACTIVE' } });
     if (role === 'TEACHER') {
@@ -86,8 +95,8 @@ describe('Accounting (e2e)', () => {
       await prisma.parentProfile.update({ where: { id: userId }, data: { validatedAt: new Date() } });
     }
 
-    const loginRes = await api().post('/api/v1/auth/login').send({ email, password }).expect(200);
-    return { id: userId, email, token: loginRes.body.accessToken as string };
+    const loginRes = await api().post('/api/v1/auth/login').send({ identifier, password }).expect(200);
+    return { id: userId, identifier, token: loginRes.body.accessToken as string };
   }
 
   async function createAdmin(permissions: string[]): Promise<Actor> {
@@ -97,8 +106,17 @@ describe('Accounting (e2e)', () => {
       data: { email, passwordHash, status: 'ACTIVE', roles: ['ADMIN'] },
     });
     await prisma.administrator.create({ data: { id: user.id, permissions, createdById: user.id } });
-    const loginRes = await api().post('/api/v1/auth/login').send({ email, password }).expect(200);
-    return { id: user.id, email, token: loginRes.body.accessToken as string };
+    const loginRes = await api().post('/api/v1/auth/login').send({ identifier: email, password }).expect(200);
+    return { id: user.id, identifier: email, token: loginRes.body.accessToken as string };
+  }
+
+  const SCHEDULE_DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY'] as const;
+  let scheduleSeq = 0;
+  function nextSchedule() {
+    const seq = scheduleSeq++;
+    const dayOfWeek = SCHEDULE_DAYS[seq % SCHEDULE_DAYS.length];
+    const hour = 8 + (Math.floor(seq / SCHEDULE_DAYS.length) % 12);
+    return { dayOfWeek, startTime: `${String(hour).padStart(2, '0')}:00`, durationMinutes: 60 };
   }
 
   async function createOpenGroup(
@@ -121,7 +139,7 @@ describe('Accounting (e2e)', () => {
         debtAlertThresholdSessions: opts.debtAlertThresholdSessions ?? 4,
         visibilityWhenFull: 'VISIBLE',
         startDate: isoDate(addDays(today, -30)),
-        schedules: [{ dayOfWeek: 'MONDAY', startTime: '18:00', durationMinutes: 60 }],
+        schedules: [nextSchedule()],
       })
       .expect(201);
     const openRes = await api()
@@ -140,18 +158,14 @@ describe('Accounting (e2e)', () => {
     return res.body;
   }
 
-  async function enrollAndAccept(parentToken: string, teacherToken: string, studentId: string, groupId: string) {
-    const reqRes = await api()
-      .post('/api/v1/enrollments')
-      .set('Authorization', `Bearer ${parentToken}`)
-      .send({ studentId, groupId })
-      .expect(201);
+  async function enrollAndAccept(_parentToken: string, teacherToken: string, studentId: string, groupId: string) {
+    const reqRes = await createPendingEnrollmentDirect(prisma, studentId, groupId);
     await api()
-      .post(`/api/v1/groups/${groupId}/enrollments/${reqRes.body.id}/accept`)
+      .post(`/api/v1/groups/${groupId}/enrollments/${reqRes.id}/accept`)
       .set('Authorization', `Bearer ${teacherToken}`)
       .send({})
       .expect(201);
-    return reqRes.body.id as string;
+    return reqRes.id as string;
   }
 
   async function createSession(teacherToken: string, groupId: string, date: Date): Promise<any> {
@@ -270,12 +284,14 @@ describe('Accounting (e2e)', () => {
     await prisma.userSession.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.passwordResetToken.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.emailVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
+    await prisma.phoneVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.subscription.deleteMany({ where: { teacherId: { in: teacherIds } } });
     await prisma.teacherSubject.deleteMany({ where: { teacherProfileId: { in: teacherIds } } });
     await prisma.teacherSchoolLevel.deleteMany({ where: { teacherProfileId: { in: teacherIds } } });
     await prisma.teacherProfile.deleteMany({ where: { id: { in: teacherIds } } });
     await prisma.parentProfile.deleteMany({ where: { id: { in: parentIds } } });
     await prisma.administrator.deleteMany({ where: { id: admin.id } });
+    await prisma.userDevice.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.user.deleteMany({ where: { id: { in: userIds } } });
 
     await app.close();
@@ -682,6 +698,18 @@ describe('Accounting (e2e)', () => {
       expect(typeof teacherRes.body.realizedRevenue).toBe('number');
       expect(typeof teacherRes.body.forecastRevenue).toBe('number');
 
+      // Avenant 01, Ch. E.1/E.5 (RM-DSH-050) : seules "mois en cours" et "année académique en
+      // cours" sont exposées — le "trimestre en cours" a disparu de l'API.
+      expect(Object.keys(teacherRes.body.periodRevenue).sort()).toEqual([
+        'currentAcademicYear',
+        'currentMonth',
+      ]);
+      for (const period of ['currentMonth', 'currentAcademicYear']) {
+        expect(typeof teacherRes.body.periodRevenue[period].forecastRevenue).toBe('number');
+        expect(typeof teacherRes.body.periodRevenue[period].realizedRevenue).toBe('number');
+        expect(typeof teacherRes.body.periodRevenue[period].collectedRevenue).toBe('number');
+      }
+
       const groupRes = await api()
         .get(`/api/v1/groups/${group.id}/accounting/indicators`)
         .set('Authorization', `Bearer ${teacher.token}`)
@@ -693,6 +721,68 @@ describe('Accounting (e2e)', () => {
         .get(`/api/v1/groups/${group.id}/accounting/indicators`)
         .set('Authorization', `Bearer ${outsider.token}`)
         .expect(403);
+    });
+  });
+
+  describe("Avenant 01, Ch. E.3 (RM-CAL-050) : exclusion des groupes de niveau du CA prévisionnel", () => {
+    it('a LEVEL_POOL group never contributes to forecastRevenue, even with an active enrollment and a planned session', async () => {
+      const before = await api()
+        .get('/api/v1/teacher/accounting/indicators')
+        .set('Authorization', `Bearer ${teacher.token}`)
+        .expect(200);
+
+      // Un groupe de niveau réel n'a jamais ni tarif, ni séance, ni inscription (RM-POOL-002) :
+      // cet état est délibérément non conforme au référentiel, pour vérifier que le filtre
+      // défensif `kind = STANDARD` du moteur comptable exclut bien ce groupe même si des données
+      // de ce type existaient (bug ailleurs, migration, etc.) — publicPrice volontairement élevé
+      // pour qu'une fuite du filtre soit détectable.
+      const levelPoolGroup = await prisma.group.create({
+        data: {
+          teacherId: teacher.id,
+          schoolLevelId,
+          academicYearId,
+          name: `E2E-CPT-${runId} Salle d'attente (test)`,
+          capacity: 0,
+          publicPrice: 999,
+          teachingMode: 'PRESENTIAL',
+          absenceBillingPolicy: 'ALL_BILLED',
+          visibilityWhenFull: 'VISIBLE',
+          startDate: addDays(today, -30),
+          status: 'ACTIVE',
+          kind: 'LEVEL_POOL',
+        },
+      });
+      const s = await createStudent(parent1.token, `S-Pool-${runId}`);
+      const enrollment = await prisma.enrollment.create({
+        data: { studentId: s.id, groupId: levelPoolGroup.id, status: 'ACTIVE', requestedAt: new Date() },
+      });
+      await prisma.session.create({
+        data: {
+          groupId: levelPoolGroup.id,
+          date: addDays(today, 3),
+          startTime: '10:00',
+          durationMinutes: 60,
+          teachingMode: 'PRESENTIAL',
+          status: 'PLANNED',
+        },
+      });
+
+      const after = await api()
+        .get('/api/v1/teacher/accounting/indicators')
+        .set('Authorization', `Bearer ${teacher.token}`)
+        .expect(200);
+
+      expect(after.body.forecastRevenue).toBe(before.body.forecastRevenue);
+      expect(after.body.periodRevenue.currentMonth.forecastRevenue).toBe(
+        before.body.periodRevenue.currentMonth.forecastRevenue,
+      );
+      expect(after.body.periodRevenue.currentAcademicYear.forecastRevenue).toBe(
+        before.body.periodRevenue.currentAcademicYear.forecastRevenue,
+      );
+
+      await prisma.session.deleteMany({ where: { groupId: levelPoolGroup.id } });
+      await prisma.enrollment.delete({ where: { id: enrollment.id } });
+      await prisma.group.delete({ where: { id: levelPoolGroup.id } });
     });
   });
 

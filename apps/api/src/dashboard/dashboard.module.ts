@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
-import { EmailModule } from '../email/email.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AccountingModule } from '../accounting/accounting.module';
 import { AttendanceModule } from '../attendance/attendance.module';
@@ -12,9 +11,13 @@ import { ParentDashboardController } from './parent-dashboard.controller';
 import { AdminDashboardController } from './admin-dashboard.controller';
 import { AbsenceNoticeController } from './absence-notice.controller';
 
-/** Ch.16 : tableaux de bord par rôle — agrège des domaines déjà construits, ne les remplace pas. */
+/**
+ * Ch.16 : tableaux de bord par rôle — agrège des domaines déjà construits, ne les remplace pas.
+ * Avenant 01, Ch. I.4/I.7 : `EmailModule` retiré (`AbsenceNoticeService` ne dépend plus que de
+ * `NotificationsService`, in-app uniquement).
+ */
 @Module({
-  imports: [AuthModule, EmailModule, NotificationsModule, AccountingModule, AttendanceModule, SubscriptionsModule],
+  imports: [AuthModule, NotificationsModule, AccountingModule, AttendanceModule, SubscriptionsModule],
   controllers: [TeacherDashboardController, ParentDashboardController, AdminDashboardController, AbsenceNoticeController],
   providers: [DashboardService, AbsenceNoticeService],
 })

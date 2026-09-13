@@ -32,6 +32,16 @@ export class ParentProfileController {
   }
 
 
+  /**
+   * Avenant 01, Ch. D.3, RM-POOL-010/RM-PAR-023 : rattachements actifs de mes enfants en salle
+   * d'attente, sans inscription standard correspondante chez ce même Professeur — alimente l'entrée
+   * "En attente d'affectation" du niveau 2 de la navigation Parent (`ParentChildrenPage`).
+   */
+  @Get('me/pending-assignments')
+  listPendingAssignments(@CurrentUser() user: AuthenticatedUser) {
+    return this.parentProfile.listPendingLevelPoolAssignments(user.id);
+  }
+
   @Get('me/school-requests')
   listSchoolAdditionRequests(@CurrentUser() user: AuthenticatedUser) {
     return this.parentProfile.listSchoolAdditionRequests(user.id);

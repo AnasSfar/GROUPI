@@ -1,7 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { AcademicYearStatus, ActivityPriority, DayOfWeek, GroupStatus, SessionStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { EmailService } from '../email/email.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { GroupsService } from '../groups/groups.service';
@@ -158,7 +157,6 @@ export class SessionsService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly email: EmailService,
     private readonly notifications: NotificationsService,
     private readonly subscriptions: SubscriptionsService,
     private readonly groups: GroupsService,
@@ -169,25 +167,24 @@ export class SessionsService {
    * (exceptionnelle), NOT-SES-003 (annulée), NOT-SES-004 (mode d'enseignement), NOT-SES-007/018
    * (reportée), NOT-SES-016 (commentaire). Même forme de requête que `AttendanceService.validate`
    * (`enrollment.findMany({ status: 'ACTIVE' })` joint au Parent).
+   *
+   * Avenant 01, Ch. I.4/I.7 (RM-NOT-050/051) : `build` ne renvoie plus de `sendEmail` (in-app
+   * uniquement, plus de fallback e-mail) — signature simplifiée en conséquence.
    */
   private async notifyGroupParents(
     groupId: string,
-    build: (
-      groupName: string,
-      parentEmail: string,
-    ) => { type: string; title: string; body: string; sendEmail?: () => Promise<void> },
+    build: (groupName: string) => { type: string; title: string; body: string },
     priority: ActivityPriority = 'IMPORTANT',
   ): Promise<void> {
     const [group, enrollments] = await Promise.all([
       this.prisma.group.findUniqueOrThrow({ where: { id: groupId }, select: { name: true } }),
       this.prisma.enrollment.findMany({
         where: { groupId, status: 'ACTIVE' },
-        include: { student: { select: { parentId: true, parent: { select: { user: { select: { email: true } } } } } } },
+        select: { studentId: true, student: { select: { parentId: true } } },
       }),
     ]);
+    const { type, title, body } = build(group.name);
     for (const e of enrollments) {
-      const parentEmail = e.student.parent.user.email;
-      const { type, title, body, sendEmail } = build(group.name, parentEmail ?? '');
       await this.notifications.notify({
         recipientUserId: e.student.parentId,
         type,
@@ -196,7 +193,6 @@ export class SessionsService {
         body,
         refType: 'Group',
         refId: groupId,
-        sendEmail: parentEmail ? sendEmail : undefined,
       });
     }
   }
@@ -491,11 +487,10 @@ export class SessionsService {
     ]);
 
     // NOT-SES-001 : hors chemin critique — un échec de notification ne doit jamais annuler la création.
-    await this.notifyGroupParents(groupId, (groupName, parentEmail) => ({
+    await this.notifyGroupParents(groupId, (groupName) => ({
       type: 'SES_EXCEPTIONAL_CREATED',
       title: 'Nouvelle séance exceptionnelle',
       body: `Une séance exceptionnelle a été ajoutée au groupe "${groupName}" le ${date.toLocaleDateString('fr-FR')} à ${dto.startTime}.`,
-      sendEmail: () => this.email.sendSessionExceptional(parentEmail, groupName, date, dto.startTime),
     }));
 
     return this.toResponse(session);
@@ -599,13 +594,11 @@ export class SessionsService {
       return newSession;
     });
 
-    // NOT-SES-007+018 : fusionnées en une seule notification par parent pour cette action atomique
-    // (voir le commentaire de `EmailService.sendSessionPostponed`).
-    await this.notifyGroupParents(session.groupId, (groupName, parentEmail) => ({
+    // NOT-SES-007+018 : fusionnées en une seule notification par parent pour cette action atomique.
+    await this.notifyGroupParents(session.groupId, (groupName) => ({
       type: 'SES_POSTPONED',
       title: 'Séance reportée',
       body: `La séance du groupe "${groupName}" prévue le ${session.date.toLocaleDateString('fr-FR')} a été reportée au ${newDate.toLocaleDateString('fr-FR')} à ${dto.startTime}.`,
-      sendEmail: () => this.email.sendSessionPostponed(parentEmail, groupName, session.date, newDate, dto.startTime),
     }));
 
     return this.toResponse(created);
@@ -644,11 +637,10 @@ export class SessionsService {
     });
 
     // NOT-SES-003 : hors chemin critique — un échec de notification ne doit jamais annuler l'annulation.
-    await this.notifyGroupParents(session.groupId, (groupName, parentEmail) => ({
+    await this.notifyGroupParents(session.groupId, (groupName) => ({
       type: 'SES_CANCELLED',
       title: 'Séance annulée',
       body: `La séance du groupe "${groupName}" prévue le ${session.date.toLocaleDateString('fr-FR')} à ${session.startTime} a été annulée.`,
-      sendEmail: () => this.email.sendSessionCancelled(parentEmail, groupName, session.date, session.startTime),
     }));
 
     return this.toResponse(updated);
@@ -732,12 +724,10 @@ export class SessionsService {
 
     // NOT-SES-004/RM-SES-011/044 : chaque Parent du groupe est immédiatement informé.
     const newModeLabel = MODE_LABELS[dto.teachingMode];
-    await this.notifyGroupParents(session.groupId, (groupName, parentEmail) => ({
+    await this.notifyGroupParents(session.groupId, (groupName) => ({
       type: 'SES_TEACHING_MODE_CHANGED',
       title: 'Changement exceptionnel du mode d’enseignement',
       body: `La séance du groupe "${groupName}" du ${session.date.toLocaleDateString('fr-FR')} à ${session.startTime} passe exceptionnellement en ${newModeLabel}.`,
-      sendEmail: () =>
-        this.email.sendSessionTeachingModeChanged(parentEmail, groupName, session.date, session.startTime, newModeLabel),
     }));
 
     return this.toResponse(updated);

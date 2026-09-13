@@ -1,17 +1,16 @@
-import { ConflictException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { createHash } from 'crypto';
 import { AuthService } from './auth.service';
 import { PasswordService } from './password.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { EmailService } from '../email/email.service';
 import { SmsService } from '../sms/sms.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { TeacherProfileService } from '../teacher-profile/teacher-profile.service';
 
 /**
- * Unit tests for AuthService. PrismaService, JwtService, PasswordService and EmailService are
+ * Unit tests for AuthService. PrismaService, JwtService, PasswordService and SmsService are
  * all mocked — no real database or crypto work happens here (Argon2 hashing is expensive and is
  * exercised for real in the e2e suite instead).
  */
@@ -87,6 +86,12 @@ function makePrismaMock() {
       update: jest.fn(),
       findUnique: jest.fn(),
     },
+    levelPoolMembership: {
+      findFirst: jest.fn(),
+    },
+    enrollment: {
+      findFirst: jest.fn(),
+    },
     loginHistory: {
       create: jest.fn(),
       count: jest.fn(),
@@ -108,7 +113,6 @@ describe('AuthService', () => {
   let jwt: { signAsync: jest.Mock };
   let config: { get: jest.Mock; getOrThrow: jest.Mock };
   let password: { hash: jest.Mock; verify: jest.Mock };
-  let email: { sendPasswordResetEmail: jest.Mock; sendEmailVerification: jest.Mock };
   let sms: { sendPhoneVerification: jest.Mock; sendAccountLocked: jest.Mock; sendPasswordResetSms: jest.Mock };
   let notifications: { notify: jest.Mock };
   let teacherProfile: { assertSubjectLevelSelectionValid: jest.Mock };
@@ -137,10 +141,6 @@ describe('AuthService', () => {
       getOrThrow: jest.fn((key: string) => configDefaults[key]),
     };
     password = { hash: jest.fn(), verify: jest.fn() };
-    email = {
-      sendPasswordResetEmail: jest.fn().mockResolvedValue(undefined),
-      sendEmailVerification: jest.fn().mockResolvedValue(undefined),
-    };
     sms = {
       sendPhoneVerification: jest.fn().mockResolvedValue(undefined),
       sendAccountLocked: jest.fn().mockResolvedValue(undefined),
@@ -154,7 +154,6 @@ describe('AuthService', () => {
       jwt as unknown as JwtService,
       config as unknown as ConfigService,
       password as unknown as PasswordService,
-      email as unknown as EmailService,
       sms as unknown as SmsService,
       notifications as unknown as NotificationsService,
       teacherProfile as unknown as TeacherProfileService,
@@ -167,12 +166,11 @@ describe('AuthService', () => {
   // register
   // ---------------------------------------------------------------------
   describe('register', () => {
-    it('creates a User + TeacherProfile for role TEACHER', async () => {
+    it('creates a User + TeacherProfile (self-registration is Teacher-only, Avenant 01 Ch. A.2/D.2)', async () => {
       prisma.user.findFirst.mockResolvedValue(null);
       password.hash.mockResolvedValue('hashed-pw');
       prisma.user.create.mockResolvedValue({
         id: 'user-1',
-        email: 'teacher@example.com',
         phone: '20000000',
         status: 'PENDING_VALIDATION',
       });
@@ -181,9 +179,7 @@ describe('AuthService', () => {
       prisma.schoolLevel.findMany.mockResolvedValue([{ id: 'level-1' }]);
 
       const result = await service.register({
-        email: 'teacher@example.com',
         password: 'password123',
-        role: 'TEACHER',
         firstName: 'Jane',
         lastName: 'Doe',
         phone: '20000000',
@@ -196,7 +192,6 @@ describe('AuthService', () => {
       expect(prisma.user.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
-            email: 'teacher@example.com',
             phone: '20000000',
             passwordHash: 'hashed-pw',
             status: 'PENDING_VALIDATION',
@@ -212,63 +207,17 @@ describe('AuthService', () => {
       expect(prisma.parentProfile.create).not.toHaveBeenCalled();
       expect(result).toEqual({
         id: 'user-1',
-        email: 'teacher@example.com',
         phone: '20000000',
         status: 'PENDING_VALIDATION',
       });
     });
 
-    it('creates a User + ParentProfile for role PARENT', async () => {
-      prisma.user.findFirst.mockResolvedValue(null);
-      password.hash.mockResolvedValue('hashed-pw');
-      prisma.user.create.mockResolvedValue({
-        id: 'user-2',
-        email: 'parent@example.com',
-        phone: '20000001',
-        status: 'ACTIVE',
-      });
-      prisma.parentProfile.create.mockResolvedValue({ id: 'user-2' });
-      prisma.schoolLevel.findUnique.mockResolvedValue({
-        id: 'level-1',
-        isActive: true,
-        code: 'PRIM1',
-      });
-      prisma.school.findUnique.mockResolvedValue({ id: 'school-1', isActive: true, type: 'PRIMARY' });
-      prisma.academicYear.findFirst.mockResolvedValue({ id: 'year-1', status: 'OPEN' });
-      prisma.student.create.mockResolvedValue({ id: 'student-1' });
-      prisma.studentSchoolSituation.create.mockResolvedValue({ id: 'situation-1' });
-
-      await service.register({
-        email: 'parent@example.com',
-        password: 'password123',
-        role: 'PARENT',
-        firstName: 'John',
-        lastName: 'Smith',
-        phone: '20000001',
-        city: 'Sfax',
-        acceptTerms: true,
-        initialStudent: {
-          firstName: 'Kid',
-          lastName: 'Smith',
-          schoolLevelId: 'level-1',
-          schoolId: 'school-1',
-        },
-      } as any);
-
-      expect(prisma.parentProfile.create).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ id: 'user-2', validatedAt: expect.any(Date) }) }),
-      );
-      expect(prisma.teacherProfile.create).not.toHaveBeenCalled();
-    });
-
-    it('rejects a duplicate email with ConflictException', async () => {
-      prisma.user.findFirst.mockResolvedValue({ id: 'existing', email: 'dup@example.com' });
+    it('rejects a duplicate phone with ConflictException', async () => {
+      prisma.user.findFirst.mockResolvedValue({ id: 'existing', phone: '1' });
 
       await expect(
         service.register({
-          email: 'dup@example.com',
           password: 'password123',
-          role: 'TEACHER',
           firstName: 'A',
           lastName: 'B',
           phone: '1',
@@ -286,7 +235,7 @@ describe('AuthService', () => {
   describe('login', () => {
     const baseUser = {
       id: 'user-1',
-      email: 'a@example.com',
+      phone: '20000000',
       passwordHash: 'hashed',
       status: 'ACTIVE',
       failedLoginAttempts: 0,
@@ -301,7 +250,7 @@ describe('AuthService', () => {
       prisma.userSession.create.mockResolvedValue({});
 
       const tokens = await service.login(
-        { identifier: baseUser.email, password: 'correct' } as any,
+        { identifier: baseUser.phone, password: 'correct' } as any,
         meta,
       );
 
@@ -323,15 +272,15 @@ describe('AuthService', () => {
       password.verify.mockResolvedValue(false);
 
       await expect(
-        service.login({ identifier: baseUser.email, password: 'wrong' } as any, meta),
+        service.login({ identifier: baseUser.phone, password: 'wrong' } as any, meta),
       ).rejects.toBeInstanceOf(UnauthorizedException);
     });
 
-    it('rejects unknown email', async () => {
+    it('rejects unknown phone', async () => {
       prisma.user.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.login({ identifier: 'nobody@example.com', password: 'x' } as any, meta),
+        service.login({ identifier: '00000000', password: 'x' } as any, meta),
       ).rejects.toBeInstanceOf(UnauthorizedException);
     });
 
@@ -341,7 +290,7 @@ describe('AuthService', () => {
         prisma.user.findFirst.mockResolvedValue({ ...baseUser, status });
 
         await expect(
-          service.login({ identifier: baseUser.email, password: 'whatever' } as any, meta),
+          service.login({ identifier: baseUser.phone, password: 'whatever' } as any, meta),
         ).rejects.toBeInstanceOf(UnauthorizedException);
 
         expect(password.verify).not.toHaveBeenCalled();
@@ -352,7 +301,7 @@ describe('AuthService', () => {
       prisma.user.findFirst.mockResolvedValue({ ...baseUser, deletedAt: new Date() });
 
       await expect(
-        service.login({ identifier: baseUser.email, password: 'whatever' } as any, meta),
+        service.login({ identifier: baseUser.phone, password: 'whatever' } as any, meta),
       ).rejects.toBeInstanceOf(UnauthorizedException);
 
       expect(password.verify).not.toHaveBeenCalled();
@@ -363,7 +312,7 @@ describe('AuthService', () => {
       prisma.user.findFirst.mockResolvedValue({ ...baseUser, lockedUntil: future });
 
       await expect(
-        service.login({ identifier: baseUser.email, password: 'correct' } as any, meta),
+        service.login({ identifier: baseUser.phone, password: 'correct' } as any, meta),
       ).rejects.toBeInstanceOf(UnauthorizedException);
 
       expect(password.verify).not.toHaveBeenCalled();
@@ -376,7 +325,7 @@ describe('AuthService', () => {
       prisma.userSession.create.mockResolvedValue({});
 
       await expect(
-        service.login({ identifier: baseUser.email, password: 'correct' } as any, meta),
+        service.login({ identifier: baseUser.phone, password: 'correct' } as any, meta),
       ).resolves.toBeDefined();
     });
   });
@@ -387,7 +336,7 @@ describe('AuthService', () => {
   describe('failed login attempts and lockout', () => {
     const baseUser = {
       id: 'user-1',
-      email: 'a@example.com',
+      phone: '20000000',
       passwordHash: 'hashed',
       status: 'ACTIVE',
       lockedUntil: null,
@@ -400,7 +349,7 @@ describe('AuthService', () => {
       password.verify.mockResolvedValue(false);
 
       await expect(
-        service.login({ identifier: baseUser.email, password: 'wrong' } as any, meta),
+        service.login({ identifier: baseUser.phone, password: 'wrong' } as any, meta),
       ).rejects.toBeInstanceOf(UnauthorizedException);
 
       expect(prisma.user.update).toHaveBeenCalledWith(
@@ -416,7 +365,7 @@ describe('AuthService', () => {
       password.verify.mockResolvedValue(false);
 
       await expect(
-        service.login({ identifier: baseUser.email, password: 'wrong' } as any, meta),
+        service.login({ identifier: baseUser.phone, password: 'wrong' } as any, meta),
       ).rejects.toBeInstanceOf(UnauthorizedException);
 
       expect(prisma.user.update).toHaveBeenCalledWith(
@@ -434,7 +383,7 @@ describe('AuthService', () => {
       password.verify.mockResolvedValue(false);
 
       await expect(
-        service.login({ identifier: baseUser.email, password: 'wrong' } as any, meta),
+        service.login({ identifier: baseUser.phone, password: 'wrong' } as any, meta),
       ).rejects.toBeInstanceOf(UnauthorizedException);
 
       expect(prisma.loginHistory.create).toHaveBeenCalledWith(
@@ -706,6 +655,69 @@ describe('AuthService', () => {
         where: { userId: 'user-1', revokedAt: null },
         data: { revokedAt: expect.any(Date) },
       });
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // generateAssistedResetLink (Avenant 01, Ch. I.3)
+  // ---------------------------------------------------------------------
+  describe('generateAssistedResetLink', () => {
+    const target = {
+      id: 'parent-1',
+      phone: '20000002',
+      status: 'ACTIVE',
+      deletedAt: null,
+      roles: ['PARENT'],
+    };
+    const admin = { id: 'admin-1', roles: ['ADMIN'] } as any;
+    const teacher = { id: 'teacher-1', roles: ['TEACHER'] } as any;
+
+    it('lets an Administrator reset any account', async () => {
+      prisma.user.findUnique.mockResolvedValue(target);
+
+      const result = await service.generateAssistedResetLink(admin, target.id);
+
+      expect(result.token).toEqual(expect.any(String));
+      expect(result.url).toContain(result.token);
+      expect(prisma.passwordResetToken.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ userId: target.id }) }),
+      );
+      expect(prisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ userId: admin.id, action: 'PASSWORD_RESET_LINK_ASSISTED', targetId: target.id }),
+        }),
+      );
+    });
+
+    it('lets a Teacher reset a Parent linked via a level pool', async () => {
+      prisma.user.findUnique.mockResolvedValue(target);
+      prisma.levelPoolMembership.findFirst.mockResolvedValue({ id: 'membership-1' });
+      prisma.enrollment.findFirst.mockResolvedValue(null);
+
+      const result = await service.generateAssistedResetLink(teacher, target.id);
+
+      expect(result.token).toEqual(expect.any(String));
+    });
+
+    it('forbids a Teacher from resetting a Parent with no link to them', async () => {
+      prisma.user.findUnique.mockResolvedValue(target);
+      prisma.levelPoolMembership.findFirst.mockResolvedValue(null);
+      prisma.enrollment.findFirst.mockResolvedValue(null);
+
+      await expect(service.generateAssistedResetLink(teacher, target.id)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.passwordResetToken.create).not.toHaveBeenCalled();
+    });
+
+    it('forbids a Teacher from resetting a non-Parent account', async () => {
+      prisma.user.findUnique.mockResolvedValue({ ...target, roles: ['TEACHER'] });
+
+      await expect(service.generateAssistedResetLink(teacher, target.id)).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('rejects an unknown target account', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+
+      await expect(service.generateAssistedResetLink(admin, 'nope')).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 });

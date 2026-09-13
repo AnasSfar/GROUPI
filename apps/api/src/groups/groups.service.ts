@@ -4,7 +4,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateGroupDto } from './dto/create-group.dto';
 import { UpdateGroupDto } from './dto/update-group.dto';
-import { SearchGroupsQueryDto } from './dto/search-groups-query.dto';
 import { PauseGenerationDto } from './dto/pause-generation.dto';
 import { DuplicateGroupDto } from './dto/duplicate-group.dto';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
@@ -27,9 +26,10 @@ const INCLUDE_DETAILS = {
   schoolLevel: true,
   academicYear: true,
   // RM-TPR-013 : bio/photo/expérience/lieux d'enseignement/disponibilités sont des informations
-  // publiques du profil Professeur — exposées ici pour que la recherche de groupe côté Parent
-  // (search(), plus bas) les affiche. Téléphone/historique/abonnement restent privés (jamais
-  // sélectionnés).
+  // publiques du profil Professeur — exposées ici pour la vue Professeur (listMine/getOne/create/
+  // update/duplicate, plus bas). Téléphone/historique/abonnement restent privés (jamais sélectionnés).
+  // Avenant 01, Ch. D.2 : la recherche publique de groupes par le Parent (`search()`) qui réutilisait
+  // aussi ces champs a été retirée (RM-PAR-020) — ce commentaire ne la mentionne plus.
   teacher: {
     select: {
       firstName: true,
@@ -85,7 +85,9 @@ export class GroupsService {
 
   async listMine(teacherId: string) {
     return this.prisma.group.findMany({
-      where: { teacherId },
+      // Avenant 01, RM-POOL-009 : un groupe de niveau (salle d'attente) n'apparaît jamais dans une
+      // liste de groupes standard — son propre espace est « Salles d'attente » (module `level-pools`).
+      where: { teacherId, kind: 'STANDARD' },
       include: { ...INCLUDE_DETAILS, _count: { select: { enrollments: true } } },
       orderBy: { createdAt: 'desc' },
     });
@@ -228,6 +230,12 @@ export class GroupsService {
     if (source.status === 'ARCHIVED') {
       throw new BadRequestException('Duplication d’un groupe archivé impossible (ERR-GRP-011)');
     }
+    // Avenant 01, RM-POOL-009 : une salle d'attente n'a pas de matière propre et n'est jamais
+    // manipulée via les endpoints groupe standard.
+    if (source.kind !== 'STANDARD' || !source.subjectId) {
+      throw new BadRequestException('Un groupe de niveau (salle d’attente) ne peut pas être dupliqué (RM-POOL-009)');
+    }
+    const subjectId = source.subjectId;
 
     const academicYearId = dto.academicYearId ?? source.academicYearId;
     if (dto.academicYearId && dto.academicYearId !== source.academicYearId) {
@@ -243,7 +251,7 @@ export class GroupsService {
     // autorisée depuis sa création — revérifiée avant toute duplication.
     const subjectLevel = await this.prisma.subjectLevel.findUnique({
       where: {
-        subjectId_schoolLevelId: { subjectId: source.subjectId, schoolLevelId: source.schoolLevelId },
+        subjectId_schoolLevelId: { subjectId, schoolLevelId: source.schoolLevelId },
       },
     });
     if (!subjectLevel || !subjectLevel.isAllowed || !subjectLevel.isActive) {
@@ -267,7 +275,7 @@ export class GroupsService {
     await this.assertLocationsOwned(teacherId, scheduleInputs);
     await this.assertNoDuplicateSchedule(
       teacherId,
-      source.subjectId,
+      subjectId,
       source.schoolLevelId,
       academicYearId,
       scheduleInputs,
@@ -277,7 +285,7 @@ export class GroupsService {
       const group = await tx.group.create({
         data: {
           teacherId,
-          subjectId: source.subjectId,
+          subjectId,
           schoolLevelId: source.schoolLevelId,
           academicYearId,
           name,
@@ -382,6 +390,13 @@ export class GroupsService {
     if (group.status === 'ARCHIVED') {
       throw new BadRequestException('Groupe archivé : modification impossible (ERR-GRP-010)');
     }
+    // Avenant 01, RM-POOL-009 : une salle d'attente n'a ni planning ni tarif propre et n'est
+    // jamais manipulée via les endpoints groupe standard.
+    if (group.kind !== 'STANDARD') {
+      throw new BadRequestException(
+        'Un groupe de niveau (salle d’attente) ne peut pas être modifié via cet endpoint (RM-POOL-009)',
+      );
+    }
 
     if (dto.endDate && new Date(dto.endDate) < group.startDate) {
       throw new BadRequestException('Date de fin antérieure à la date de début (ERR-GRP-021)');
@@ -403,6 +418,9 @@ export class GroupsService {
 
       nextSubjectId = dto.subjectId ?? group.subjectId;
       nextSchoolLevelId = dto.schoolLevelId ?? group.schoolLevelId;
+      if (!nextSubjectId || !nextSchoolLevelId) {
+        throw new BadRequestException('Groupe sans matière/niveau (réservé aux salles d’attente, RM-POOL-009)');
+      }
       if (dto.subjectId !== undefined || dto.schoolLevelId !== undefined) {
         const subjectLevel = await this.prisma.subjectLevel.findUnique({
           where: {
@@ -796,71 +814,5 @@ export class GroupsService {
     });
 
     return { id: groupId, deleted: true };
-  }
-
-  /** Ch.10.5/10.6 : recherche publique par les Parents — champs publics uniquement. */
-  async search(parentId: string, query: SearchGroupsQueryDto) {
-    const students = await this.prisma.student.findMany({
-      where: {
-        parentId,
-        status: 'ACTIVE',
-        currentSchoolSituation: { is: { status: 'ACTIVE' } },
-      },
-      select: { currentSchoolSituation: { select: { schoolLevelId: true } } },
-    });
-    const allowedSchoolLevelIds = [
-      ...new Set(students.map((s) => s.currentSchoolSituation?.schoolLevelId).filter(Boolean)),
-    ] as string[];
-
-    if (allowedSchoolLevelIds.length === 0) {
-      return [];
-    }
-    if (query.schoolLevelId && !allowedSchoolLevelIds.includes(query.schoolLevelId)) {
-      return [];
-    }
-
-    const groups = await this.prisma.group.findMany({
-      where: {
-        status: { in: ['ACTIVE', 'FULL'] },
-        ...(query.subjectId ? { subjectId: query.subjectId } : {}),
-        schoolLevelId: query.schoolLevelId ?? { in: allowedSchoolLevelIds },
-        // RM-INS-007 : mode d'enseignement et nom du Professeur, en plus des filtres déjà existants.
-        ...(query.teachingMode ? { teachingMode: query.teachingMode } : {}),
-        teacher: {
-          status: 'VALIDATED',
-          user: { status: 'ACTIVE' },
-          ...(query.city ? { city: query.city } : {}),
-          ...(query.teacherName
-            ? {
-                OR: [
-                  { firstName: { contains: query.teacherName, mode: 'insensitive' } },
-                  { lastName: { contains: query.teacherName, mode: 'insensitive' } },
-                ],
-              }
-            : {}),
-        },
-      },
-      include: { ...INCLUDE_DETAILS, _count: { select: { enrollments: true } } },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    return groups
-      .filter((g) => g.status === 'ACTIVE' || g.visibilityWhenFull === 'VISIBLE')
-      .map((g) => ({
-        id: g.id,
-        name: g.name,
-        subject: g.subject,
-        schoolLevel: g.schoolLevel,
-        academicYear: g.academicYear,
-        teacher: g.teacher,
-        publicPrice: g.publicPrice,
-        teachingMode: g.teachingMode,
-        absenceBillingPolicy: g.absenceBillingPolicy,
-        hasAvailableSpots: g._count.enrollments < g.capacity,
-        status: g.status,
-        schedules: g.schedules,
-        startDate: g.startDate,
-        endDate: g.endDate,
-      }));
   }
 }

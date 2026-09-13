@@ -5,6 +5,8 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { PasswordService } from '../src/auth/password.service';
 import { grantActiveSubscription } from './helpers/grant-subscription';
+import { createPendingEnrollmentDirect } from './helpers/create-enrollment';
+import { registerParentDirect } from './helpers/register-parent-direct';
 
 /**
  * E2E tests for the dashboards module (Ch.16 — Les tableaux de bord), run against the real
@@ -42,39 +44,46 @@ describe('Dashboards (e2e)', () => {
 
   interface Actor {
     id: string;
-    email: string;
+    identifier: string;
     token: string;
   }
 
   async function registerAndActivate(role: 'TEACHER' | 'PARENT', label: string, skipSubscription = false): Promise<Actor> {
-    const email = `e2e-dsh-${role.toLowerCase()}-${label}-${runId}@example.com`;
-    const initialStudent =
-      role === 'PARENT'
-        ? {
-            firstName: 'Kid',
-            lastName: label,
-            schoolLevelId: (
-              await prisma.schoolLevel.findFirstOrThrow({ where: { isActive: true, code: { startsWith: 'PRIM' } } })
-            ).id,
-            schoolId: (await prisma.school.findFirstOrThrow({ where: { isActive: true, type: 'PRIMARY' } })).id,
-          }
-        : undefined;
-    const res = await api()
-      .post('/api/v1/auth/register')
-      .send({
-        email,
+    const identifier = `e2edsh-${role.toLowerCase()}-${label}-${runId}`;
+    let userId: string;
+    if (role === 'TEACHER') {
+      const res = await api()
+        .post('/api/v1/auth/register')
+        .send({
+          password,
+          firstName: 'Test',
+          lastName: label,
+          phone: identifier,
+          city: 'Tunis',
+          acceptTerms: true,
+          subjectIds: [subjectId],
+          schoolLevelIds: [schoolLevelId],
+        })
+        .expect(201);
+      userId = res.body.id as string;
+    } else {
+      const parentSchoolLevelId = (
+        await prisma.schoolLevel.findFirstOrThrow({ where: { isActive: true, code: { startsWith: 'PRIM' } } })
+      ).id;
+      const parentSchoolId = (await prisma.school.findFirstOrThrow({ where: { isActive: true, type: 'PRIMARY' } })).id;
+      const created = await registerParentDirect(prisma, {
+        phone: identifier,
         password,
-        role,
         firstName: 'Test',
         lastName: label,
-        phone: '20000000',
         city: 'Tunis',
-        acceptTerms: true,
-        ...(role === 'TEACHER' ? { subjectIds: [subjectId], schoolLevelIds: [schoolLevelId] } : {}),
-        ...(role === 'PARENT' ? { initialStudent } : {}),
-      })
-      .expect(201);
-    const userId = res.body.id as string;
+        studentFirstName: 'Kid',
+        studentLastName: label,
+        schoolLevelId: parentSchoolLevelId,
+        schoolId: parentSchoolId,
+      });
+      userId = created.userId;
+    }
 
     await prisma.user.update({ where: { id: userId }, data: { status: 'ACTIVE' } });
     if (role === 'TEACHER') {
@@ -84,8 +93,8 @@ describe('Dashboards (e2e)', () => {
       await prisma.parentProfile.update({ where: { id: userId }, data: { validatedAt: new Date() } });
     }
 
-    const loginRes = await api().post('/api/v1/auth/login').send({ email, password }).expect(200);
-    return { id: userId, email, token: loginRes.body.accessToken as string };
+    const loginRes = await api().post('/api/v1/auth/login').send({ identifier, password }).expect(200);
+    return { id: userId, identifier, token: loginRes.body.accessToken as string };
   }
 
   /** Découverte (isTrial) active — statistiques/export doivent rester indisponibles (RM-DSH-011/012). */
@@ -112,16 +121,25 @@ describe('Dashboards (e2e)', () => {
     const passwordHash = await passwordService.hash(password);
     const user = await prisma.user.create({ data: { email, passwordHash, status: 'ACTIVE', roles: ['ADMIN'] } });
     await prisma.administrator.create({ data: { id: user.id, permissions, createdById: user.id } });
-    const loginRes = await api().post('/api/v1/auth/login').send({ email, password }).expect(200);
-    return { id: user.id, email, token: loginRes.body.accessToken as string };
+    const loginRes = await api().post('/api/v1/auth/login').send({ identifier: email, password }).expect(200);
+    return { id: user.id, identifier: email, token: loginRes.body.accessToken as string };
   }
 
   async function createSuperAdmin(label: string): Promise<Actor> {
     const email = `e2e-dsh-superadmin-${label}-${runId}@example.com`;
     const passwordHash = await passwordService.hash(password);
     const user = await prisma.user.create({ data: { email, passwordHash, status: 'ACTIVE', roles: ['SUPER_ADMIN'] } });
-    const loginRes = await api().post('/api/v1/auth/login').send({ email, password }).expect(200);
-    return { id: user.id, email, token: loginRes.body.accessToken as string };
+    const loginRes = await api().post('/api/v1/auth/login').send({ identifier: email, password }).expect(200);
+    return { id: user.id, identifier: email, token: loginRes.body.accessToken as string };
+  }
+
+  const SCHEDULE_DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY'] as const;
+  let scheduleSeq = 0;
+  function nextSchedule() {
+    const seq = scheduleSeq++;
+    const dayOfWeek = SCHEDULE_DAYS[seq % SCHEDULE_DAYS.length];
+    const hour = 8 + (Math.floor(seq / SCHEDULE_DAYS.length) % 12);
+    return { dayOfWeek, startTime: `${String(hour).padStart(2, '0')}:00`, durationMinutes: 60 };
   }
 
   async function createOpenGroup(
@@ -145,7 +163,7 @@ describe('Dashboards (e2e)', () => {
         debtAlertThresholdSessions: opts.debtAlertThresholdSessions ?? 1,
         visibilityWhenFull: 'VISIBLE',
         startDate: isoDate(addDays(today, -30)),
-        schedules: [{ dayOfWeek: 'MONDAY', startTime: '18:00', durationMinutes: 60 }],
+        schedules: [nextSchedule()],
       })
       .expect(201);
     const openRes = await api()
@@ -164,18 +182,14 @@ describe('Dashboards (e2e)', () => {
     return res.body;
   }
 
-  async function enrollAndAccept(parentToken: string, teacherToken: string, studentId: string, groupId: string) {
-    const reqRes = await api()
-      .post('/api/v1/enrollments')
-      .set('Authorization', `Bearer ${parentToken}`)
-      .send({ studentId, groupId })
-      .expect(201);
+  async function enrollAndAccept(_parentToken: string, teacherToken: string, studentId: string, groupId: string) {
+    const reqRes = await createPendingEnrollmentDirect(prisma, studentId, groupId);
     await api()
-      .post(`/api/v1/groups/${groupId}/enrollments/${reqRes.body.id}/accept`)
+      .post(`/api/v1/groups/${groupId}/enrollments/${reqRes.id}/accept`)
       .set('Authorization', `Bearer ${teacherToken}`)
       .send({})
       .expect(201);
-    return reqRes.body.id as string;
+    return reqRes.id as string;
   }
 
   async function createSession(teacherToken: string, groupId: string, date: Date, startTime = '08:00'): Promise<any> {
@@ -203,7 +217,7 @@ describe('Dashboards (e2e)', () => {
   let teacher2: Actor; // Découverte actif, statistiques/export indisponibles
   let parent1: Actor; // deux enfants
   let parent2: Actor; // un enfant, non lié aux groupes de teacher1
-  let pendingUser: { id: string; email: string };
+  let pendingUser: { id: string; identifier: string };
   let adminNoPerm: Actor;
   let adminFullPerm: Actor;
   let superAdmin: Actor;
@@ -246,22 +260,21 @@ describe('Dashboards (e2e)', () => {
     parent1 = await registerAndActivate('PARENT', `p1-${runId}`);
     parent2 = await registerAndActivate('PARENT', `p2-${runId}`);
 
+    const pendingPhone = `e2edsh-pending-${runId}`;
     const pendingRes = await api()
       .post('/api/v1/auth/register')
       .send({
-        email: `e2e-dsh-pending-${runId}@example.com`,
         password,
-        role: 'TEACHER',
         firstName: 'Pending',
         lastName: 'User',
-        phone: '20000000',
+        phone: pendingPhone,
         city: 'Tunis',
         acceptTerms: true,
         subjectIds: [subjectId],
         schoolLevelIds: [schoolLevelId],
       })
       .expect(201);
-    pendingUser = { id: pendingRes.body.id, email: `e2e-dsh-pending-${runId}@example.com` };
+    pendingUser = { id: pendingRes.body.id, identifier: pendingPhone };
 
     adminNoPerm = await createAdmin('none', []);
     adminFullPerm = await createAdmin('full', ['ACC_VALIDATE', 'SCH_VALIDATE', 'ABO_VALIDATE', 'AUDIT_VIEW']);
@@ -352,11 +365,13 @@ describe('Dashboards (e2e)', () => {
     await prisma.userSession.deleteMany({ where: { userId: { in: allUserIds } } });
     await prisma.passwordResetToken.deleteMany({ where: { userId: { in: allUserIds } } });
     await prisma.emailVerificationToken.deleteMany({ where: { userId: { in: allUserIds } } });
+    await prisma.phoneVerificationToken.deleteMany({ where: { userId: { in: allUserIds } } });
     await prisma.teacherSubject.deleteMany({ where: { teacherProfileId: { in: [...teacherIds, pendingUser.id] } } });
     await prisma.teacherSchoolLevel.deleteMany({ where: { teacherProfileId: { in: [...teacherIds, pendingUser.id] } } });
     await prisma.teacherProfile.deleteMany({ where: { id: { in: [...teacherIds, pendingUser.id] } } });
     await prisma.parentProfile.deleteMany({ where: { id: { in: parentIds } } });
     await prisma.administrator.deleteMany({ where: { id: { in: adminIds } } });
+    await prisma.userDevice.deleteMany({ where: { userId: { in: allUserIds } } });
     await prisma.user.deleteMany({ where: { id: { in: allUserIds } } });
 
     await app.close();
@@ -372,6 +387,13 @@ describe('Dashboards (e2e)', () => {
       expect(res.body.activity.activeGroupsCount).toBeGreaterThanOrEqual(2);
       expect(res.body.activity.totalActiveStudents).toBeGreaterThanOrEqual(2);
       expect(typeof res.body.accounting.forecastRevenue).toBe('number');
+
+      // Avenant 01, Ch. E.1/E.5 (RM-DSH-050) : seules "mois en cours" et "année académique en
+      // cours" sont exposées sur le tableau de bord Professeur — plus de "trimestre en cours".
+      expect(Object.keys(res.body.accounting.periodRevenue).sort()).toEqual([
+        'currentAcademicYear',
+        'currentMonth',
+      ]);
 
       const groups: any[] = res.body.groups;
       const needsStudents = groups.find((g) => g.id === groupNeedsStudents);
@@ -541,7 +563,7 @@ describe('Dashboards (e2e)', () => {
 
       const res = await api().get('/api/v1/dashboard/admin').set('Authorization', `Bearer ${adminFullPerm.token}`).expect(200);
       expect(res.body.pendingAccountValidations).not.toBeNull();
-      expect(res.body.pendingAccountValidations.some((u: any) => u.email === pendingUser.email)).toBe(true);
+      expect(res.body.pendingAccountValidations.some((u: any) => u.phone === pendingUser.identifier)).toBe(true);
       expect(res.body.subscriptions).not.toBeNull();
       expect(res.body.subscriptions.pendingPaymentCount).toBeGreaterThanOrEqual(1);
       expect(res.body.auditLog).not.toBeNull();

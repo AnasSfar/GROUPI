@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   UnauthorizedException,
@@ -9,7 +10,6 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { randomBytes, randomInt, createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { EmailService } from '../email/email.service';
 import { SmsService } from '../sms/sms.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PasswordService } from './password.service';
@@ -19,18 +19,11 @@ import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
-import { VerifyEmailDto } from './dto/verify-email.dto';
-import { VerifyPhoneDto } from './dto/verify-phone.dto';
 import { AddRoleDto } from './dto/add-role.dto';
+import type { AuthenticatedUser } from './strategies/jwt.strategy';
 
 const NON_AUTHENTICABLE_STATUSES = new Set(['SUSPENDED', 'DISABLED', 'ARCHIVED']);
 
-
-function expectedSchoolTypeForLevelCode(code: string): 'PRIMARY' | 'COLLEGE' | 'HIGH_SCHOOL' {
-  if (code.startsWith('PRIM')) return 'PRIMARY';
-  if (code.startsWith('COL')) return 'COLLEGE';
-  return 'HIGH_SCHOOL';
-}
 interface RequestMeta {
   userAgent?: string;
   ipAddress?: string;
@@ -50,29 +43,24 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly password: PasswordService,
-    private readonly email: EmailService,
     private readonly sms: SmsService,
     private readonly notifications: NotificationsService,
     private readonly teacherProfile: TeacherProfileService,
   ) {}
 
-  /** Ch.3.6-3.7 : auto-inscription Professeur/Parent. Seuls les Professeurs attendent une validation admin. */
+  /**
+   * Ch.3.6-3.7, Avenant 01 Ch. A.2/D.2 : auto-inscription — désormais réservée au Professeur (le
+   * Parent n'entre plus dans GROUPI que via un lien d'invitation, voir `ParentInvitationsService.accept`).
+   */
   async register(dto: RegisterDto) {
-    // RM-SEC-001 : le téléphone est l'identifiant obligatoire ; l'email reste un contact facultatif.
-    const email = dto.email?.trim() || null;
     const phone = dto.phone.trim();
     if (!phone) {
       throw new BadRequestException('Le numéro de téléphone est obligatoire');
     }
 
-    const identifierConflicts: { email?: string; phone?: string }[] = [];
-    if (email) identifierConflicts.push({ email });
-    if (phone) identifierConflicts.push({ phone });
-    const existing = identifierConflicts.length
-      ? await this.prisma.user.findFirst({ where: { OR: identifierConflicts } })
-      : null;
+    const existing = await this.prisma.user.findFirst({ where: { phone } });
     if (existing) {
-      throw new ConflictException('Un compte existe déjà avec cet identifiant (ERR-ACC-008)');
+      throw new ConflictException('Un compte existe déjà avec ce numéro de téléphone (ERR-ACC-008)');
     }
 
     // Ch.9.5, ERR-SEC-013 : conditions d'utilisation obligatoires à l'inscription.
@@ -85,121 +73,53 @@ export class AuthService {
     const user = await this.prisma.$transaction(async (tx) => {
       const created = await tx.user.create({
         data: {
-          email,
           phone,
           passwordHash,
-          status: dto.role === 'TEACHER' ? 'PENDING_VALIDATION' : 'ACTIVE',
-          roles: [dto.role],
+          status: 'PENDING_VALIDATION',
+          roles: ['TEACHER'],
           acceptedTermsAt: new Date(),
         },
       });
 
-      if (dto.role === 'TEACHER') {
-        await tx.teacherProfile.create({
-          data: {
-            id: created.id,
-            firstName: dto.firstName,
-            lastName: dto.lastName,
-            phone: dto.phone,
-            city: dto.city,
-            status: 'DRAFT',
-          },
-        });
+      await tx.teacherProfile.create({
+        data: {
+          id: created.id,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          phone: dto.phone,
+          city: dto.city,
+          status: 'DRAFT',
+        },
+      });
 
-        // RM-TPR-001/002 : matières et niveaux obligatoires dès la création, choisis dans les référentiels officiels.
-        const [subjects, schoolLevels] = await Promise.all([
-          tx.subject.findMany({ where: { id: { in: dto.subjectIds }, isActive: true } }),
-          tx.schoolLevel.findMany({ where: { id: { in: dto.schoolLevelIds }, isActive: true } }),
-        ]);
-        if (subjects.length !== new Set(dto.subjectIds).size) {
-          throw new BadRequestException('Une ou plusieurs matières sélectionnées sont introuvables ou inactives');
-        }
-        if (schoolLevels.length !== new Set(dto.schoolLevelIds).size) {
-          throw new BadRequestException(
-            'Un ou plusieurs niveaux scolaires sélectionnés sont introuvables ou inactifs',
-          );
-        }
-        // RM-TPR-008 : la compatibilité Matière/Niveau (référentiel SubjectLevel) est vérifiée dès
-        // la création du profil, pas seulement en modification ultérieure.
-        await this.teacherProfile.assertSubjectLevelSelectionValid(dto.subjectIds, dto.schoolLevelIds);
-
-        await tx.teacherSubject.createMany({
-          data: dto.subjectIds.map((subjectId) => ({ teacherProfileId: created.id, subjectId })),
-        });
-        await tx.teacherSchoolLevel.createMany({
-          data: dto.schoolLevelIds.map((schoolLevelId) => ({ teacherProfileId: created.id, schoolLevelId })),
-        });
-      } else {
-        await tx.parentProfile.create({
-          data: {
-            id: created.id,
-            firstName: dto.firstName,
-            lastName: dto.lastName,
-            phone: dto.phone,
-            city: dto.city,
-            validatedAt: new Date(),
-          },
-        });
-
-        const initialStudent = dto.initialStudent;
-        const [schoolLevel, school, academicYear] = await Promise.all([
-          tx.schoolLevel.findUnique({ where: { id: initialStudent.schoolLevelId } }),
-          tx.school.findUnique({ where: { id: initialStudent.schoolId } }),
-          tx.academicYear.findFirst({ where: { status: 'OPEN' }, orderBy: { startDate: 'desc' } }),
-        ]);
-        if (!schoolLevel || !schoolLevel.isActive) {
-          throw new BadRequestException('Niveau scolaire introuvable ou inactif');
-        }
-        if (!school || !school.isActive) {
-          throw new BadRequestException('Établissement introuvable ou inactif (ERR-PAR-002)');
-        }
-        const expectedSchoolType = expectedSchoolTypeForLevelCode(schoolLevel.code);
-        if (school.type !== expectedSchoolType) {
-          throw new BadRequestException('Cet établissement ne correspond pas au niveau scolaire sélectionné');
-        }
-        if (!academicYear) {
-          throw new BadRequestException('Aucune année académique ouverte');
-        }
-
-        const student = await tx.student.create({
-          data: {
-            parentId: created.id,
-            firstName: initialStudent.firstName,
-            lastName: initialStudent.lastName,
-            dateOfBirth: initialStudent.dateOfBirth ? new Date(initialStudent.dateOfBirth) : null,
-            status: 'ACTIVE',
-          },
-        });
-
-        const situation = await tx.studentSchoolSituation.create({
-          data: {
-            studentId: student.id,
-            academicYearId: academicYear.id,
-            schoolLevelId: initialStudent.schoolLevelId,
-            schoolId: initialStudent.schoolId,
-            class: initialStudent.schoolClass,
-            startDate: new Date(),
-          },
-        });
-
-        await tx.student.update({
-          where: { id: student.id },
-          data: { currentSchoolSituationId: situation.id },
-        });
+      // RM-TPR-001/002 : matières et niveaux obligatoires dès la création, choisis dans les référentiels officiels.
+      const [subjects, schoolLevels] = await Promise.all([
+        tx.subject.findMany({ where: { id: { in: dto.subjectIds }, isActive: true } }),
+        tx.schoolLevel.findMany({ where: { id: { in: dto.schoolLevelIds }, isActive: true } }),
+      ]);
+      if (subjects.length !== new Set(dto.subjectIds).size) {
+        throw new BadRequestException('Une ou plusieurs matières sélectionnées sont introuvables ou inactives');
       }
+      if (schoolLevels.length !== new Set(dto.schoolLevelIds).size) {
+        throw new BadRequestException(
+          'Un ou plusieurs niveaux scolaires sélectionnés sont introuvables ou inactifs',
+        );
+      }
+      // RM-TPR-008 : la compatibilité Matière/Niveau (référentiel SubjectLevel) est vérifiée dès
+      // la création du profil, pas seulement en modification ultérieure.
+      await this.teacherProfile.assertSubjectLevelSelectionValid(dto.subjectIds, dto.schoolLevelIds);
+
+      await tx.teacherSubject.createMany({
+        data: dto.subjectIds.map((subjectId) => ({ teacherProfileId: created.id, subjectId })),
+      });
+      await tx.teacherSchoolLevel.createMany({
+        data: dto.schoolLevelIds.map((schoolLevelId) => ({ teacherProfileId: created.id, schoolLevelId })),
+      });
 
       return created;
     });
 
-    // Hors chemin critique (Ch.24) : un échec d'envoi ne doit jamais bloquer l'inscription.
-    if (user.email) {
-      await this.sendVerificationEmail(user.id, user.email);
-    }
-    if (user.phone) {
-      await this.sendVerificationSms(user.id, user.phone);
-    }
-
-    return { id: user.id, email: user.email, phone: user.phone, status: user.status };
+    return { id: user.id, phone: user.phone, status: user.status };
   }
 
   private generateNumericCode(length = 6): string {
@@ -210,124 +130,17 @@ export class AuthService {
     return code;
   }
 
-  /**
-   * Ch.9.5, ERR-SEC-012 : e-mail de vérification — n'invalide jamais l'accès (voir `login`, qui
-   * ne consulte pas `emailVerifiedAt`) ; simple infrastructure pour que le champ, jusqu'ici mort,
-   * soit réellement renseigné quand l'utilisateur clique le lien.
-   */
-  private async sendVerificationEmail(userId: string, email: string): Promise<void> {
-    const ttlMinutes = this.config.get<number>('EMAIL_VERIFICATION_TTL_MINUTES', 60 * 24);
-    const rawToken = randomBytes(32).toString('hex');
+  // Avenant 01, Ch. I.9 (RM-SEC-052) : `sendVerificationEmail`/`resendVerificationEmail`/`verifyEmail`
+  // (Ch.9.5 V1.0) retirés avec le canal e-mail — `EmailVerificationToken` reste en base (inerte,
+  // même décision que pour `User.email`) plutôt que de déclencher une nouvelle migration.
+  //
+  // Ch. I.2 : même sort pour `sendVerificationSms`/`resendVerificationSms`/`verifyPhone` — en V1.1
+  // le numéro n'est plus vérifié par un code (I.2.1), seul le format/l'unicité comptent à
+  // l'inscription (`register`). `PhoneVerificationToken` reste en base, non utilisé (I.2.4).
 
-    await this.prisma.$transaction([
-      this.prisma.emailVerificationToken.updateMany({
-        where: { userId, usedAt: null },
-        data: { usedAt: new Date() },
-      }),
-      this.prisma.emailVerificationToken.create({
-        data: {
-          userId,
-          tokenHash: this.hashToken(rawToken),
-          expiresAt: new Date(Date.now() + ttlMinutes * 60_000),
-        },
-      }),
-    ]);
-
-    await this.email.sendEmailVerification(email, rawToken);
-  }
-
-  async resendVerificationEmail(userId: string): Promise<void> {
-    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
-    if (!user.email) {
-      throw new BadRequestException("Ce compte n'a pas d'adresse e-mail à vérifier");
-    }
-    if (user.emailVerifiedAt) {
-      throw new BadRequestException('Cette adresse e-mail est déjà vérifiée');
-    }
-    await this.sendVerificationEmail(user.id, user.email);
-  }
-
-  /** Ch.9.5, ERR-SEC-012 : lien à usage unique, même schéma que `resetPassword`. */
-  async verifyEmail(dto: VerifyEmailDto): Promise<void> {
-    const tokenHash = this.hashToken(dto.token);
-    const verificationToken = await this.prisma.emailVerificationToken.findUnique({ where: { tokenHash } });
-
-    if (!verificationToken || verificationToken.usedAt || verificationToken.expiresAt < new Date()) {
-      throw new BadRequestException('Lien de vérification invalide ou expiré');
-    }
-
-    await this.prisma.$transaction([
-      this.prisma.emailVerificationToken.update({
-        where: { id: verificationToken.id },
-        data: { usedAt: new Date() },
-      }),
-      this.prisma.user.update({
-        where: { id: verificationToken.userId },
-        data: { emailVerifiedAt: new Date() },
-      }),
-    ]);
-  }
-
-  /**
-   * RM-SEC-001, Ch.9.5 — équivalent de `sendVerificationEmail` pour un compte dont l'identifiant
-   * (ou le moyen de contact complémentaire) est un numéro de téléphone : un code numérique court
-   * envoyé par SMS, plutôt qu'un token long pensé pour un lien cliquable.
-   */
-  private async sendVerificationSms(userId: string, phone: string): Promise<void> {
-    const ttlMinutes = this.config.get<number>('EMAIL_VERIFICATION_TTL_MINUTES', 60 * 24);
-    const code = this.generateNumericCode();
-
-    await this.prisma.$transaction([
-      this.prisma.phoneVerificationToken.updateMany({
-        where: { userId, usedAt: null },
-        data: { usedAt: new Date() },
-      }),
-      this.prisma.phoneVerificationToken.create({
-        data: {
-          userId,
-          tokenHash: this.hashToken(code),
-          expiresAt: new Date(Date.now() + ttlMinutes * 60_000),
-        },
-      }),
-    ]);
-
-    await this.sms.sendPhoneVerification(phone, code);
-  }
-
-  async resendVerificationSms(userId: string): Promise<void> {
-    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
-    if (!user.phone) {
-      throw new BadRequestException("Ce compte n'a pas de numéro de téléphone à vérifier");
-    }
-    if (user.phoneVerifiedAt) {
-      throw new BadRequestException('Ce numéro de téléphone est déjà vérifié');
-    }
-    await this.sendVerificationSms(user.id, user.phone);
-  }
-
-  /** Ch.9.5 — code à usage unique, même schéma que `verifyEmail`. */
-  async verifyPhone(dto: VerifyPhoneDto): Promise<void> {
-    const tokenHash = this.hashToken(dto.code);
-    const verificationToken = await this.prisma.phoneVerificationToken.findUnique({ where: { tokenHash } });
-
-    if (!verificationToken || verificationToken.usedAt || verificationToken.expiresAt < new Date()) {
-      throw new BadRequestException('Code de vérification invalide ou expiré');
-    }
-
-    await this.prisma.$transaction([
-      this.prisma.phoneVerificationToken.update({
-        where: { id: verificationToken.id },
-        data: { usedAt: new Date() },
-      }),
-      this.prisma.user.update({
-        where: { id: verificationToken.userId },
-        data: { phoneVerifiedAt: new Date() },
-      }),
-    ]);
-  }
-
-  /** §9.2, RM-SEC-001/016/024/026/027 : identifiant email OU téléphone, vérifie statut + verrouillage
-   * avant tout essai de mot de passe. */
+  /** §9.2, RM-SEC-001 : identifiant du compte — téléphone pour Professeur/Parent (Avenant 01
+   * Ch. I.1, e-mail retiré), e-mail pour Administrateur/Super Admin (Ch. H, hors périmètre de
+   * l'avenant). Vérifie statut + verrouillage avant tout essai de mot de passe. */
   async login(dto: LoginDto, meta: RequestMeta): Promise<TokenPair> {
     const user = await this.prisma.user.findFirst({
       where: { OR: [{ email: dto.identifier }, { phone: dto.identifier }] },
@@ -346,7 +159,7 @@ export class AuthService {
 
     const passwordValid = await this.password.verify(user.passwordHash, dto.password);
     if (!passwordValid) {
-      await this.recordFailedAttempt(user.id, user.email, user.phone, user.failedLoginAttempts, meta);
+      await this.recordFailedAttempt(user.id, user.failedLoginAttempts, meta);
       throw new UnauthorizedException('Identifiants invalides');
     }
 
@@ -471,8 +284,6 @@ export class AuthService {
    */
   private async recordFailedAttempt(
     userId: string,
-    email: string | null,
-    phone: string | null,
     currentAttempts: number,
     meta: RequestMeta,
   ) {
@@ -509,14 +320,6 @@ export class AuthService {
         body: `Votre compte a été verrouillé ${lockoutMinutes} minutes après ${maxAttempts} tentatives de connexion échouées. Si ce n'était pas vous, changez votre mot de passe dès que possible.`,
         refType: 'User',
         refId: userId,
-        // RM-CYC-014 : verrouillage = notification critique, désormais aussi envoyée par e-mail
-        // (auparavant activité en-app uniquement). Pour un compte identifié par téléphone (RM-SEC-001,
-        // pas d'adresse e-mail), le même hook `sendEmail` sert d'envoi hors-bande best-effort par SMS.
-        sendEmail: email
-          ? () => this.email.sendAccountLocked(email, lockoutMinutes, maxAttempts)
-          : phone
-            ? () => this.sms.sendAccountLocked(phone, lockoutMinutes, maxAttempts)
-            : undefined,
       });
     }
   }
@@ -651,8 +454,10 @@ export class AuthService {
     ]);
   }
 
-  /** RM-SEC-001/004/005/015 : identifiant email OU téléphone ; invalide les liens/codes précédents,
-   * lien/code à usage unique valable 15 min. */
+  /** RM-SEC-001/004/005/015 : identifiant e-mail (Admin, Ch. H) ou téléphone (Professeur/Parent,
+   * Ch. I.1) ; invalide les codes précédents, code à usage unique valable 15 min, envoyé par SMS
+   * best-effort quand un téléphone existe (aucun canal garanti — voir aussi le reset assisté par
+   * un Professeur/Admin, Ch. I.3, `generateAssistedResetLink`). */
   async forgotPassword(dto: ForgotPasswordDto): Promise<void> {
     const user = await this.prisma.user.findFirst({
       where: { OR: [{ email: dto.identifier }, { phone: dto.identifier }] },
@@ -661,14 +466,9 @@ export class AuthService {
       return; // ne révèle pas si l'identifiant existe
     }
 
-    // Réinitialisation via le numéro de téléphone dès lors que c'est ce numéro qui a été saisi
-    // (que le téléphone soit l'identifiant principal du compte ou un simple moyen de contact) —
-    // sinon, comportement historique par e-mail.
-    const viaPhone = user.phone !== null && user.phone === dto.identifier;
     const ttlMinutes = this.config.get<number>('PASSWORD_RESET_TTL_MINUTES', 15);
-    // RM-SEC-004/005/015 : un code par SMS reste court (numérique) — un token hexadécimal long,
-    // pensé pour un lien cliquable par e-mail, serait impraticable à recopier depuis un SMS.
-    const rawToken = viaPhone ? this.generateNumericCode() : randomBytes(32).toString('hex');
+    // RM-SEC-004/005/015 : un code par SMS reste court (numérique), recopiable facilement.
+    const rawToken = this.generateNumericCode();
 
     await this.prisma.$transaction([
       this.prisma.passwordResetToken.updateMany({
@@ -684,11 +484,83 @@ export class AuthService {
       }),
     ]);
 
-    if (viaPhone && user.phone) {
+    // Avenant 01, Ch. I.9/I.7 (RM-SEC-052, décision #7 option A) : aucun canal gratuit garanti —
+    // best-effort seulement (stub en l'absence de fournisseur SMS configuré, voir `SmsService`).
+    if (user.phone) {
       await this.sms.sendPasswordResetSms(user.phone, rawToken);
-    } else if (user.email) {
-      await this.email.sendPasswordResetEmail(user.email, rawToken);
     }
+  }
+
+  /**
+   * Ch. I.3 (reset assisté) : sans canal d'envoi automatique garanti, un Professeur (pour l'un de
+   * ses Parents rattachés/inscrits) ou un Administrateur (pour n'importe quel compte) peut générer
+   * un lien de réinitialisation à usage unique, affiché à l'écran et transmis hors bande (WhatsApp,
+   * en personne...). Même modèle `PasswordResetToken` qu'un reset auto-déclenché ; jeton hexadécimal
+   * long (lien cliquable), pas un code court, puisqu'il n'est jamais recopié depuis un SMS.
+   */
+  async generateAssistedResetLink(
+    actingUser: AuthenticatedUser,
+    targetUserId: string,
+  ): Promise<{ token: string; url: string; expiresAt: Date }> {
+    const target = await this.prisma.user.findUnique({ where: { id: targetUserId } });
+    if (!target) {
+      throw new BadRequestException('Compte introuvable');
+    }
+    if (target.deletedAt || NON_AUTHENTICABLE_STATUSES.has(target.status)) {
+      throw new BadRequestException('Ce compte ne peut pas se connecter, la réinitialisation est inutile');
+    }
+
+    const isAdmin = actingUser.roles.includes('ADMIN') || actingUser.roles.includes('SUPER_ADMIN');
+    if (!isAdmin) {
+      if (!actingUser.roles.includes('TEACHER') || !target.roles.includes('PARENT')) {
+        throw new ForbiddenException(
+          "Seul un Administrateur peut réinitialiser le mot de passe d'un compte qui n'est pas un Parent",
+        );
+      }
+      const [viaPool, viaEnrollment] = await Promise.all([
+        this.prisma.levelPoolMembership.findFirst({
+          where: { student: { parentId: target.id }, group: { teacherId: actingUser.id } },
+        }),
+        this.prisma.enrollment.findFirst({
+          where: { student: { parentId: target.id }, group: { teacherId: actingUser.id } },
+        }),
+      ]);
+      if (!viaPool && !viaEnrollment) {
+        throw new ForbiddenException(
+          "Ce Parent n'a aucun enfant rattaché ou inscrit chez vous : vous ne pouvez pas réinitialiser son mot de passe",
+        );
+      }
+    }
+
+    const ttlMinutes = this.config.get<number>('PASSWORD_RESET_TTL_MINUTES', 15);
+    const rawToken = randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + ttlMinutes * 60_000);
+
+    await this.prisma.$transaction([
+      this.prisma.passwordResetToken.updateMany({
+        where: { userId: target.id, usedAt: null },
+        data: { usedAt: new Date() },
+      }),
+      this.prisma.passwordResetToken.create({
+        data: { userId: target.id, tokenHash: this.hashToken(rawToken), expiresAt },
+      }),
+      this.prisma.auditLog.create({
+        data: {
+          userId: actingUser.id,
+          action: 'PASSWORD_RESET_LINK_ASSISTED',
+          targetType: 'User',
+          targetId: target.id,
+        },
+      }),
+    ]);
+
+    return { token: rawToken, url: this.publicResetUrlFor(rawToken), expiresAt };
+  }
+
+  private publicResetUrlFor(rawToken: string): string {
+    const base =
+      this.config.get<string>('PUBLIC_APP_URL') ?? this.config.get<string>('CORS_ORIGIN') ?? 'http://localhost:5173';
+    return `${base.replace(/\/$/, '')}/reset-password?token=${rawToken}`;
   }
 
   /** RM-SEC-019 : la réinitialisation invalide immédiatement toutes les sessions actives. */
@@ -951,7 +823,7 @@ export class AuthService {
       const updated = await tx.user.update({
         where: { id: userId },
         data: { roles: { push: dto.role } },
-        select: { id: true, email: true, status: true, roles: true },
+        select: { id: true, phone: true, status: true, roles: true },
       });
 
       await tx.auditLog.create({

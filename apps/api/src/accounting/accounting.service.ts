@@ -10,7 +10,6 @@ import {
   Prisma,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { EmailService } from '../email/email.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { isLockable } from '../sessions/sessions.service';
 import { RecordPaymentDto } from './dto/record-payment.dto';
@@ -27,10 +26,6 @@ function round3(n: number): number {
 
 function daysBetween(from: Date, to: Date): number {
   return Math.max(0, Math.round((to.getTime() - from.getTime()) / 86_400_000));
-}
-
-function startOfUtcDay(date: Date): Date {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 }
 
 const ACCOUNT_INCLUDE = {
@@ -81,7 +76,6 @@ export class AccountingService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly email: EmailService,
     private readonly notifications: NotificationsService,
   ) {}
 
@@ -728,7 +722,8 @@ export class AccountingService {
       throw new BadRequestException('Ce compte ne présente aucune dette à rappeler');
     }
 
-    const parentEmail = account.enrollment.student.parent.user.email;
+    // Avenant 01, Ch. I.4/I.7 (RM-NOT-050/051) : notification in-app uniquement, plus d'envoi e-mail
+    // (EmailService/module email/ retirés) — voir MessagingService.
     await this.notifications.notify({
       recipientUserId: account.enrollment.student.parentId,
       type: 'CPT_PAYMENT_REMINDER',
@@ -737,14 +732,6 @@ export class AccountingService {
       body: `Solde débiteur de ${Math.abs(balance).toFixed(3)} TND pour ${account.enrollment.student.firstName} ${account.enrollment.student.lastName} (groupe "${account.enrollment.group.name}").`,
       refType: 'AccountingAccount',
       refId: account.id,
-      sendEmail: parentEmail
-        ? () =>
-            this.email.sendPaymentReminder(
-              parentEmail,
-              `${account.enrollment.student.firstName} ${account.enrollment.student.lastName}`,
-              Math.abs(balance),
-            )
-        : undefined,
     });
     return { sent: true, balance };
   }
@@ -1041,40 +1028,76 @@ export class AccountingService {
     return delays;
   }
 
-  /** RM-CPT-014 : séances PLANNED futures × tarif appliqué, pour les inscriptions ACTIVE du groupe. */
-  private currentRevenuePeriods(now = new Date()) {
+  /**
+   * Avenant 01, Ch. E.2/RM-DSH-051 : "année en cours" = bornes `[startDate ; endDate]` de l'année
+   * académique `OPEN` contenant la date du jour, à défaut la plus récente `OPEN` — jamais l'année
+   * civile. `null` si aucune année académique `OPEN` n'existe du tout (ne devrait pas se produire
+   * en usage normal : RM-INV-001 en garantit toujours une pour un Professeur actif) ; les
+   * appelants retombent alors sur un CA "année académique" à zéro plutôt que d'échouer.
+   */
+  private async currentAcademicYearBounds(now = new Date()): Promise<{ start: Date; end: Date } | null> {
+    const containing = await this.prisma.academicYear.findFirst({
+      where: { status: 'OPEN', startDate: { lte: now }, endDate: { gte: now } },
+    });
+    if (containing) return { start: containing.startDate, end: containing.endDate };
+
+    const mostRecentOpen = await this.prisma.academicYear.findFirst({
+      where: { status: 'OPEN' },
+      orderBy: { startDate: 'desc' },
+    });
+    if (!mostRecentOpen) {
+      this.logger.warn(
+        "Aucune année académique OPEN : le CA prévisionnel 'année académique en cours' retombe à zéro (Ch. E.2/RM-DSH-051).",
+      );
+      return null;
+    }
+    return { start: mostRecentOpen.startDate, end: mostRecentOpen.endDate };
+  }
+
+  /**
+   * Avenant 01, Ch. E.1/E.5 : seules deux périodes sont exposées au tableau de bord Professeur —
+   * le "trimestre en cours" est supprimé (RM-DSH-050) — et la borne "année" est celle de l'année
+   * académique `OPEN` courante, jamais l'année civile (RM-DSH-051/E.2).
+   */
+  private async currentRevenuePeriods(now = new Date()) {
     const year = now.getUTCFullYear();
     const month = now.getUTCMonth();
-    const quarterStartMonth = Math.floor(month / 3) * 3;
     return {
       currentMonth: {
         start: new Date(Date.UTC(year, month, 1)),
         end: new Date(Date.UTC(year, month + 1, 1)),
       },
-      currentQuarter: {
-        start: new Date(Date.UTC(year, quarterStartMonth, 1)),
-        end: new Date(Date.UTC(year, quarterStartMonth + 3, 1)),
-      },
-      currentYear: {
-        start: new Date(Date.UTC(year, 0, 1)),
-        end: new Date(Date.UTC(year + 1, 0, 1)),
-      },
+      currentAcademicYear: await this.currentAcademicYearBounds(now),
     };
   }
 
+  /**
+   * RM-CPT-014 : séances PLANNED × tarif appliqué, pour les inscriptions ACTIVE du groupe. Ne
+   * renvoie que le reliquat pas-encore-facturé — les appelants (`computePeriodRevenue`/
+   * `getTeacherIndicators`) y ajoutent le réalisé déjà comptabilisé pour obtenir le "chiffre
+   * d'affaires prévisionnel" final exposé aux tableaux de bord, afin que prévisionnel ≥ réalisé ≥
+   * encaissé reste vrai en toute circonstance (voir commentaires sur ces deux méthodes).
+   *
+   * Pas de borne "à partir d'aujourd'hui" : une séance dont la date est déjà passée mais dont les
+   * présences ne sont pas encore validées reste `PLANNED` (le passage à `COMPLETED` + l'écriture
+   * SESSION sont posés ensemble par `AttendanceService.validate`, jamais automatiquement à
+   * l'échéance de la séance) — l'exclure ferait disparaître son montant du total le temps que le
+   * Professeur valide, sans qu'il soit pour autant déjà compté côté réalisé : le prévisionnel
+   * baisserait puis remonterait pour rien. `status: 'PLANNED'` suffit à ne compter que ce qui n'est
+   * pas encore facturé, séance passée ou future.
+   */
   private async computeForecastRevenue(
     scope: { teacherId?: string; groupId?: string },
     period?: { start: Date; end: Date },
   ): Promise<number> {
-    const today = startOfUtcDay(new Date());
     const sessions = await this.prisma.session.findMany({
       where: {
         status: 'PLANNED',
-        date: {
-          gte: period ? (period.start > today ? period.start : today) : today,
-          ...(period ? { lt: period.end } : {}),
-        },
+        ...(period ? { date: { lt: period.end } } : {}),
+        // RM-CAL-050 : un groupe de niveau (salle d'attente, Avenant 01 Ch. B) n'a jamais de
+        // planning ni de séance (RM-POOL-002) — garde défensive plutôt qu'un cas déjà rencontré.
         group: {
+          kind: 'STANDARD',
           ...(scope.teacherId ? { teacherId: scope.teacherId } : {}),
           ...(scope.groupId ? { id: scope.groupId } : {}),
         },
@@ -1102,7 +1125,10 @@ export class AccountingService {
       where: {
         enrollment: {
           ...(scope.groupId ? { groupId: scope.groupId } : {}),
-          group: scope.teacherId ? { teacherId: scope.teacherId } : undefined,
+          // RM-CAL-050 : garde défensive — un groupe de niveau n'a jamais de compte de suivi
+          // comptable ni d'inscription (RM-POOL-002/003/004), cette clause ne change donc rien
+          // pour les groupes existants (tous `STANDARD` par défaut).
+          group: { kind: 'STANDARD', ...(scope.teacherId ? { teacherId: scope.teacherId } : {}) },
         },
       },
       include: { enrollment: { include: { group: true } } },
@@ -1133,25 +1159,36 @@ export class AccountingService {
     const collectedRevenue = entries
       .filter((e) => e.type === 'PAYMENT' && e.direction === 'CREDIT')
       .reduce((sum, e) => sum + Number(e.amount), 0);
+    // Cohérence des indicateurs (prévisionnel ≥ réalisé ≥ encaissé) : le prévisionnel affiché englobe
+    // ce qui est déjà réalisé sur la période + le reliquat de séances PLANNED encore à venir, plutôt
+    // que de ne compter que ce reliquat seul — sinon en fin de période (la plupart des séances déjà
+    // réalisées) le prévisionnel retomberait sous le réalisé, alors qu'il représente le potentiel
+    // total de facturation de la période.
+    const remainingForecast = await this.computeForecastRevenue(scope, period);
     return {
-      forecastRevenue: round3(await this.computeForecastRevenue(scope, period)),
+      forecastRevenue: round3(realizedRevenue + remainingForecast),
       realizedRevenue: round3(realizedRevenue),
       collectedRevenue: round3(collectedRevenue),
     };
   }
 
+  /** Avenant 01, Ch. E.1/E.5 : n'expose plus que "mois en cours" et "année académique en cours". */
   private async computePeriodRevenueSet(scope: { teacherId?: string; groupId?: string }) {
-    const periods = this.currentRevenuePeriods();
-    const [currentMonth, currentQuarter, currentYear] = await Promise.all([
+    const periods = await this.currentRevenuePeriods();
+    const [currentMonth, currentAcademicYear] = await Promise.all([
       this.computePeriodRevenue(scope, periods.currentMonth),
-      this.computePeriodRevenue(scope, periods.currentQuarter),
-      this.computePeriodRevenue(scope, periods.currentYear),
+      periods.currentAcademicYear
+        ? this.computePeriodRevenue(scope, periods.currentAcademicYear)
+        : Promise.resolve({ forecastRevenue: 0, realizedRevenue: 0, collectedRevenue: 0 }),
     ]);
-    return { currentMonth, currentQuarter, currentYear };
+    return { currentMonth, currentAcademicYear };
   }
 
   private async computeAggregateIndicators(scope: { teacherId?: string; groupId?: string }) {
     const now = new Date();
+    // RM-DSH-051 : la borne "année" de `revenueThisYear` est l'année académique OPEN courante,
+    // jamais l'année civile.
+    const academicYear = await this.currentAcademicYearBounds(now);
     const accounts = await this.loadAccountsForScope(scope);
     const accountIds = accounts.map((a) => a.id);
     const entries =
@@ -1211,7 +1248,9 @@ export class AccountingService {
       paymentCount += receivedPayments.length;
 
       for (const s of sessions) {
-        if (s.effectiveDate.getUTCFullYear() === now.getUTCFullYear()) invoicedThisYear += Number(s.amount);
+        if (academicYear && s.effectiveDate >= academicYear.start && s.effectiveDate < academicYear.end) {
+          invoicedThisYear += Number(s.amount);
+        }
         if (monthKeyOf(s.effectiveDate) === nowMonthKey) invoicedThisMonth += Number(s.amount);
         if (s.sessionId) billedSessionIds.add(s.sessionId);
       }
@@ -1305,13 +1344,16 @@ export class AccountingService {
    * recalculés deux fois (même traitement que les doublons NOT-CPT-006/010 côté notifications).
    */
   async getTeacherIndicators(teacherId: string) {
-    const [aggregate, forecastRevenue, periodRevenue] = await Promise.all([
+    const [aggregate, remainingForecast, periodRevenue] = await Promise.all([
       this.computeAggregateIndicators({ teacherId }),
       this.computeForecastRevenue({ teacherId }),
       this.computePeriodRevenueSet({ teacherId }),
     ]);
     return {
-      forecastRevenue: round3(forecastRevenue),
+      // Même règle de cohérence que `computePeriodRevenue` : prévisionnel = réalisé (tout
+      // l'historique) + reliquat de séances futures planifiées, pour que prévisionnel ≥ réalisé ≥
+      // encaissé se vérifie aussi sur cet indicateur global (non borné à une période).
+      forecastRevenue: round3(aggregate.invoicedTotal + remainingForecast),
       periodRevenue,
       realizedRevenue: aggregate.invoicedTotal,
       collectedRevenue: aggregate.paidTotal,

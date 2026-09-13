@@ -6,6 +6,7 @@ import { CorrectPaymentDto } from './dto/correct-payment.dto';
 import { CreateAdjustmentDto } from './dto/create-adjustment.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { TeacherValidatedGuard } from '../auth/guards/teacher-validated.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
@@ -17,7 +18,7 @@ import { SubscriptionGuard } from '../subscriptions/subscription.guard';
  * Professeur (Ch.22), no-op pour le Parent en lecture.
  */
 @Controller('enrollments/:enrollmentId/accounting')
-@UseGuards(JwtAuthGuard, RolesGuard, SubscriptionGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, TeacherValidatedGuard, SubscriptionGuard)
 export class EnrollmentAccountingController {
   constructor(private readonly service: AccountingService) {}
 

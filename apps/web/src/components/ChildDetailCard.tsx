@@ -8,7 +8,8 @@ import { StatGrid } from './StatGrid';
 import { formatAmount, formatDateTime } from '../utils/format';
 import { IconLayers, IconWallet, IconClipboardCheck } from './icons';
 
-function AbsenceNoticeButton({
+/** Exporté pour être réutilisé par `ChildSubjectsPanel` (Avenant 01, Ch. D.3, niveau 3 "Suivi"). */
+export function AbsenceNoticeButton({
   sessionId,
   studentId,
   onReported,

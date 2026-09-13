@@ -21,6 +21,9 @@ import { AccountingModule } from './accounting/accounting.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { ExportsModule } from './exports/exports.module';
 import { TemporalJobsModule } from './temporal-jobs/temporal-jobs.module';
+import { LevelPoolsModule } from './level-pools/level-pools.module';
+import { ParentInvitationsModule } from './parent-invitations/parent-invitations.module';
+import { GroupMembersModule } from './group-members/group-members.module';
 
 @Module({
   imports: [
@@ -46,6 +49,10 @@ import { TemporalJobsModule } from './temporal-jobs/temporal-jobs.module';
     DashboardModule,
     ExportsModule,
     TemporalJobsModule,
+    // Avenant 01 — onboarding par invitation (Ch. A), groupes de niveau (Ch. B), affectation (Ch. C).
+    LevelPoolsModule,
+    ParentInvitationsModule,
+    GroupMembersModule,
   ],
 })
 export class AppModule {}

@@ -4,13 +4,14 @@ import { AbsenceNoticeService } from './absence-notice.service';
 import { CreateAbsenceNoticeDto } from './dto/create-absence-notice.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { TeacherValidatedGuard } from '../auth/guards/teacher-validated.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 
 /** Ch.16.4 : signalement d'absence prévisible depuis le tableau de bord Parent. */
 @Controller('sessions/:sessionId/absence-notices')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, TeacherValidatedGuard)
 export class AbsenceNoticeController {
   constructor(private readonly service: AbsenceNoticeService) {}
 

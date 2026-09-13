@@ -5,6 +5,7 @@ import { CreateSessionDto } from './dto/create-session.dto';
 import { ListSessionsQueryDto } from './dto/list-sessions-query.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { TeacherValidatedGuard } from '../auth/guards/teacher-validated.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
@@ -12,7 +13,7 @@ import { SubscriptionGuard } from '../subscriptions/subscription.guard';
 
 /** Ch.13 : opérations sur les séances d'un groupe donné — Professeur propriétaire uniquement. */
 @Controller('groups/:groupId/sessions')
-@UseGuards(JwtAuthGuard, RolesGuard, SubscriptionGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, TeacherValidatedGuard, SubscriptionGuard)
 @Roles(Role.TEACHER)
 export class GroupSessionsController {
   constructor(private readonly service: SessionsService) {}

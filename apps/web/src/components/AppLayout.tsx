@@ -197,7 +197,6 @@ export function AppLayout() {
         title: 'Parent',
         items: [
           { to: '/parent/children', icon: <IconChildren />, label: 'Mes enfants' },
-          { to: '/parent/groups', icon: <IconSearch />, label: 'Rechercher un groupe' },
           { to: '/parent/enrollments', icon: <IconClipboardCheck />, label: 'Mes inscriptions' },
           { to: '/parent/pre-enrollments', icon: <IconUserPlus />, label: 'Mes préinscriptions' },
           { to: '/parent/exports', icon: <IconDownload />, label: 'Exports' },

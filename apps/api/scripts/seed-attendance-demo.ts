@@ -44,19 +44,24 @@ async function upsertDemoUser(params: {
   lastName: string;
 }) {
   const passwordHash = await argon2.hash(PASSWORD, { type: argon2.argon2id });
-  return prisma.user.upsert({
-    where: { email: params.email },
-    update: {
-      passwordHash,
-      status: 'ACTIVE',
-      roles: params.roles,
-      emailVerifiedAt: new Date(),
-      acceptedTermsAt: new Date(),
-      failedLoginAttempts: 0,
-      lockedUntil: null,
-      tokenVersion: { increment: 1 },
-    },
-    create: {
+  const existing = await prisma.user.findFirst({ where: { email: params.email } });
+  if (existing) {
+    return prisma.user.update({
+      where: { id: existing.id },
+      data: {
+        passwordHash,
+        status: 'ACTIVE',
+        roles: params.roles,
+        emailVerifiedAt: new Date(),
+        acceptedTermsAt: new Date(),
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+        tokenVersion: { increment: 1 },
+      },
+    });
+  }
+  return prisma.user.create({
+    data: {
       email: params.email,
       passwordHash,
       status: 'ACTIVE',

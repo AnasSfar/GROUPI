@@ -8,6 +8,7 @@ import { ListMineQueryDto } from './dto/list-mine-query.dto';
 import { EligibleTeachersQueryDto } from './dto/eligible-teachers-query.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { TeacherValidatedGuard } from '../auth/guards/teacher-validated.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
@@ -15,15 +16,15 @@ import { SubscriptionGuard } from '../subscriptions/subscription.guard';
 
 /** Ch.22 : `SubscriptionGuard` ne s'applique qu'au Professeur (`propose`) — no-op pour le Parent. */
 @Controller('pre-enrollments')
-@UseGuards(JwtAuthGuard, RolesGuard, SubscriptionGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, TeacherValidatedGuard, SubscriptionGuard)
 export class PreEnrollmentsController {
   constructor(private readonly service: PreEnrollmentsService) {}
 
-  /** Ch.11.4 : recherche minimale de Professeurs validés pour le formulaire du Parent. */
+  /** Avenant 01, Ch. D.4/RM-PAR-024 : Professeurs déjà rattachés/inscrits pour `query.studentId`. */
   @Get('eligible-teachers')
   @Roles(Role.PARENT)
-  listEligibleTeachers(@Query() query: EligibleTeachersQueryDto) {
-    return this.service.listEligibleTeachers(query);
+  listEligibleTeachers(@CurrentUser() user: AuthenticatedUser, @Query() query: EligibleTeachersQueryDto) {
+    return this.service.listEligibleTeachers(user.id, query.studentId, query);
   }
 
   /** Ch.11.5/6.6 : même route, comportement différent selon le rôle du compte connecté. */

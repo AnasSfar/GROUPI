@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Select } from '../components/Select';
 import { useToast } from '../components/Toast';
@@ -58,6 +58,7 @@ export function TeacherGroupsPage() {
   const { getAccessToken, currentUser } = useAuth();
   const { showToast } = useToast();
   const confirm = useConfirm();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupSearch, setGroupSearch] = useState('');
   // Compatibilité avec les groupes retirés avant que "Supprimer" devienne une suppression métier.
@@ -67,7 +68,7 @@ export function TeacherGroupsPage() {
   const [subjectLevels, setSubjectLevels] = useState<SubjectLevelPair[]>([]);
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
   const [locations, setLocations] = useState<TeachingLocation[]>([]);
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(() => searchParams.get('create') === '1');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -107,6 +108,18 @@ export function TeacherGroupsPage() {
   useEffect(() => {
     setHiddenGroupIds(readHiddenGroupIds(currentUser?.id));
   }, [currentUser?.id]);
+
+  // Accès rapide (tableau de bord) : "?create=1" ouvre directement le formulaire de création
+  // plutôt que de dupliquer ce formulaire (référentiels, planning...) dans une modale séparée.
+  useEffect(() => {
+    if (searchParams.get('create') === '1') {
+      setSearchParams((params) => {
+        params.delete('create');
+        return params;
+      }, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const load = useCallback(async () => {
     const token = getAccessToken();

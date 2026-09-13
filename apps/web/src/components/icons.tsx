@@ -217,3 +217,28 @@ export function IconChevronRight(props: SVGProps<SVGSVGElement>) {
     </Icon>
   );
 }
+
+export function IconPlus(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M12 5v14M5 12h14" />
+    </Icon>
+  );
+}
+
+export function IconMegaphone(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="m3 11 18-5v12L3 13v-2Z" />
+      <path d="M11.6 16.8 13 21h-2l-1.9-4.3" />
+    </Icon>
+  );
+}
+
+export function IconMessageCircle(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M21 11.5a8.38 8.38 0 0 1-4.5 7.5 8.5 8.5 0 0 1-9-.5L3 21l2.5-4.5a8.38 8.38 0 0 1-.5-9 8.5 8.5 0 0 1 7.5-4.5h.5a8.48 8.48 0 0 1 8 8v.5Z" />
+    </Icon>
+  );
+}

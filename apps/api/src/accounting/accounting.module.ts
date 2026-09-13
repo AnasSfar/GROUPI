@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
-import { EmailModule } from '../email/email.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { AccountingService } from './accounting.service';
@@ -12,7 +11,7 @@ import { ParentAccountingController } from './parent-accounting.controller';
 import { SessionPaymentsController } from './session-payments.controller';
 
 @Module({
-  imports: [AuthModule, EmailModule, NotificationsModule, SubscriptionsModule],
+  imports: [AuthModule, NotificationsModule, SubscriptionsModule],
   controllers: [
     EnrollmentAccountingController,
     AdminAccountingController,

@@ -78,8 +78,10 @@ describe('Temporal jobs (e2e)', () => {
     await prisma.userSession.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.passwordResetToken.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.emailVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
+    await prisma.phoneVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.teacherProfile.deleteMany({ where: { id: { in: teacherIds } } });
     await prisma.parentProfile.deleteMany({ where: { id: { in: parentIds } } });
+    await prisma.userDevice.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.user.deleteMany({ where: { id: { in: userIds } } });
     await prisma.academicYear.deleteMany({ where: { id: { in: yearIds } } });
   }

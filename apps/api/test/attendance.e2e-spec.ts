@@ -4,6 +4,8 @@ import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { grantActiveSubscription } from './helpers/grant-subscription';
+import { createPendingEnrollmentDirect } from './helpers/create-enrollment';
+import { registerParentDirect } from './helpers/register-parent-direct';
 
 /**
  * E2E tests for the attendance module (Ch.14 — Gestion des présences), run against the real
@@ -42,39 +44,46 @@ describe('Attendance (e2e)', () => {
 
   interface Actor {
     id: string;
-    email: string;
+    identifier: string;
     token: string;
   }
 
   async function registerAndActivate(role: 'TEACHER' | 'PARENT', label: string): Promise<Actor> {
-    const email = `e2e-att-${role.toLowerCase()}-${label}-${runId}@example.com`;
-    const initialStudent =
-      role === 'PARENT'
-        ? {
-            firstName: 'Kid',
-            lastName: label,
-            schoolLevelId: (
-              await prisma.schoolLevel.findFirstOrThrow({ where: { isActive: true, code: { startsWith: 'PRIM' } } })
-            ).id,
-            schoolId: (await prisma.school.findFirstOrThrow({ where: { isActive: true, type: 'PRIMARY' } })).id,
-          }
-        : undefined;
-    const res = await api()
-      .post('/api/v1/auth/register')
-      .send({
-        email,
+    const identifier = `e2e-att-${role.toLowerCase()}-${label}-${runId}`;
+    let userId: string;
+    if (role === 'TEACHER') {
+      const res = await api()
+        .post('/api/v1/auth/register')
+        .send({
+          password,
+          firstName: 'Test',
+          lastName: label,
+          phone: identifier,
+          city: 'Tunis',
+          acceptTerms: true,
+          subjectIds: [subjectId],
+          schoolLevelIds: [schoolLevelId],
+        })
+        .expect(201);
+      userId = res.body.id as string;
+    } else {
+      const parentSchoolLevelId = (
+        await prisma.schoolLevel.findFirstOrThrow({ where: { isActive: true, code: { startsWith: 'PRIM' } } })
+      ).id;
+      const parentSchoolId = (await prisma.school.findFirstOrThrow({ where: { isActive: true, type: 'PRIMARY' } })).id;
+      const created = await registerParentDirect(prisma, {
+        phone: identifier,
         password,
-        role,
         firstName: 'Test',
         lastName: label,
-        phone: '20000000',
         city: 'Tunis',
-        acceptTerms: true,
-        ...(role === 'TEACHER' ? { subjectIds: [subjectId], schoolLevelIds: [schoolLevelId] } : {}),
-        ...(role === 'PARENT' ? { initialStudent } : {}),
-      })
-      .expect(201);
-    const userId = res.body.id as string;
+        studentFirstName: 'Kid',
+        studentLastName: label,
+        schoolLevelId: parentSchoolLevelId,
+        schoolId: parentSchoolId,
+      });
+      userId = created.userId;
+    }
 
     await prisma.user.update({ where: { id: userId }, data: { status: 'ACTIVE' } });
     if (role === 'TEACHER') {
@@ -85,8 +94,17 @@ describe('Attendance (e2e)', () => {
       await prisma.parentProfile.update({ where: { id: userId }, data: { validatedAt: new Date() } });
     }
 
-    const loginRes = await api().post('/api/v1/auth/login').send({ email, password }).expect(200);
-    return { id: userId, email, token: loginRes.body.accessToken as string };
+    const loginRes = await api().post('/api/v1/auth/login').send({ identifier, password }).expect(200);
+    return { id: userId, identifier, token: loginRes.body.accessToken as string };
+  }
+
+  const SCHEDULE_DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY'] as const;
+  let scheduleSeq = 0;
+  function nextSchedule() {
+    const seq = scheduleSeq++;
+    const dayOfWeek = SCHEDULE_DAYS[seq % SCHEDULE_DAYS.length];
+    const hour = 8 + (Math.floor(seq / SCHEDULE_DAYS.length) % 12);
+    return { dayOfWeek, startTime: `${String(hour).padStart(2, '0')}:00`, durationMinutes: 60 };
   }
 
   async function createOpenGroup(
@@ -110,7 +128,7 @@ describe('Attendance (e2e)', () => {
         abandonmentThreshold,
         visibilityWhenFull: 'VISIBLE',
         startDate: isoDate(addDays(today, -30)),
-        schedules: [{ dayOfWeek: 'MONDAY', startTime: '18:00', durationMinutes: 60 }],
+        schedules: [nextSchedule()],
       })
       .expect(201);
     const openRes = await api()
@@ -129,18 +147,14 @@ describe('Attendance (e2e)', () => {
     return res.body;
   }
 
-  async function enrollAndAccept(parentToken: string, teacherToken: string, studentId: string, groupId: string) {
-    const reqRes = await api()
-      .post('/api/v1/enrollments')
-      .set('Authorization', `Bearer ${parentToken}`)
-      .send({ studentId, groupId })
-      .expect(201);
+  async function enrollAndAccept(_parentToken: string, teacherToken: string, studentId: string, groupId: string) {
+    const reqRes = await createPendingEnrollmentDirect(prisma, studentId, groupId);
     await api()
-      .post(`/api/v1/groups/${groupId}/enrollments/${reqRes.body.id}/accept`)
+      .post(`/api/v1/groups/${groupId}/enrollments/${reqRes.id}/accept`)
       .set('Authorization', `Bearer ${teacherToken}`)
       .send({})
       .expect(201);
-    return reqRes.body.id as string;
+    return reqRes.id as string;
   }
 
   async function createSession(teacherToken: string, groupId: string, date: Date): Promise<any> {
@@ -238,11 +252,13 @@ describe('Attendance (e2e)', () => {
     await prisma.userSession.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.passwordResetToken.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.emailVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
+    await prisma.phoneVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.subscription.deleteMany({ where: { teacherId: { in: teacherIds } } });
     await prisma.teacherSubject.deleteMany({ where: { teacherProfileId: { in: teacherIds } } });
     await prisma.teacherSchoolLevel.deleteMany({ where: { teacherProfileId: { in: teacherIds } } });
     await prisma.teacherProfile.deleteMany({ where: { id: { in: teacherIds } } });
     await prisma.parentProfile.deleteMany({ where: { id: { in: parentIds } } });
+    await prisma.userDevice.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.user.deleteMany({ where: { id: { in: userIds } } });
 
     await app.close();

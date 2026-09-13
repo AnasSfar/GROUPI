@@ -4,13 +4,14 @@ import { AttendanceService } from './attendance.service';
 import { AttendanceStatsQueryDto } from './dto/attendance-stats-query.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { TeacherValidatedGuard } from '../auth/guards/teacher-validated.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 
 /** Ch.14.9/14.10/14.11 : statistiques, alertes d'abandon et registre — vue Professeur, à l'échelle du groupe. */
 @Controller('groups/:groupId/attendance')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, TeacherValidatedGuard)
 @Roles(Role.TEACHER)
 export class GroupAttendanceController {
   constructor(private readonly service: AttendanceService) {}

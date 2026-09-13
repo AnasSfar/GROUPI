@@ -1,7 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { AcademicYear, PreEnrollmentStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { EmailService } from '../email/email.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { CreatePreEnrollmentDto } from './dto/create-pre-enrollment.dto';
@@ -42,7 +41,6 @@ interface ExpirableItem {
 export class PreEnrollmentsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly email: EmailService,
     private readonly notifications: NotificationsService,
     private readonly subscriptions: SubscriptionsService,
   ) {}
@@ -226,6 +224,27 @@ export class PreEnrollmentsService {
     return pe;
   }
 
+  /**
+   * Avenant 01, Ch. D.4, RM-PAR-024 : le Parent ne peut préinscrire un enfant que chez un
+   * Professeur auquel cet enfant est **déjà rattaché** (`LevelPoolMembership` actif, salle
+   * d'attente) **ou** a **déjà/anciennement été inscrit** (`Enrollment`, toute année/tout statut —
+   * on ne restreint volontairement pas aux inscriptions encore actives : un enfant qui a un jour
+   * été inscrit chez ce Professeur reste éligible, même après archivage de cette inscription).
+   */
+  private async isTeacherEligibleForStudent(studentId: string, teacherId: string): Promise<boolean> {
+    const [membership, enrollment] = await Promise.all([
+      this.prisma.levelPoolMembership.findFirst({
+        where: { studentId, status: 'ACTIVE', group: { teacherId, kind: 'LEVEL_POOL' } },
+        select: { id: true },
+      }),
+      this.prisma.enrollment.findFirst({
+        where: { studentId, group: { teacherId, kind: 'STANDARD' } },
+        select: { id: true },
+      }),
+    ]);
+    return Boolean(membership || enrollment);
+  }
+
   private async loadOwned(id: string) {
     const pe = await this.prisma.preEnrollment.findUnique({ where: { id }, include: INCLUDE_DETAILS });
     if (!pe) {
@@ -293,6 +312,14 @@ export class PreEnrollmentsService {
     const teacher = await this.prisma.teacherProfile.findUnique({ where: { id: dto.teacherId } });
     if (!teacher || teacher.status !== 'VALIDATED') {
       throw new BadRequestException('Professeur introuvable ou non validé');
+    }
+
+    // Avenant 01, Ch. D.4, RM-PAR-024/ERR-PAR-021 : restreint aux Professeurs auxquels l'enfant est
+    // déjà rattaché (salle d'attente) ou a déjà/anciennement été inscrit.
+    if (!(await this.isTeacherEligibleForStudent(dto.studentId, dto.teacherId))) {
+      throw new BadRequestException(
+        'Vous ne pouvez préinscrire cet enfant que chez un Professeur auquel il est déjà rattaché ou a déjà été inscrit (RM-PAR-024/ERR-PAR-021)',
+      );
     }
 
     const schoolLevel = await this.prisma.schoolLevel.findUnique({ where: { id: dto.schoolLevelId } });
@@ -489,6 +516,9 @@ export class PreEnrollmentsService {
           groupId: group.id,
           status: 'PENDING_VALIDATION',
           requestedAt: new Date(),
+          // Avenant 01, Ch. C.5 : origine correcte pour les statistiques/indicateurs d'inscription —
+          // cette Enrollment naît d'une préinscription confirmée, jamais d'une affectation Professeur.
+          origin: 'PRE_ENROLLMENT',
         },
       });
 
@@ -583,7 +613,7 @@ export class PreEnrollmentsService {
       include: INCLUDE_DETAILS,
     });
     // NOT-PRE-* : hors chemin critique — un échec d'envoi ne doit jamais annuler la proposition.
-    const proposalParentEmail = updated.parent.user.email;
+    // Avenant 01, Ch. I.4/I.7 (RM-NOT-050/051) : notification in-app uniquement, plus d'e-mail.
     await this.notifications.notify({
       recipientUserId: updated.parentId,
       type: 'PRE_PROPOSAL_SENT',
@@ -592,14 +622,6 @@ export class PreEnrollmentsService {
       body: `Un groupe "${group.name}" a été proposé pour ${updated.student.firstName} ${updated.student.lastName} suite à votre préinscription.`,
       refType: 'PreEnrollment',
       refId: updated.id,
-      sendEmail: proposalParentEmail
-        ? () =>
-            this.email.sendPreEnrollmentProposal(
-              proposalParentEmail,
-              `${updated.student.firstName} ${updated.student.lastName}`,
-              group.name,
-            )
-        : undefined,
     });
     return updated;
   }
@@ -651,11 +673,45 @@ export class PreEnrollmentsService {
     return Promise.all(items.map((item) => this.expireIfNeeded(item)));
   }
 
-  /** Ch.11.4 : recherche minimale de Professeurs validés pour alimenter le formulaire du Parent
-   *  (pas d'annuaire public dédié dans ce périmètre — endpoint propre à ce module, cf. rapport). */
-  async listEligibleTeachers(query: EligibleTeachersQueryDto) {
+  /**
+   * Avenant 01, Ch. D.4, RM-PAR-019/020/024 : liste, pour un enfant précis du Parent connecté, les
+   * seuls Professeurs auxquels préinscrire cet enfant est autorisé — ceux auxquels il est déjà
+   * rattaché (salle d'attente) ou a déjà/anciennement été inscrit. Remplace l'ancienne recherche
+   * ouverte à tout Professeur validé (Ch.11.4 V1.0) : le Parent n'a plus aucune fonction de
+   * recherche/découverte de Professeurs (RM-PAR-020) — cet endpoint n'est plus un mini-annuaire,
+   * seulement le formulaire de préinscription restreint au périmètre de l'enfant choisi.
+   */
+  async listEligibleTeachers(parentId: string, studentId: string, query: EligibleTeachersQueryDto) {
+    const student = await this.prisma.student.findUnique({ where: { id: studentId } });
+    // ERR-PAR-020 : réponse identique (liste vide), qu'il n'existe pas ou n'appartienne pas au Parent —
+    // aucune divulgation d'existence.
+    if (!student || student.parentId !== parentId) {
+      return [];
+    }
+
+    const [poolMemberships, enrollments] = await Promise.all([
+      this.prisma.levelPoolMembership.findMany({
+        where: { studentId, status: 'ACTIVE', group: { kind: 'LEVEL_POOL' } },
+        select: { group: { select: { teacherId: true } } },
+      }),
+      this.prisma.enrollment.findMany({
+        where: { studentId, group: { kind: 'STANDARD' } },
+        select: { group: { select: { teacherId: true } } },
+      }),
+    ]);
+    const eligibleTeacherIds = [
+      ...new Set([
+        ...poolMemberships.map((m) => m.group.teacherId),
+        ...enrollments.map((e) => e.group.teacherId),
+      ]),
+    ];
+    if (eligibleTeacherIds.length === 0) {
+      return [];
+    }
+
     return this.prisma.teacherProfile.findMany({
       where: {
+        id: { in: eligibleTeacherIds },
         status: 'VALIDATED',
         ...(query.city ? { city: query.city } : {}),
         ...(query.subjectId ? { subjects: { some: { subjectId: query.subjectId } } } : {}),

@@ -94,24 +94,6 @@ export interface Group {
   _count: { enrollments: number };
 }
 
-export interface PublicGroup {
-  id: string;
-  name: string;
-  subject: Subject;
-  schoolLevel: SchoolLevel;
-  academicYear: AcademicYear;
-  teacher: { firstName: string; lastName: string; city: string };
-  publicPrice: string;
-  teachingMode: TeachingMode;
-  absenceBillingPolicy: AbsenceBillingPolicy;
-  /** Ch.10.6/RM-TPR-014 : l'effectif/capacité d'un groupe est une donnée privée du Professeur. */
-  hasAvailableSpots: boolean;
-  status: GroupStatus;
-  schedules: GroupSchedule[];
-  startDate: string;
-  endDate: string | null;
-}
-
 export interface CreateGroupPayload {
   name: string;
   subjectId: string;
@@ -221,23 +203,5 @@ export function removeGroup(accessToken: string, groupId: string): Promise<{ id:
   return apiRequest(`/groups/${groupId}`, { method: 'DELETE', accessToken });
 }
 
-export function searchGroups(
-  accessToken: string,
-  filters: {
-    subjectId?: string;
-    schoolLevelId?: string;
-    city?: string;
-    // RM-INS-007 : recherche par nom de Professeur / mode d'enseignement.
-    teacherName?: string;
-    teachingMode?: TeachingMode;
-  },
-): Promise<PublicGroup[]> {
-  const params = new URLSearchParams();
-  if (filters.subjectId) params.set('subjectId', filters.subjectId);
-  if (filters.schoolLevelId) params.set('schoolLevelId', filters.schoolLevelId);
-  if (filters.city) params.set('city', filters.city);
-  if (filters.teacherName) params.set('teacherName', filters.teacherName);
-  if (filters.teachingMode) params.set('teachingMode', filters.teachingMode);
-  const query = params.toString();
-  return apiRequest<PublicGroup[]>(`/groups/search${query ? `?${query}` : ''}`, { accessToken });
-}
+// Avenant 01, Ch. D.2/RM-PAR-020 : `searchGroups`/`PublicGroup` (recherche publique de groupes par
+// le Parent, `GET /groups/search`) ont été retirés avec l'endpoint correspondant.

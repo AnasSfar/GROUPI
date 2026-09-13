@@ -2,6 +2,9 @@ import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import * as authApi from '../api/authApi';
 
+/** Avenant 01, Ch. I.3 : sans canal d'envoi garanti, la réinitialisation est surtout assistée
+ * (le Professeur ou le support génère un lien à usage unique et vous le transmet). Le code par
+ * SMS reste tenté en best-effort, sans garantie de réception. */
 export function ForgotPasswordPage() {
   const [identifier, setIdentifier] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -26,11 +29,16 @@ export function ForgotPasswordPage() {
         <h1>Mot de passe oublié</h1>
         {sent ? (
           <p className="form-notice" role="status">
-            Si cet identifiant correspond à un compte, un lien (par e-mail) ou un code (par SMS) de
-            réinitialisation vient d'être envoyé.
+            Si ce numéro correspond à un compte, un code de réinitialisation par SMS vient d'être
+            tenté, sans garantie de réception. Le plus sûr reste de contacter votre professeur ou le
+            support GROUPI : ils peuvent générer un lien de réinitialisation à usage unique.
           </p>
         ) : (
           <>
+            <p className="form-hint">
+              Sans réponse, contactez votre professeur ou le support : ils peuvent générer un lien de
+              réinitialisation à votre place.
+            </p>
             <label>
               Email ou téléphone
               <input
@@ -51,7 +59,7 @@ export function ForgotPasswordPage() {
         </p>
         {sent && (
           <p className="auth-links">
-            <Link to="/reset-password">Vous avez reçu un code par SMS ?</Link>
+            <Link to="/reset-password">Vous avez reçu un code par SMS ou un lien ?</Link>
           </p>
         )}
       </form>

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Select } from '../components/Select';
 import { ChildDetailCard } from '../components/ChildDetailCard';
+import { ChildSubjectsPanel } from '../components/ChildSubjectsPanel';
 import { ChildAttendancePanel } from '../components/ChildAttendancePanel';
 import { ChildAccountingPanel } from '../components/ChildAccountingPanel';
 import { ChildSituationPanel } from '../components/ChildSituationPanel';
@@ -11,10 +12,20 @@ import * as referentialsApi from '../api/referentialsApi';
 import * as parentProfileApi from '../api/parentProfileApi';
 import * as dashboardApi from '../api/dashboardApi';
 import type { City, School, SchoolLevel } from '../api/referentialsApi';
-import type { ParentProfile, Student } from '../api/parentProfileApi';
+import type { ParentProfile, Student, PendingLevelPoolAssignment } from '../api/parentProfileApi';
 import type { ParentDashboard } from '../api/dashboardApi';
 
-type FicheTab = 'overview' | 'attendance' | 'accounting' | 'situation';
+/**
+ * Avenant 01, Ch. D.3 (décision #3) : navigation à 3 niveaux du portail Parent.
+ * - Niveau 1 (enfants) : la grille "Mes enfants" ci-dessous, masquée (RM-PAR-022) au profit d'un
+ *   affichage direct de la fiche quand le Parent n'a qu'un seul enfant (voir `singleChild`).
+ * - Niveau 2 (matières) : onglet "Matières" -> `ChildSubjectsPanel` (masqué en son sein si une
+ *   seule matière et rien en attente, RM-PAR-022).
+ * - Niveau 3 (Suivi) : contenu de `ChildSubjectsPanel` une fois une matière sélectionnée.
+ * Les onglets "Présences"/"Comptabilité"/"Situation scolaire" restent la vue transverse par enfant
+ * (Ch.16.4, conservée) — somme des soldes, historique complet tous groupes confondus.
+ */
+type FicheTab = 'overview' | 'subjects' | 'attendance' | 'accounting' | 'situation';
 
 function initials(student: Student): string {
   return `${student.firstName[0] ?? ''}${student.lastName[0] ?? ''}`.toUpperCase();
@@ -34,6 +45,7 @@ export function ParentChildrenPage() {
   const [cities, setCities] = useState<City[]>([]);
   const [schoolCityId, setSchoolCityId] = useState('');
   const [dashboard, setDashboard] = useState<ParentDashboard | null>(null);
+  const [pendingAssignments, setPendingAssignments] = useState<PendingLevelPoolAssignment[]>([]);
   const [openChildId, setOpenChildId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<FicheTab>('overview');
   const [loading, setLoading] = useState(true);
@@ -60,13 +72,14 @@ export function ParentChildrenPage() {
     setLoading(true);
     setError(null);
     try {
-      const [me, myStudents, levels, allSchools, allCities, parentDashboard] = await Promise.all([
+      const [me, myStudents, levels, allSchools, allCities, parentDashboard, pending] = await Promise.all([
         parentProfileApi.getMyProfile(token),
         parentProfileApi.listStudents(token),
         referentialsApi.listSchoolLevels(token),
         referentialsApi.listSchools(token),
         referentialsApi.listCities(token),
         dashboardApi.getParentDashboard(token),
+        parentProfileApi.listPendingAssignments(token),
       ]);
       setProfile(me);
       setStudents(myStudents);
@@ -74,6 +87,7 @@ export function ParentChildrenPage() {
       setSchools(allSchools);
       setCities(allCities);
       setDashboard(parentDashboard);
+      setPendingAssignments(pending);
       setPhone(me.phone);
       setCity(me.city);
     } catch (err) {
@@ -92,6 +106,19 @@ export function ParentChildrenPage() {
       setLastName(profile.lastName);
     }
   }, [profile, lastNameEdited]);
+
+  // Avenant 01, Ch. D.3/RM-PAR-022 : niveau 1 ("Mes enfants") masqué s'il n'y a qu'un seul enfant —
+  // sa fiche s'ouvre directement, sans grille de sélection à choix unique. `autoOpenedRef` n'ouvre
+  // qu'une fois : un rafraîchissement ultérieur (ex. depuis le niveau 3, après un signalement
+  // d'absence) ne doit pas réinitialiser l'onglet actif du Parent.
+  const autoOpenedRef = useRef(false);
+  useEffect(() => {
+    if (students.length === 1 && !autoOpenedRef.current) {
+      autoOpenedRef.current = true;
+      setOpenChildId(students[0].id);
+      setActiveTab(students[0].status === 'ACTIVE' ? 'overview' : 'situation');
+    }
+  }, [students]);
 
   /** Le référentiel compte plus de 6000 établissements nationaux — sans filtre par ville, le
    * sélecteur est inutilisable. On restreint donc aux établissements de la ville choisie. */
@@ -180,6 +207,91 @@ export function ParentChildrenPage() {
 
   const openStudent = students.find((s) => s.id === openChildId) ?? null;
   const openChildDashboard = dashboard?.children.find((c) => c.student.id === openChildId) ?? null;
+  // RM-PAR-022 : niveau 1 masqué s'il n'y a qu'un seul enfant (voir l'effet `autoOpenedRef` plus haut).
+  const singleChild = students.length === 1 ? students[0] : null;
+
+  const ficheTabsAndContent = openStudent && (
+    <>
+      <div className="fiche-tabs" role="tablist">
+        {openChildDashboard && (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'overview'}
+            className={activeTab === 'overview' ? 'active' : ''}
+            onClick={() => setActiveTab('overview')}
+          >
+            Vue d'ensemble
+          </button>
+        )}
+        {openChildDashboard && (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'subjects'}
+            className={activeTab === 'subjects' ? 'active' : ''}
+            onClick={() => setActiveTab('subjects')}
+          >
+            Matières
+          </button>
+        )}
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'attendance'}
+          className={activeTab === 'attendance' ? 'active' : ''}
+          onClick={() => setActiveTab('attendance')}
+        >
+          Présences
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'accounting'}
+          className={activeTab === 'accounting' ? 'active' : ''}
+          onClick={() => setActiveTab('accounting')}
+        >
+          Comptabilité
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'situation'}
+          className={activeTab === 'situation' ? 'active' : ''}
+          onClick={() => setActiveTab('situation')}
+        >
+          Situation scolaire
+        </button>
+      </div>
+
+      {!openChildDashboard && (
+        <p className="form-notice section-spacer">
+          Le suivi d'activité (groupes, séances, remarques du professeur) n'est plus
+          disponible pour un enfant archivé — l'historique de présences, la comptabilité et
+          la situation scolaire restent consultables ci-dessous.
+        </p>
+      )}
+
+      <div className="fiche-tab-content">
+        {activeTab === 'overview' && openChildDashboard && (
+          <ChildDetailCard child={openChildDashboard} showName={false} onRefresh={load} onNavigate={setActiveTab} />
+        )}
+        {activeTab === 'subjects' && openChildDashboard && (
+          <ChildSubjectsPanel
+            studentId={openStudent.id}
+            groups={openChildDashboard.groups}
+            upcomingSessions={openChildDashboard.upcomingSessions}
+            cancelledOrPostponedSessions={openChildDashboard.cancelledOrPostponedSessions}
+            pendingAssignments={pendingAssignments.filter((p) => p.studentId === openStudent.id)}
+            onRefresh={load}
+          />
+        )}
+        {activeTab === 'attendance' && <ChildAttendancePanel studentId={openStudent.id} />}
+        {activeTab === 'accounting' && <ChildAccountingPanel studentId={openStudent.id} />}
+        {activeTab === 'situation' && <ChildSituationPanel studentId={openStudent.id} />}
+      </div>
+    </>
+  );
 
   return (
     <>
@@ -211,14 +323,20 @@ export function ParentChildrenPage() {
         </button>
       </section>
 
-      <section className="card-section">
-        <h2>Mes enfants ({students.length})</h2>
-        {students.length === 0 && (
+      {students.length === 0 && (
+        <section className="card-section">
+          <h2>Mes enfants (0)</h2>
           <EmptyState title="Aucun enfant déclaré pour le moment">
             Déclarez votre premier enfant ci-dessous pour commencer à suivre ses inscriptions.
           </EmptyState>
-        )}
-        {students.length > 0 && (
+        </section>
+      )}
+
+      {/* RM-PAR-022 : niveau 1 ("Mes enfants") masqué s'il n'y a qu'un seul enfant — sa fiche
+          s'affiche directement ci-dessous, sans grille de sélection à choix unique. */}
+      {students.length > 1 && (
+        <section className="card-section">
+          <h2>Mes enfants ({students.length})</h2>
           <div className="child-card-grid">
             {students.map((student) => (
               <div key={student.id} className="child-card">
@@ -244,10 +362,39 @@ export function ParentChildrenPage() {
               </div>
             ))}
           </div>
-        )}
-      </section>
+        </section>
+      )}
 
-      {openStudent && (
+      {singleChild && openStudent && (
+        <section className="card-section">
+          <h2>
+            {openStudent.firstName} {openStudent.lastName}
+          </h2>
+          <p className="table-hint section-spacer">
+            {openStudent.currentSchoolSituation
+              ? `${openStudent.currentSchoolSituation.schoolLevel.name} · ${openStudent.currentSchoolSituation.school.name}${
+                  openStudent.currentSchoolSituation.class ? ` · ${openStudent.currentSchoolSituation.class}` : ''
+                }`
+              : 'Situation scolaire non renseignée'}
+          </p>
+
+          {ficheTabsAndContent}
+
+          <div className="terms-modal-actions">
+            {openStudent.status === 'ACTIVE' ? (
+              <button type="button" className="ghost" onClick={() => handleArchive(openStudent.id)}>
+                Archiver cet enfant
+              </button>
+            ) : (
+              <button type="button" onClick={() => handleReactivate(openStudent.id)}>
+                Réactiver cet enfant
+              </button>
+            )}
+          </div>
+        </section>
+      )}
+
+      {!singleChild && openStudent && (
         <div className="terms-modal-backdrop" onClick={() => setOpenChildId(null)}>
           <div className="terms-modal terms-modal-wide" onClick={(e) => e.stopPropagation()}>
             <h2>
@@ -261,63 +408,7 @@ export function ParentChildrenPage() {
                 : 'Situation scolaire non renseignée'}
             </p>
 
-            <div className="fiche-tabs" role="tablist">
-              {openChildDashboard && (
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={activeTab === 'overview'}
-                  className={activeTab === 'overview' ? 'active' : ''}
-                  onClick={() => setActiveTab('overview')}
-                >
-                  Vue d'ensemble
-                </button>
-              )}
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeTab === 'attendance'}
-                className={activeTab === 'attendance' ? 'active' : ''}
-                onClick={() => setActiveTab('attendance')}
-              >
-                Présences
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeTab === 'accounting'}
-                className={activeTab === 'accounting' ? 'active' : ''}
-                onClick={() => setActiveTab('accounting')}
-              >
-                Comptabilité
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeTab === 'situation'}
-                className={activeTab === 'situation' ? 'active' : ''}
-                onClick={() => setActiveTab('situation')}
-              >
-                Situation scolaire
-              </button>
-            </div>
-
-            {!openChildDashboard && (
-              <p className="form-notice section-spacer">
-                Le suivi d'activité (groupes, séances, remarques du professeur) n'est plus
-                disponible pour un enfant archivé — l'historique de présences, la comptabilité et
-                la situation scolaire restent consultables ci-dessous.
-              </p>
-            )}
-
-            <div className="fiche-tab-content">
-              {activeTab === 'overview' && openChildDashboard && (
-                <ChildDetailCard child={openChildDashboard} showName={false} onRefresh={load} onNavigate={setActiveTab} />
-              )}
-              {activeTab === 'attendance' && <ChildAttendancePanel studentId={openStudent.id} />}
-              {activeTab === 'accounting' && <ChildAccountingPanel studentId={openStudent.id} />}
-              {activeTab === 'situation' && <ChildSituationPanel studentId={openStudent.id} />}
-            </div>
+            {ficheTabsAndContent}
 
             <div className="terms-modal-actions">
               {openStudent.status === 'ACTIVE' ? (

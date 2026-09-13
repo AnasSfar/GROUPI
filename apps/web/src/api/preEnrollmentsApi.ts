@@ -186,13 +186,17 @@ export function proposePreEnrollment(
   });
 }
 
-/** Ch.11.4 : recherche minimale de Professeurs validés pour le formulaire de préinscription
- *  (pas encore d'annuaire public dédié — endpoint propre au module Préinscriptions). */
+/**
+ * Avenant 01, Ch. D.4/RM-PAR-024 : Professeurs déjà rattachés (salle d'attente) ou déjà/anciennement
+ * inscrits pour `studentId` — plus un annuaire général de tous les Professeurs validés (RM-PAR-020).
+ */
 export function listEligibleTeachers(
   accessToken: string,
+  studentId: string,
   filters: EligibleTeachersFilters = {},
 ): Promise<EligibleTeacher[]> {
   const params = new URLSearchParams();
+  params.set('studentId', studentId);
   if (filters.city) params.set('city', filters.city);
   if (filters.subjectId) params.set('subjectId', filters.subjectId);
   if (filters.schoolLevelId) params.set('schoolLevelId', filters.schoolLevelId);

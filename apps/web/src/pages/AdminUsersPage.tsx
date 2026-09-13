@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../components/Toast';
 import { Select } from '../components/Select';
 import { ApiError } from '../api/client';
 import * as adminApi from '../api/adminApi';
 import type { AdminUser, UserStatus } from '../api/adminApi';
 import { ADMIN_PERMISSIONS } from '../api/adminApi';
+import * as authApi from '../api/authApi';
+import type { AssistedResetLinkResponse } from '../api/authApi';
 
 type StatusFilterValue = UserStatus | 'ALL';
 type RoleFilterValue = 'ALL' | 'ADMIN' | 'TEACHER' | 'PARENT';
@@ -127,6 +130,7 @@ function PermissionCheckboxList({
 
 export function AdminUsersPage() {
   const { getAccessToken, currentUser } = useAuth();
+  const { showToast } = useToast();
   const isSuperAdmin = currentUser?.roles.includes('SUPER_ADMIN') ?? false;
   const [statusFilter, setStatusFilter] = useState<StatusFilterValue>('ALL');
   const [roleFilter, setRoleFilter] = useState<RoleFilterValue>('ALL');
@@ -150,6 +154,11 @@ export function AdminUsersPage() {
   const [promotePermissions, setPromotePermissions] = useState<string[]>([]);
   const [promoteSubmitting, setPromoteSubmitting] = useState(false);
   const [promoteError, setPromoteError] = useState<string | null>(null);
+
+  const [resetLinkTarget, setResetLinkTarget] = useState<AdminUser | null>(null);
+  const [resetLink, setResetLink] = useState<AssistedResetLinkResponse | null>(null);
+  const [resetLinkSubmitting, setResetLinkSubmitting] = useState(false);
+  const [resetLinkError, setResetLinkError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const token = getAccessToken();
@@ -249,6 +258,38 @@ export function AdminUsersPage() {
       setPromoteError(err instanceof ApiError ? err.message : "La promotion a échoué.");
     } finally {
       setPromoteSubmitting(false);
+    }
+  }
+
+  /** Ch. I.3 : reset assisté — l'Administrateur génère un lien à usage unique pour n'importe quel compte. */
+  function openResetLinkModal(user: AdminUser) {
+    setResetLinkTarget(user);
+    setResetLink(null);
+    setResetLinkError(null);
+  }
+
+  async function handleGenerateResetLink() {
+    const token = getAccessToken();
+    if (!token || !resetLinkTarget) return;
+    setResetLinkSubmitting(true);
+    setResetLinkError(null);
+    try {
+      const result = await authApi.generateAssistedResetLink(token, resetLinkTarget.id);
+      setResetLink(result);
+    } catch (err) {
+      setResetLinkError(err instanceof ApiError ? err.message : 'Impossible de générer le lien.');
+    } finally {
+      setResetLinkSubmitting(false);
+    }
+  }
+
+  async function handleCopyResetLink() {
+    if (!resetLink) return;
+    try {
+      await navigator.clipboard.writeText(resetLink.url);
+      showToast('Lien copié');
+    } catch {
+      showToast('Impossible de copier le lien', 'error');
     }
   }
 
@@ -396,6 +437,11 @@ export function AdminUsersPage() {
                               Promouvoir Admin
                             </button>
                           )}
+                        {(user.status === 'ACTIVE' || user.status === 'PENDING_VALIDATION') && (
+                          <button type="button" className="ghost" onClick={() => openResetLinkModal(user)}>
+                            Réinitialiser mot de passe
+                          </button>
+                        )}
                       </>
                     )}
                   </td>
@@ -472,6 +518,51 @@ export function AdminUsersPage() {
                 {promoteSubmitting ? 'Promotion...' : 'Promouvoir'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {resetLinkTarget && (
+        <div className="terms-modal-backdrop" onClick={() => setResetLinkTarget(null)}>
+          <div className="terms-modal" onClick={(e) => e.stopPropagation()}>
+            <h2>Réinitialiser le mot de passe de {displayName(resetLinkTarget)}</h2>
+            <p>
+              Sans canal d'envoi automatique garanti, générez un lien de réinitialisation à usage
+              unique et transmettez-le vous-même (WhatsApp, en personne, téléphone...).
+            </p>
+            {resetLinkError && (
+              <p className="form-error" role="alert">
+                {resetLinkError}
+              </p>
+            )}
+            {resetLink ? (
+              <>
+                <label>
+                  Lien à transmettre
+                  <input type="text" readOnly value={resetLink.url} onFocus={(e) => e.target.select()} />
+                </label>
+                <p className="table-hint">
+                  Valable jusqu'au {new Date(resetLink.expiresAt).toLocaleString('fr-FR')}.
+                </p>
+                <div className="terms-modal-actions">
+                  <button type="button" className="ghost" onClick={() => setResetLinkTarget(null)}>
+                    Fermer
+                  </button>
+                  <button type="button" onClick={handleCopyResetLink}>
+                    Copier le lien
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="terms-modal-actions">
+                <button type="button" className="ghost" onClick={() => setResetLinkTarget(null)}>
+                  Annuler
+                </button>
+                <button type="button" disabled={resetLinkSubmitting} onClick={handleGenerateResetLink}>
+                  {resetLinkSubmitting ? 'Génération...' : 'Générer le lien'}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

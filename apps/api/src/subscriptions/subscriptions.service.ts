@@ -1,7 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, SubscriptionPlan, SubscriptionStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { EmailService } from '../email/email.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { SuspendSubscriptionDto } from './dto/suspend-subscription.dto';
@@ -31,7 +30,6 @@ type SubscriptionView = Prisma.SubscriptionGetPayload<{ include: typeof INCLUDE_
 export class SubscriptionsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly email: EmailService,
     private readonly notifications: NotificationsService,
   ) {}
 
@@ -297,8 +295,7 @@ export class SubscriptionsService {
       data: { status: 'SUSPENDED', suspendedAt: new Date(), suspendedById: adminId, suspensionReason: dto.reason },
     });
     const updated = await this.loadById(id);
-    const teacherEmail = sub.teacher.user.email;
-    // NOT-ABO-006 (Critique -> e-mail, RM-NOT-008/009)
+    // Avenant 01, Ch. I.4/I.7 (RM-NOT-050/051) : notification in-app uniquement, plus d'e-mail.
     await this.notifications.notify({
       recipientUserId: sub.teacherId,
       type: 'SUBSCRIPTION_SUSPENDED',
@@ -310,7 +307,6 @@ export class SubscriptionsService {
         ' Contactez l’administration GROUPI pour régulariser votre situation.',
       refType: 'Subscription',
       refId: sub.id,
-      sendEmail: teacherEmail ? () => this.email.sendSubscriptionSuspended(teacherEmail, sub.plan.name) : undefined,
     });
     return updated;
   }
@@ -332,8 +328,7 @@ export class SubscriptionsService {
       },
     });
     const updated = await this.loadById(id);
-    const teacherEmail = sub.teacher.user.email;
-    // NOT-ABO-007 (Important -> e-mail, RM-NOT-008/009)
+    // Avenant 01, Ch. I.4/I.7 (RM-NOT-050/051) : notification in-app uniquement, plus d'e-mail.
     await this.notifications.notify({
       recipientUserId: sub.teacherId,
       type: 'SUBSCRIPTION_REACTIVATED',
@@ -342,7 +337,6 @@ export class SubscriptionsService {
       body: `Votre abonnement "${sub.plan.name}" a été réactivé. Vos droits sont rétablis, aucune donnée n’a été perdue.`,
       refType: 'Subscription',
       refId: sub.id,
-      sendEmail: teacherEmail ? () => this.email.sendSubscriptionReactivated(teacherEmail, sub.plan.name) : undefined,
     });
     return updated;
   }

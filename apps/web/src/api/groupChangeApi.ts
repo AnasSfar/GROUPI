@@ -39,6 +39,19 @@ export interface CreateGroupChangeRequestPayload {
   targetGroupId: string;
 }
 
+/** Avenant 01, Ch. D.3/D.4 : groupe standard éligible comme cible d'un changement — toujours le
+ *  même Professeur que l'inscription d'origine (RM-PAR-025). Remplace, pour ce besoin, `PublicGroup`
+ *  (recherche de groupes supprimée, D.2) : jamais de capacité brute, seulement `hasAvailableSpots`. */
+export interface EligibleTargetGroup {
+  id: string;
+  name: string;
+  publicPrice: string;
+  teachingMode: string;
+  status: string;
+  schedules: { dayOfWeek: string; startTime: string; durationMinutes: number }[];
+  hasAvailableSpots: boolean;
+}
+
 export interface TeacherInitiateGroupChangePayload {
   enrollmentId: string;
   targetGroupId: string;
@@ -57,6 +70,17 @@ export function createGroupChangeRequest(
 
 export function listMine(accessToken: string): Promise<GroupChangeRequestView[]> {
   return apiRequest<GroupChangeRequestView[]>('/group-changes/mine', { accessToken });
+}
+
+/** Avenant 01, Ch. D.2/D.3/D.4 : remplace la recherche de groupes supprimée pour ce seul besoin. */
+export function listEligibleTargetGroups(
+  accessToken: string,
+  enrollmentId: string,
+): Promise<EligibleTargetGroup[]> {
+  return apiRequest<EligibleTargetGroup[]>(
+    `/group-changes/eligible-target-groups?enrollmentId=${enrollmentId}`,
+    { accessToken },
+  );
 }
 
 export function cancelGroupChangeRequest(accessToken: string, id: string): Promise<GroupChangeRequestView> {

@@ -13,9 +13,14 @@ import type {
 import { AlertList } from '../components/AlertList';
 import { EmptyState, LoadingState } from '../components/UiState';
 import { StatGrid } from '../components/StatGrid';
+import { RadialGauge, gaugeToneFromRate } from '../components/RadialGauge';
 import { ChildDetailCard } from '../components/ChildDetailCard';
 import { TeacherWeekCalendar } from '../components/TeacherWeekCalendar';
 import { WeekCalendar, addDays, startOfWeek, type WeekCalendarEvent } from '../components/WeekCalendar';
+import { QuickAttendanceModal } from '../components/QuickAttendanceModal';
+import { QuickPaymentModal } from '../components/QuickPaymentModal';
+import { QuickMessageModal } from '../components/QuickMessageModal';
+import { QuickAnnouncementModal } from '../components/QuickAnnouncementModal';
 import { formatAmount, formatDateTime, hasSessionStarted } from '../utils/format';
 import { readHiddenGroupIds } from '../utils/hiddenGroups';
 import {
@@ -31,6 +36,9 @@ import {
   IconWallet,
   IconDownload,
   IconBell,
+  IconPlus,
+  IconMegaphone,
+  IconMessageCircle,
 } from '../components/icons';
 
 interface DashCard {
@@ -56,6 +64,98 @@ const GROUP_CATEGORY_LABEL: Record<GroupOccupancyView['category'], string> = {
   OTHER: '—',
 };
 
+// Journal d'audit (Super Admin) : `action`/`targetType` sont des codes techniques (voir chaque
+// `auditLog.create` métier) — on les traduit ici plutôt que de les exposer bruts à l'écran.
+const AUDIT_ACTION_META: Record<string, { label: string; tone: 'success' | 'danger' | 'warning' | 'info' }> = {
+  PAYMENT_RECORDED: { label: 'Paiement enregistré', tone: 'success' },
+  PAYMENT_CANCELLED: { label: 'Paiement annulé', tone: 'danger' },
+  ACCOUNT_TRANSITION_DENIED: { label: 'Transition de compte refusée', tone: 'danger' },
+  ACCOUNT_PENDING: { label: 'Compte remis en attente', tone: 'warning' },
+  ACCOUNT_ACTIVATED: { label: 'Compte activé', tone: 'success' },
+  ACCOUNT_SUSPENDED: { label: 'Compte suspendu', tone: 'danger' },
+  ACCOUNT_DISABLED: { label: 'Compte désactivé', tone: 'danger' },
+  ACCOUNT_ARCHIVED: { label: 'Compte archivé', tone: 'warning' },
+  ACCOUNT_SUSPENDED_BY_SUBSCRIPTION_GRACE: { label: 'Compte suspendu (fin de délai d’abonnement)', tone: 'danger' },
+  ACCOUNT_SELF_DISABLED: { label: 'Compte désactivé par l’utilisateur', tone: 'warning' },
+  ACCOUNT_SOFT_DELETED: { label: 'Suppression de compte demandée', tone: 'danger' },
+  ROLE_ADDED: { label: 'Rôle ajouté', tone: 'info' },
+  STUDENT_REASSIGNED: { label: 'Élève réattribué à un autre parent', tone: 'warning' },
+  GROUP_CREATED: { label: 'Groupe créé', tone: 'success' },
+  GROUP_DUPLICATED: { label: 'Groupe dupliqué', tone: 'info' },
+  GROUP_UPDATED: { label: 'Groupe modifié', tone: 'info' },
+  GROUP_GENERATION_PAUSE_UPDATED: { label: 'Génération de séances mise à jour', tone: 'info' },
+  GROUP_CLOSED: { label: 'Groupe clôturé', tone: 'warning' },
+  GROUP_ARCHIVED: { label: 'Groupe archivé', tone: 'warning' },
+  GROUP_DELETED: { label: 'Groupe supprimé', tone: 'danger' },
+  ENROLLMENT_ACCEPTED: { label: 'Inscription acceptée', tone: 'success' },
+  ENROLLMENT_REJECTED: { label: 'Inscription refusée', tone: 'danger' },
+  ENROLLMENT_SUSPENDED: { label: 'Inscription suspendue', tone: 'warning' },
+  SCHOOL_SITUATION_VALIDATED: { label: 'Situation scolaire validée', tone: 'success' },
+  SCHOOL_SITUATION_REJECTED: { label: 'Situation scolaire refusée', tone: 'danger' },
+  SCHOOL_SITUATION_ADMIN_OVERRIDE: { label: 'Situation scolaire modifiée par un admin', tone: 'warning' },
+  ATTENDANCE_RESET: { label: 'Présence réinitialisée', tone: 'warning' },
+  GROUP_CHANGE_PROPOSED_BY_TEACHER: { label: 'Changement de groupe proposé', tone: 'info' },
+  GROUP_CHANGE_ACCEPTED: { label: 'Changement de groupe accepté', tone: 'success' },
+  GROUP_CHANGE_PROPOSAL_DECLINED: { label: 'Changement de groupe refusé par le parent', tone: 'danger' },
+  GROUP_CHANGE_REJECTED: { label: 'Changement de groupe rejeté', tone: 'danger' },
+  TEACHER_SUBJECT_VALIDATED: { label: 'Matière enseignant validée', tone: 'success' },
+  TEACHER_SUBJECT_REJECTED: { label: 'Matière enseignant refusée', tone: 'danger' },
+  TEACHER_SCHOOL_LEVEL_VALIDATED: { label: 'Niveau enseignant validé', tone: 'success' },
+  TEACHER_SCHOOL_LEVEL_REJECTED: { label: 'Niveau enseignant refusé', tone: 'danger' },
+  ACADEMIC_YEAR_CLOSED: { label: 'Année académique clôturée', tone: 'warning' },
+  ADMINISTRATOR_INVITED: { label: 'Administrateur invité', tone: 'success' },
+  ADMINISTRATOR_PROMOTED: { label: 'Administrateur promu', tone: 'success' },
+  ADMINISTRATOR_PERMISSIONS_UPDATED: { label: 'Permissions administrateur modifiées', tone: 'info' },
+  SESSION_CREATED_EXCEPTIONAL: { label: 'Séance exceptionnelle créée', tone: 'success' },
+  SESSION_POSTPONED: { label: 'Séance reportée', tone: 'warning' },
+  SESSION_CANCELLED: { label: 'Séance annulée', tone: 'danger' },
+  SESSION_DELETED: { label: 'Séance supprimée', tone: 'danger' },
+  SESSION_TEACHING_MODE_CHANGED: { label: 'Mode d’enseignement modifié', tone: 'info' },
+  SESSION_COMMENT_UPDATED: { label: 'Commentaire de séance modifié', tone: 'info' },
+  SESSION_UNLOCKED_ADMIN: { label: 'Séance déverrouillée par un admin', tone: 'warning' },
+  SUBSCRIPTION_PLAN_CHANGED: { label: 'Offre d’abonnement changée', tone: 'info' },
+};
+
+const AUDIT_TARGET_TYPE_LABEL: Record<string, string> = {
+  User: 'Compte',
+  Group: 'Groupe',
+  AccountingEntry: 'Écriture comptable',
+  Enrollment: 'Inscription',
+  GroupChangeRequest: 'Changement de groupe',
+  TeacherProfile: 'Profil enseignant',
+  AcademicYear: 'Année académique',
+  Student: 'Élève',
+  Attendance: 'Présence',
+  Session: 'Séance',
+};
+
+function humanizeAuditCode(code: string): string {
+  const lower = code.replace(/_/g, ' ').toLowerCase();
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+}
+
+function auditActionMeta(action: string): { label: string; tone: 'success' | 'danger' | 'warning' | 'info' } {
+  return AUDIT_ACTION_META[action] ?? { label: humanizeAuditCode(action), tone: 'info' };
+}
+
+function describeAuditEntry(entry: {
+  action: string;
+  targetType: string;
+  targetId: string;
+  newValues: Record<string, unknown> | null;
+  actorName: string;
+}): string {
+  const targetLabel = AUDIT_TARGET_TYPE_LABEL[entry.targetType] ?? entry.targetType;
+  const shortRef = entry.targetId.slice(0, 8);
+  if (entry.action === 'PAYMENT_RECORDED' || entry.action === 'PAYMENT_CANCELLED') {
+    const amount = entry.newValues?.amount;
+    if (typeof amount === 'number') {
+      return `${entry.actorName} · ${formatAmount(amount)} · réf. ${shortRef}`;
+    }
+  }
+  return `${entry.actorName} · ${targetLabel} · réf. ${shortRef}`;
+}
+
 function canOpenAttendance(session: DashboardSessionSummary): boolean {
   if (session.status === 'COMPLETED' || session.status === 'LOCKED') return true;
   if (session.status !== 'PLANNED') return false;
@@ -67,10 +167,11 @@ function attendanceActionLabel(status: string): string {
 }
 
 function TeacherAccountingPeriodTable({ accounting }: { accounting: TeacherDashboard['accounting'] }) {
+  // Avenant 01, Ch. E.1 : suppression de la ventilation "trimestre en cours" ; l'année est
+  // l'année académique en cours (E.2/RM-DSH-051), jamais l'année civile.
   const periods = [
     { key: 'currentMonth' as const, label: 'Mois en cours', icon: <IconCalendarCheck />, tone: 'teal' },
-    { key: 'currentQuarter' as const, label: 'Trimestre en cours', icon: <IconLayers />, tone: 'green' },
-    { key: 'currentYear' as const, label: "Toute l'année", icon: <IconWallet />, tone: 'amber' },
+    { key: 'currentAcademicYear' as const, label: 'Année académique en cours', icon: <IconWallet />, tone: 'amber' },
   ];
   const metrics = [
     {
@@ -109,6 +210,8 @@ function TeacherAccountingPeriodTable({ accounting }: { accounting: TeacherDashb
   );
 }
 
+type TeacherQuickAction = 'attendance' | 'payment' | 'announcement' | 'message' | null;
+
 function TeacherDashboardView({
   data,
   onRefresh,
@@ -118,13 +221,18 @@ function TeacherDashboardView({
   onRefresh: () => void;
   hiddenGroupIds: Set<string>;
 }) {
-  void onRefresh;
+  const [quickAction, setQuickAction] = useState<TeacherQuickAction>(null);
   const removedGroupIds = new Set([
     ...data.groups.filter((g) => g.status === 'ARCHIVED').map((g) => g.id),
     ...hiddenGroupIds,
   ]);
   const visibleGroups = data.groups.filter((g) => !removedGroupIds.has(g.id));
   const visibleTodaysSessions = data.activity.todaysSessions.filter((s) => !removedGroupIds.has(s.group.id));
+  const attendanceCandidates = [...visibleTodaysSessions, ...data.activity.upcomingSessions]
+    .filter((s, index, all) => all.findIndex((other) => other.id === s.id) === index)
+    .filter(canOpenAttendance)
+    .slice(0, 8);
+
   return (
     <>
       {data.alerts.length > 0 && (
@@ -138,6 +246,42 @@ function TeacherDashboardView({
         <p className="form-notice" role="status">
           Votre profil (ou une évolution récente) est en attente de validation administrative.
         </p>
+      )}
+
+      <div className="dash-shortcuts">
+        <Link to="/teacher/groups?create=1" className="dash-shortcut">
+          <IconPlus /> Nouveau groupe
+        </Link>
+        <Link to="/teacher/sessions?create=1" className="dash-shortcut">
+          <IconCalendarCheck /> Créer une séance
+        </Link>
+        <button type="button" className="dash-shortcut" onClick={() => setQuickAction('attendance')}>
+          <IconClipboardCheck /> Faire l'appel
+        </button>
+        <button type="button" className="dash-shortcut" onClick={() => setQuickAction('payment')}>
+          <IconWallet /> Enregistrer un paiement
+        </button>
+        <button type="button" className="dash-shortcut" onClick={() => setQuickAction('announcement')}>
+          <IconMegaphone /> Faire une annonce
+        </button>
+        <button type="button" className="dash-shortcut" onClick={() => setQuickAction('message')}>
+          <IconMessageCircle /> Envoyer un message
+        </button>
+      </div>
+
+      {quickAction === 'attendance' && (
+        <QuickAttendanceModal sessions={attendanceCandidates} onClose={() => setQuickAction(null)} />
+      )}
+      {quickAction === 'payment' && <QuickPaymentModal onClose={() => setQuickAction(null)} />}
+      {quickAction === 'message' && <QuickMessageModal onClose={() => setQuickAction(null)} />}
+      {quickAction === 'announcement' && (
+        <QuickAnnouncementModal
+          onClose={() => setQuickAction(null)}
+          onPosted={() => {
+            setQuickAction(null);
+            onRefresh();
+          }}
+        />
       )}
 
       <TeacherWeekCalendar />
@@ -171,6 +315,22 @@ function TeacherDashboardView({
 
       <section className="card-section">
         <h2>Comptabilité</h2>
+        <div className="gauge-row">
+          {data.accounting.collectionRate != null && (
+            <RadialGauge
+              value={data.accounting.collectionRate}
+              label="Taux d'encaissement"
+              tone={gaugeToneFromRate(data.accounting.collectionRate)}
+            />
+          )}
+          {data.accounting.debtRegularizationRate != null && (
+            <RadialGauge
+              value={data.accounting.debtRegularizationRate}
+              label="Régularisation des impayés"
+              tone={gaugeToneFromRate(data.accounting.debtRegularizationRate)}
+            />
+          )}
+        </div>
         <TeacherAccountingPeriodTable accounting={data.accounting} />
         <p className="section-link">
           <Link to="/teacher/accounting">Voir tous les indicateurs financiers →</Link>
@@ -372,7 +532,7 @@ function AdminDashboardView({ data }: { data: AdminDashboard }) {
               {data.pendingAccountValidations.map((u) => (
                 <li key={u.id} className="activity-item activity-row">
                   <span className="activity-row-dot tone-amber" />
-                  <p>{u.email ?? '—'}</p>
+                  <p>{u.phone ?? '—'}</p>
                   <span className="activity-row-value">{u.roles.join(', ')}</span>
                 </li>
               ))}
@@ -401,6 +561,21 @@ function AdminDashboardView({ data }: { data: AdminDashboard }) {
       {data.subscriptions && (
         <section className="card-section">
           <h2>Abonnements</h2>
+          {(() => {
+            const total =
+              data.subscriptions.activeCount +
+              data.subscriptions.suspendedCount +
+              data.subscriptions.expiredCount +
+              data.subscriptions.pendingPaymentCount;
+            const activeRate = total > 0 ? data.subscriptions.activeCount / total : null;
+            return (
+              activeRate != null && (
+                <div className="gauge-row">
+                  <RadialGauge value={activeRate} label="Abonnements actifs" tone={gaugeToneFromRate(activeRate)} />
+                </div>
+              )
+            );
+          })()}
           <StatGrid
             tiles={[
               { label: 'En attente de paiement', value: String(data.subscriptions.pendingPaymentCount), icon: <IconCreditCard />, tone: 'amber' },
@@ -424,17 +599,26 @@ function AdminDashboardView({ data }: { data: AdminDashboard }) {
             ]}
           />
           <ul className="activity-list">
-            {data.auditLog.recent.slice(0, 10).map((a) => (
-              <li key={a.id} className="activity-item">
-                <div className="activity-item-header">
-                  <strong>{a.action}</strong>
-                  <span className="activity-item-date">{new Date(a.createdAt).toLocaleDateString('fr-FR')}</span>
-                </div>
-                <p>
-                  {a.targetType} — {a.targetId}
-                </p>
-              </li>
-            ))}
+            {data.auditLog.recent.slice(0, 10).map((a) => {
+              const meta = auditActionMeta(a.action);
+              return (
+                <li key={a.id} className="activity-item">
+                  <div className="activity-item-header">
+                    <span className={`badge badge-${meta.tone}`}>{meta.label}</span>
+                    <span className="activity-item-date">
+                      {new Date(a.createdAt).toLocaleString('fr-FR', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                  </div>
+                  <p title={a.targetId}>{describeAuditEntry(a)}</p>
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}

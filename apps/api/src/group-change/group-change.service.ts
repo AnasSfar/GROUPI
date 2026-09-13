@@ -1,7 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { EmailService } from '../email/email.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AccountingService } from '../accounting/accounting.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
@@ -61,7 +60,7 @@ interface OriginalEnrollmentForChange {
   id: string;
   groupId: string;
   studentId: string;
-  group: { teacherId: string; subjectId: string; schoolLevelId: string };
+  group: { teacherId: string; subjectId: string | null; schoolLevelId: string };
 }
 
 /**
@@ -72,7 +71,6 @@ interface OriginalEnrollmentForChange {
 export class GroupChangeService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly email: EmailService,
     private readonly notifications: NotificationsService,
     private readonly accounting: AccountingService,
     private readonly subscriptions: SubscriptionsService,
@@ -210,9 +208,13 @@ export class GroupChangeService {
     if (targetGroup.academicYear.status !== 'OPEN') {
       throw new BadRequestException('Année académique du groupe cible clôturée (ERR-INS-006)');
     }
+    // RM-CHG-010 (V1.0), repris et renforcé par l'Avenant 01 Ch. D.4/RM-PAR-025 : le groupe cible
+    // appartient obligatoirement au même Professeur que l'inscription d'origine — un changement de
+    // Professeur se fait désormais hors plateforme puis via son lien d'invitation (Ch. A), plus
+    // jamais par une nouvelle demande d'inscription côté Parent (supprimée, Ch. C/D.2).
     if (targetGroup.teacherId !== original.group.teacherId) {
       throw new BadRequestException(
-        'Le changement de groupe ne concerne que deux groupes du même Professeur (RM-CHG-010) : pour changer de Professeur, effectuez une nouvelle demande d’inscription (ERR-CHG-008)',
+        'Le groupe cible d’un changement de groupe appartient obligatoirement au Professeur de l’inscription d’origine (RM-CHG-010/RM-PAR-025, ERR-CHG-008/ERR-PAR-022)',
       );
     }
     // RM-CHG-011 : "même matière, niveau compatible" — comparaison stricte sur les deux critères
@@ -240,6 +242,63 @@ export class GroupChangeService {
   }
 
   // --- Vue Parent -------------------------------------------------------------------------
+
+  /**
+   * Avenant 01, Ch. D.2/D.3/D.4, RM-PAR-020/025 : remplace, pour ce seul besoin, la recherche de
+   * groupes supprimée (`GET /groups/search`) — le Parent ne choisit plus un groupe cible en
+   * parcourant tous les Professeurs, mais uniquement parmi les groupes standard actifs du MÊME
+   * Professeur, même matière et même niveau que l'inscription d'origine (RM-CHG-010/011,
+   * RM-PAR-025), hors le groupe d'origine et ceux où l'élève a déjà une inscription active/en
+   * attente. ERR-PAR-020 : une inscription hors du périmètre du Parent renvoie une liste vide,
+   * jamais une erreur qui confirmerait son existence.
+   */
+  async listEligibleTargetGroups(parentId: string, enrollmentId: string) {
+    const original = await this.prisma.enrollment.findUnique({
+      where: { id: enrollmentId },
+      include: { student: true, group: true },
+    });
+    if (!original || original.student.parentId !== parentId || original.status !== 'ACTIVE') {
+      return [];
+    }
+
+    const candidates = await this.prisma.group.findMany({
+      where: {
+        id: { not: original.groupId },
+        teacherId: original.group.teacherId,
+        subjectId: original.group.subjectId,
+        schoolLevelId: original.group.schoolLevelId,
+        kind: 'STANDARD',
+        status: { in: ['ACTIVE', 'FULL'] },
+      },
+      include: { schedules: true, _count: { select: { enrollments: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (candidates.length === 0) {
+      return [];
+    }
+
+    const alreadyLinked = await this.prisma.enrollment.findMany({
+      where: {
+        studentId: original.studentId,
+        groupId: { in: candidates.map((c) => c.id) },
+        status: { in: ['PENDING_VALIDATION', 'ACTIVE'] },
+      },
+      select: { groupId: true },
+    });
+    const excludedGroupIds = new Set(alreadyLinked.map((e) => e.groupId));
+
+    return candidates
+      .filter((g) => !excludedGroupIds.has(g.id) && (g.status === 'ACTIVE' || g.visibilityWhenFull === 'VISIBLE'))
+      .map((g) => ({
+        id: g.id,
+        name: g.name,
+        publicPrice: g.publicPrice,
+        teachingMode: g.teachingMode,
+        status: g.status,
+        schedules: g.schedules,
+        hasAvailableSpots: g._count.enrollments < g.capacity,
+      }));
+  }
 
   async listMineForParent(parentId: string): Promise<GroupChangeViewWithInitiator[]> {
     const requests = await this.prisma.groupChangeRequest.findMany({
@@ -476,6 +535,9 @@ export class GroupChangeService {
           requestedAt: new Date(),
           decidedAt: new Date(),
           decidedById,
+          // Avenant 01, Ch. C.5 : origine correcte pour les statistiques/indicateurs d'inscription —
+          // cette Enrollment naît d'un changement de groupe, jamais d'une affectation Professeur.
+          origin: 'GROUP_CHANGE',
         },
       });
       // RM-CPT-002 : compte de suivi comptable créé automatiquement à l'activation — ici la
@@ -547,7 +609,7 @@ export class GroupChangeService {
     await this.warnIfFrequentChanges(targetGroup.teacherId, request);
 
     // NOT-INS-007 : hors transaction — un échec d'envoi ne doit jamais annuler la décision.
-    const acceptedParentEmail = request.originalEnrollment.student.parent.user.email;
+    // Avenant 01, Ch. I.4/I.7 (RM-NOT-050/051) : notification in-app uniquement, plus d'e-mail.
     await this.notifications.notify({
       recipientUserId: request.originalEnrollment.student.parentId,
       type: 'GROUP_CHANGE_ACCEPTED',
@@ -556,15 +618,6 @@ export class GroupChangeService {
       body: `Le changement de groupe de ${request.originalEnrollment.student.firstName} ${request.originalEnrollment.student.lastName} vers "${request.targetGroup.name}" a été accepté, effectif le ${effectiveDate.toLocaleDateString('fr-FR')}.`,
       refType: 'GroupChangeRequest',
       refId: request.id,
-      sendEmail: acceptedParentEmail
-        ? () =>
-            this.email.sendGroupChangeAccepted(
-              acceptedParentEmail,
-              `${request.originalEnrollment.student.firstName} ${request.originalEnrollment.student.lastName}`,
-              request.targetGroup.name,
-              effectiveDate,
-            )
-        : undefined,
     });
     return this.annotateOne(updated);
   }
@@ -753,8 +806,7 @@ export class GroupChangeService {
       },
     });
 
-    // NOT-INS-008
-    const rejectedParentEmail = request.originalEnrollment.student.parent.user.email;
+    // NOT-INS-008 — Avenant 01, Ch. I.4/I.7 (RM-NOT-050/051) : notification in-app uniquement.
     await this.notifications.notify({
       recipientUserId: request.originalEnrollment.student.parentId,
       type: 'GROUP_CHANGE_REJECTED',
@@ -763,14 +815,6 @@ export class GroupChangeService {
       body: `Le changement de groupe de ${request.originalEnrollment.student.firstName} ${request.originalEnrollment.student.lastName} vers "${request.targetGroup.name}" a été refusé.`,
       refType: 'GroupChangeRequest',
       refId: request.id,
-      sendEmail: rejectedParentEmail
-        ? () =>
-            this.email.sendGroupChangeRejected(
-              rejectedParentEmail,
-              `${request.originalEnrollment.student.firstName} ${request.originalEnrollment.student.lastName}`,
-              request.targetGroup.name,
-            )
-        : undefined,
     });
     const updated = await this.prisma.groupChangeRequest.findUniqueOrThrow({ where: { id }, include: INCLUDE_VIEW });
     return this.annotateOne(updated);

@@ -126,15 +126,22 @@ export function ParentPreEnrollmentsPage() {
     load();
   }, [load]);
 
-  // Recherche des Professeurs validés éligibles, affinée par matière/niveau si sélectionnés.
+  // Avenant 01, Ch. D.4/RM-PAR-024 : la liste des Professeurs éligibles dépend désormais de
+  // l'enfant choisi — restreinte à ceux auxquels il est déjà rattaché ou a déjà été inscrit.
   useEffect(() => {
     const token = getAccessToken();
-    if (!token) return;
+    if (!token || !studentId) {
+      setEligibleTeachers([]);
+      return;
+    }
     preEnrollmentsApi
-      .listEligibleTeachers(token, { subjectId: subjectId || undefined, schoolLevelId: schoolLevelId || undefined })
+      .listEligibleTeachers(token, studentId, {
+        subjectId: subjectId || undefined,
+        schoolLevelId: schoolLevelId || undefined,
+      })
       .then(setEligibleTeachers)
       .catch(() => setEligibleTeachers([]));
-  }, [getAccessToken, subjectId, schoolLevelId]);
+  }, [getAccessToken, studentId, subjectId, schoolLevelId]);
 
   async function handleCreate(event: FormEvent) {
     event.preventDefault();
@@ -380,7 +387,7 @@ export function ParentPreEnrollmentsPage() {
             </div>
             <label>
               Professeur
-              <Select value={teacherId} onChange={(e) => setTeacherId(e.target.value)}>
+              <Select value={teacherId} onChange={(e) => setTeacherId(e.target.value)} disabled={!studentId}>
                 <option value="">Sélectionner...</option>
                 {eligibleTeachers.map((t) => (
                   <option key={t.id} value={t.id}>
@@ -389,8 +396,14 @@ export function ParentPreEnrollmentsPage() {
                 ))}
               </Select>
             </label>
-            {eligibleTeachers.length === 0 && (
-              <p>Aucun Professeur validé ne correspond encore à ces critères.</p>
+            {/* RM-PAR-024 : seuls les Professeurs auxquels l'enfant est déjà rattaché ou a déjà été
+                inscrit sont proposés — plus d'annuaire général de Professeurs validés. */}
+            {!studentId && <p>Choisissez d'abord un enfant pour voir les Professeurs disponibles.</p>}
+            {studentId && eligibleTeachers.length === 0 && (
+              <p>
+                Aucun Professeur disponible pour cet enfant : vous ne pouvez préinscrire un enfant que chez un
+                Professeur auquel il est déjà rattaché ou a déjà été inscrit (RM-PAR-024).
+              </p>
             )}
 
             <button

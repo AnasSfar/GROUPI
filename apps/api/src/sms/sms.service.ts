@@ -8,7 +8,14 @@ import { ConfigService } from '@nestjs/config';
  * des fournisseurs SMS via un petit adaptateur côté fournisseur) ; sans configuration, retombe sur
  * une journalisation seule, pour ne jamais bloquer le dev/CI/e2e sans identifiants (aucun test ne
  * dépend d'un envoi réel — même compromis assumé que pour `EmailService`).
+ *
+ * PAUSE (demandée par l'utilisateur, 2026-09-13) : tout envoi automatique (SMS comme e-mail) est
+ * mis en attente le temps de trancher le flux de réinitialisation assistée (Avenant 01, Ch. I.3) —
+ * `AUTOMATIC_SENDING_PAUSED` court-circuite l'appel réel même si `SMS_API_URL` est configurée.
+ * Repasser à `false` pour réactiver.
  */
+const AUTOMATIC_SENDING_PAUSED: boolean = true;
+
 @Injectable()
 export class SmsService {
   private readonly logger = new Logger(SmsService.name);
@@ -23,6 +30,10 @@ export class SmsService {
   }
 
   private async send(to: string, body: string): Promise<void> {
+    if (AUTOMATIC_SENDING_PAUSED) {
+      this.logger.log(`[pause envoi automatique] SMS to ${to} — ${body}`);
+      return;
+    }
     if (!this.apiUrl) {
       this.logger.log(`[stub] SMS to ${to} — ${body}`);
       return;

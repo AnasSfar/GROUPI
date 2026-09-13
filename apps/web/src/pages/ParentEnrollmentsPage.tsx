@@ -1,5 +1,4 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 import { ApiError } from '../api/client';
@@ -11,6 +10,7 @@ import type { GroupChangeRequestView, GroupChangeStatus } from '../api/groupChan
 import { EnrollmentCommentThread } from '../components/EnrollmentCommentThread';
 import { GroupAnnouncementsFeed } from '../components/GroupAnnouncementsFeed';
 import { EnrollmentAccountingPanel } from '../components/EnrollmentAccountingPanel';
+import { GroupChangeTargetPicker } from '../components/GroupChangeTargetPicker';
 
 const CHANGE_STATUS_LABELS: Record<GroupChangeStatus, string> = {
   PENDING: 'En attente',
@@ -25,10 +25,6 @@ const CHANGE_STATUS_BADGE: Record<GroupChangeStatus, string> = {
   REJECTED: 'badge-danger',
   CANCELLED: 'badge-neutral',
 };
-
-// NOTE (Ch.12) : le bouton "Demander une inscription" à ajouter sur les résultats de
-// ParentGroupSearchPage.tsx (POST /enrollments avec studentId + groupId) doit être câblé
-// séparément — voir la mission : ParentGroupSearchPage.tsx n'est volontairement pas modifié ici.
 
 const STATUS_LABELS: Record<EnrollmentStatus, string> = {
   PENDING_VALIDATION: 'En attente',
@@ -214,7 +210,7 @@ export function ParentEnrollmentsPage() {
                         </button>
                       )}
                       {enrollment.status === 'ACTIVE' && (
-                        <Link to={`/parent/groups?changeFromEnrollment=${enrollment.id}`}>Changer de groupe</Link>
+                        <GroupChangeTargetPicker enrollmentId={enrollment.id} onRequested={load} />
                       )}
                     </td>
                     <td data-label="Commentaires">

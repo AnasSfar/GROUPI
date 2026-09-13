@@ -49,7 +49,7 @@ describe('Academic year creation (e2e)', () => {
     });
     const superAdminLogin = await api()
       .post('/api/v1/auth/login')
-      .send({ email: superAdminEmail, password })
+      .send({ identifier: superAdminEmail, password })
       .expect(200);
     superAdminToken = superAdminLogin.body.accessToken as string;
 
@@ -62,17 +62,16 @@ describe('Academic year creation (e2e)', () => {
       data: { name: `E2E YEAR Level ${runId}`, code: `E2EYEARLVL${runId}`, order: 999, isActive: true },
     });
     schoolLevelId = schoolLevel.id;
+    await prisma.subjectLevel.create({ data: { subjectId, schoolLevelId, isAllowed: true, isActive: true } });
 
-    const teacherEmail = `e2e-year-teacher-${runId}@example.com`;
+    const teacherPhone = `e2eyear-teacher-${runId}`;
     const registerRes = await api()
       .post('/api/v1/auth/register')
       .send({
-        email: teacherEmail,
         password,
-        role: 'TEACHER',
         firstName: 'Prof',
         lastName: 'AnnÉe',
-        phone: '20000002',
+        phone: teacherPhone,
         city: 'Tunis',
         acceptTerms: true,
         subjectIds: [subjectId],
@@ -80,25 +79,32 @@ describe('Academic year creation (e2e)', () => {
       })
       .expect(201);
     await prisma.user.update({ where: { id: registerRes.body.id }, data: { status: 'ACTIVE' } });
-    const teacherLogin = await api().post('/api/v1/auth/login').send({ email: teacherEmail, password }).expect(200);
+    const teacherLogin = await api().post('/api/v1/auth/login').send({ identifier: teacherPhone, password }).expect(200);
     teacherToken = teacherLogin.body.accessToken as string;
   });
 
   afterAll(async () => {
     await prisma.academicYear.deleteMany({ where: { id: { in: createdAcademicYearIds } } });
 
-    const users = await prisma.user.findMany({ where: { email: { startsWith: 'e2e-year-' } }, select: { id: true } });
+    const users = await prisma.user.findMany({
+      where: { OR: [{ email: { startsWith: 'e2e-year-' } }, { phone: { startsWith: 'e2eyear-' } }] },
+      select: { id: true },
+    });
     const userIds = users.map((u) => u.id);
     if (userIds.length > 0) {
       await prisma.loginHistory.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.userSession.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.emailVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
+      await prisma.phoneVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.teacherSubject.deleteMany({ where: { teacherProfileId: { in: userIds } } });
       await prisma.teacherSchoolLevel.deleteMany({ where: { teacherProfileId: { in: userIds } } });
       await prisma.teacherProfile.deleteMany({ where: { id: { in: userIds } } });
-      await prisma.user.deleteMany({ where: { id: { in: userIds } } });
+      await prisma.userDevice.deleteMany({ where: { userId: { in: userIds } } });
+      await prisma.activity.deleteMany({ where: { userId: { in: userIds } } });
+    await prisma.user.deleteMany({ where: { id: { in: userIds } } });
     }
 
+    await prisma.subjectLevel.deleteMany({ where: { subjectId, schoolLevelId } });
     await prisma.subject.deleteMany({ where: { id: subjectId } });
     await prisma.schoolLevel.deleteMany({ where: { id: schoolLevelId } });
 

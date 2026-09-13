@@ -1,11 +1,9 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { EnrollmentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { EmailService } from '../email/email.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AccountingService } from '../accounting/accounting.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
-import { CreateEnrollmentDto } from './dto/create-enrollment.dto';
 import { AcceptEnrollmentDto } from './dto/accept-enrollment.dto';
 import { RejectEnrollmentDto } from './dto/reject-enrollment.dto';
 import { UpdateEnrollmentPriceDto } from './dto/update-enrollment-price.dto';
@@ -78,7 +76,6 @@ const EXPIRY_DELAY_MS = 7 * 24 * 60 * 60 * 1000; // RM-INS-026 : délai de répo
 export class EnrollmentsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly email: EmailService,
     private readonly notifications: NotificationsService,
     private readonly accounting: AccountingService,
     private readonly subscriptions: SubscriptionsService,
@@ -140,111 +137,12 @@ export class EnrollmentsService {
     return this.expireIfDue(enrollment);
   }
 
-  /**
-   * Ch.12.5/12.6 : vérifications automatiques avant création d'une demande d'inscription
-   * (ERR-INS-001 à 009, 016, 027, 028, RM-INS-011). La capacité d'abonnement du Professeur est
-   * désormais vérifiée ici aussi (RM-INS-011/RM-INS-025/ERR-INS-008), avec la même méthode que
-   * celle réutilisée à l'acceptation (`SubscriptionsService.assertActiveEnrollmentCapacity`) : si
-   * elle est déjà atteinte, la demande n'a de toute façon aucune chance d'être acceptée un jour, et
-   * ERR-INS-008 est un refus, jamais un simple avertissement. Restent hors scope volontairement :
-   *  - le compte de suivi comptable (RM-CPT-001/002 : créé uniquement à l'activation, en ACTIVE) ;
-   *  - le comportement de paiement du Parent, qui ne concerne que la décision du Professeur
-   *    (RM-INS-014/015, exposé par `listByGroup`, jamais côté création par le Parent).
-   */
-  async create(parentId: string, dto: CreateEnrollmentDto): Promise<ParentViewEnrollment> {
-    // 1) L'élève appartient au Parent connecté et n'est pas archivé.
-    const student = await this.prisma.student.findUnique({
-      where: { id: dto.studentId },
-      include: { currentSchoolSituation: true },
-    });
-    if (!student || student.parentId !== parentId) {
-      throw new BadRequestException("L'élève n'appartient pas au parent connecté (ERR-INS-028)");
-    }
-    if (student.status === 'ARCHIVED') {
-      throw new BadRequestException('Élève archivé : création de la demande impossible (ERR-INS-010)');
-    }
-
-    // 2) Le groupe existe et ses inscriptions sont ouvertes (status ACTIVE = "OUVERT").
-    const group = await this.prisma.group.findUnique({
-      where: { id: dto.groupId },
-      include: { academicYear: true, teacher: { include: { user: true } } },
-    });
-    if (!group) {
-      throw new NotFoundException('Groupe introuvable');
-    }
-    if (group.status !== 'ACTIVE') {
-      if (group.status === 'ARCHIVED') {
-        throw new BadRequestException('Groupe archivé : création de la demande impossible (ERR-INS-003)');
-      }
-      if (group.status === 'SUSPENDED') {
-        throw new BadRequestException('Groupe suspendu : création de la demande impossible (ERR-INS-007)');
-      }
-      if (group.status === 'FULL') {
-        throw new BadRequestException('Groupe complet (ERR-INS-001)');
-      }
-      throw new BadRequestException('Inscriptions fermées pour ce groupe (ERR-INS-016)');
-    }
-
-    // 3) Le Professeur du groupe est toujours actif (profil validé + compte actif).
-    if (group.teacher.status !== 'VALIDATED' || group.teacher.user.status !== 'ACTIVE') {
-      throw new BadRequestException(
-        'Professeur suspendu ou inactif : création de la demande impossible (ERR-INS-005)',
-      );
-    }
-
-    // 3bis) RM-INS-011/025/ERR-INS-008 : capacité d'abonnement du Professeur non déjà atteinte —
-    // même vérification que celle réutilisée à l'acceptation (voir `accept`/`reactivate`).
-    await this.subscriptions.assertActiveEnrollmentCapacity(group.teacherId, 1, 'ERR-INS-008');
-
-    // 4) Le Parent est validé (compte actif).
-    const parentUser = await this.prisma.user.findUnique({ where: { id: parentId } });
-    if (!parentUser || parentUser.status !== 'ACTIVE') {
-      throw new BadRequestException('Parent non validé : création de la demande refusée (ERR-INS-004/024)');
-    }
-
-    // 5) L'année académique du groupe est ouverte.
-    if (group.academicYear.status !== 'OPEN') {
-      throw new BadRequestException('Année académique clôturée : création de la demande impossible (ERR-INS-006)');
-    }
-
-    // 6) Capacité du groupe non atteinte (RM-INS-041 : seules les inscriptions ACTIVE consomment une place).
-    const activeCount = await this.prisma.enrollment.count({
-      where: { groupId: group.id, status: 'ACTIVE' },
-    });
-    if (activeCount >= group.capacity) {
-      throw new BadRequestException('Groupe complet (ERR-INS-001)');
-    }
-
-    // 7) Pas déjà de demande PENDING_VALIDATION ou d'inscription ACTIVE pour ce couple élève/groupe.
-    const existing = await this.prisma.enrollment.findFirst({
-      where: { studentId: student.id, groupId: group.id, status: { in: ['PENDING_VALIDATION', 'ACTIVE'] } },
-    });
-    if (existing) {
-      throw new BadRequestException(
-        existing.status === 'ACTIVE'
-          ? 'Inscription déjà active pour cet élève dans ce groupe (ERR-INS-032)'
-          : "Une demande d'inscription est déjà en attente pour cet élève dans ce groupe (ERR-INS-002/009)",
-      );
-    }
-
-    // 8) La situation scolaire active de l'élève doit correspondre à l'année académique du groupe.
-    if (!student.currentSchoolSituation || student.currentSchoolSituation.academicYearId !== group.academicYearId) {
-      throw new BadRequestException(
-        "L'année académique du groupe est incompatible avec la situation scolaire active de l'élève (ERR-INS-027)",
-      );
-    }
-
-    const created = await this.prisma.enrollment.create({
-      data: {
-        studentId: student.id,
-        groupId: group.id,
-        status: 'PENDING_VALIDATION',
-        requestedAt: new Date(),
-      },
-      include: INCLUDE_PARENT_VIEW,
-    });
-    return created;
-  }
+  // Avenant 01, Ch. C/D.2, RM-PAR-021 : `create()` (demande d'inscription à l'initiative du Parent,
+  // ex-Ch.12.5/12.6) a été retiré avec `POST /enrollments` — voir le commentaire d'en-tête du
+  // contrôleur. L'entrée d'un enfant dans un groupe standard passe désormais par l'affectation
+  // Professeur (Ch. C, module séparé) ou par la transformation d'une préinscription confirmée
+  // (`PreEnrollmentsService.confirm()`, inchangée), qui crée directement l'`Enrollment`
+  // `PENDING_VALIDATION` sans repasser par cette méthode.
 
   /** RM-INS-038/049 : annulation possible tant qu'aucune décision du Professeur n'est enregistrée. */
   async cancel(parentId: string, enrollmentId: string): Promise<ParentViewEnrollment> {
@@ -447,7 +345,7 @@ export class EnrollmentsService {
     });
 
     // NOT-INS-002 : hors transaction — un échec d'envoi ne doit jamais annuler la décision.
-    const acceptedParentEmail = updated.student.parent.user.email;
+    // Avenant 01, Ch. I.4/I.7 (RM-NOT-050/051) : notification in-app uniquement, plus d'e-mail.
     await this.notifications.notify({
       recipientUserId: updated.student.parentId,
       type: 'INS_ACCEPTED',
@@ -456,14 +354,6 @@ export class EnrollmentsService {
       body: `La demande d'inscription de ${updated.student.firstName} ${updated.student.lastName} au groupe "${updated.group.name}" a été acceptée.`,
       refType: 'Enrollment',
       refId: updated.id,
-      sendEmail: acceptedParentEmail
-        ? () =>
-            this.email.sendEnrollmentAccepted(
-              acceptedParentEmail,
-              `${updated.student.firstName} ${updated.student.lastName}`,
-              updated.group.name,
-            )
-        : undefined,
     });
     return updated;
   }
@@ -497,8 +387,7 @@ export class EnrollmentsService {
       },
     });
 
-    // NOT-INS-003
-    const rejectedParentEmail = updated.student.parent.user.email;
+    // NOT-INS-003 — Avenant 01, Ch. I.4/I.7 (RM-NOT-050/051) : notification in-app uniquement.
     await this.notifications.notify({
       recipientUserId: updated.student.parentId,
       type: 'INS_REJECTED',
@@ -507,14 +396,6 @@ export class EnrollmentsService {
       body: `La demande d'inscription de ${updated.student.firstName} ${updated.student.lastName} au groupe "${updated.group.name}" a été refusée.`,
       refType: 'Enrollment',
       refId: updated.id,
-      sendEmail: rejectedParentEmail
-        ? () =>
-            this.email.sendEnrollmentRejected(
-              rejectedParentEmail,
-              `${updated.student.firstName} ${updated.student.lastName}`,
-              updated.group.name,
-            )
-        : undefined,
     });
     return updated;
   }

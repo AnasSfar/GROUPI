@@ -8,6 +8,7 @@ import { GroupsModule } from '../src/groups/groups.module';
 import { SessionsModule } from '../src/sessions/sessions.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { grantActiveSubscription } from './helpers/grant-subscription';
+import { registerParentDirect } from './helpers/register-parent-direct';
 
 /**
  * E2E tests for the groups module's `update()` endpoint (Ch.10 — Les Groupes), focused on the
@@ -23,8 +24,8 @@ describe('Groups — schedule update (e2e)', () => {
   let prisma: PrismaService;
 
   const runId = Date.now();
-  const teacherEmail = `e2e-grp-teacher-${runId}@example.com`;
-  const parentEmail = `e2e-grp-parent-${runId}@example.com`;
+  const teacherPhone = `e2egrp-teacher-${runId}`;
+  const parentPhone = `e2egrp-parent-${runId}`;
   const password = 'CorrectHorse123';
 
   let teacherToken: string;
@@ -138,12 +139,10 @@ describe('Groups — schedule update (e2e)', () => {
     const registerRes = await api()
       .post('/api/v1/auth/register')
       .send({
-        email: teacherEmail,
         password,
-        role: 'TEACHER',
         firstName: 'Prof',
         lastName: 'Groupes',
-        phone: '20000002',
+        phone: teacherPhone,
         city: 'Tunis',
         acceptTerms: true,
         subjectIds: [subjectId],
@@ -158,42 +157,29 @@ describe('Groups — schedule update (e2e)', () => {
     await prisma.user.update({ where: { id: registerRes.body.id }, data: { status: 'ACTIVE' } });
     await grantActiveSubscription(prisma, registerRes.body.id, academicYearId);
 
-    const loginRes = await api().post('/api/v1/auth/login').send({ email: teacherEmail, password }).expect(200);
+    const loginRes = await api().post('/api/v1/auth/login').send({ identifier: teacherPhone, password }).expect(200);
     teacherToken = loginRes.body.accessToken as string;
 
-    const parentRegisterRes = await api()
-      .post('/api/v1/auth/register')
-      .send({
-        email: parentEmail,
-        password,
-        role: 'PARENT',
-        firstName: 'Parent',
-        lastName: 'Groupes',
-        phone: '20000003',
-        city: 'Tunis',
-        acceptTerms: true,
-        initialStudent: {
-          firstName: 'Kid',
-          lastName: 'Groupes',
-          schoolLevelId,
-          schoolId,
-        },
-      })
-      .expect(201);
-
-    await prisma.user.update({ where: { id: parentRegisterRes.body.id }, data: { status: 'ACTIVE' } });
-    await prisma.parentProfile.update({
-      where: { id: parentRegisterRes.body.id },
-      data: { validatedAt: new Date() },
+    await registerParentDirect(prisma, {
+      phone: parentPhone,
+      password,
+      firstName: 'Parent',
+      lastName: 'Groupes',
+      city: 'Tunis',
+      studentFirstName: 'Kid',
+      studentLastName: 'Groupes',
+      schoolLevelId,
+      schoolId,
+      academicYearId,
     });
 
-    const parentLoginRes = await api().post('/api/v1/auth/login').send({ email: parentEmail, password }).expect(200);
+    const parentLoginRes = await api().post('/api/v1/auth/login').send({ identifier: parentPhone, password }).expect(200);
     parentToken = parentLoginRes.body.accessToken as string;
   });
 
   afterAll(async () => {
     const users = await prisma.user.findMany({
-      where: { email: { startsWith: 'e2e-grp-' } },
+      where: { phone: { startsWith: 'e2egrp-' } },
       select: { id: true },
     });
     const userIds = users.map((u) => u.id);
@@ -237,9 +223,11 @@ describe('Groups — schedule update (e2e)', () => {
       await prisma.userSession.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.passwordResetToken.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.emailVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
+      await prisma.phoneVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.parentProfile.deleteMany({ where: { id: { in: userIds } } });
       await prisma.teacherProfile.deleteMany({ where: { id: { in: userIds } } });
-      await prisma.user.deleteMany({ where: { id: { in: userIds } } });
+      await prisma.userDevice.deleteMany({ where: { userId: { in: userIds } } });
+    await prisma.user.deleteMany({ where: { id: { in: userIds } } });
     }
 
     await app.close();
@@ -275,33 +263,18 @@ describe('Groups — schedule update (e2e)', () => {
     return res.body.sessions as { id: string; status: string }[];
   }
 
-  it('filters parent group search to the active child school levels', async () => {
-    const matchingGroup = await createGroup(`E2E-GRP-${runId} Visible Parent`, [
-      { dayOfWeek: scheduleDay1, startTime: '09:00', durationMinutes: 60 },
-    ]);
-    const otherLevelGroup = await createGroup(
-      `E2E-GRP-${runId} Hidden Parent Level`,
-      [{ dayOfWeek: scheduleDay1, startTime: '10:00', durationMinutes: 60 }],
-      otherSchoolLevelId,
-    );
-
+  /**
+   * Avenant 01, Ch. D.2/RM-PAR-020/ERR-PAR-023 : la recherche publique de groupes par le Parent
+   * (`GET /groups/search`) est supprimée — le Parent n'a plus aucune fonction de recherche/
+   * découverte de groupes. Choix Ch. H.9 : suppression complète (pas de route dédiée renvoyant
+   * 410 Gone), donc un 404 générique de routage — voir le commentaire d'en-tête de
+   * `GroupsController`.
+   */
+  it("l'ancienne recherche publique de groupes par le Parent a été retirée -> 404 (D.2/ERR-PAR-023)", async () => {
     await api()
-      .post(`/api/v1/groups/${matchingGroup.id}/open`)
-      .set('Authorization', `Bearer ${teacherToken}`)
-      .expect(201);
-    await api()
-      .post(`/api/v1/groups/${otherLevelGroup.id}/open`)
-      .set('Authorization', `Bearer ${teacherToken}`)
-      .expect(201);
-
-    const res = await api()
       .get('/api/v1/groups/search')
       .set('Authorization', `Bearer ${parentToken}`)
-      .expect(200);
-
-    const ids = res.body.map((g: { id: string }) => g.id);
-    expect(ids).toContain(matchingGroup.id);
-    expect(ids).not.toContain(otherLevelGroup.id);
+      .expect(404);
   });
 
   it('(a) updating schedules with zero future sessions still works with no extra flag (regression)', async () => {

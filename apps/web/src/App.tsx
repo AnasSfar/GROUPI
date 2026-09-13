@@ -23,7 +23,6 @@ const StudentSituationPage = lazy(() => import('./pages/StudentSituationPage').t
 const AdminSchoolSituationsPage = lazy(() => import('./pages/AdminSchoolSituationsPage').then((m) => ({ default: m.AdminSchoolSituationsPage })));
 const TeacherGroupsPage = lazy(() => import('./pages/TeacherGroupsPage').then((m) => ({ default: m.TeacherGroupsPage })));
 const TeacherAllSessionsPage = lazy(() => import('./pages/TeacherAllSessionsPage').then((m) => ({ default: m.TeacherAllSessionsPage })));
-const ParentGroupSearchPage = lazy(() => import('./pages/ParentGroupSearchPage').then((m) => ({ default: m.ParentGroupSearchPage })));
 const TeacherSessionsPage = lazy(() => import('./pages/TeacherSessionsPage').then((m) => ({ default: m.TeacherSessionsPage })));
 const TeacherStudentsPage = lazy(() => import('./pages/TeacherStudentsPage').then((m) => ({ default: m.TeacherStudentsPage })));
 const ParentEnrollmentsPage = lazy(() => import('./pages/ParentEnrollmentsPage').then((m) => ({ default: m.ParentEnrollmentsPage })));
@@ -49,9 +48,11 @@ const ParentSchoolRequestsPage = lazy(() => import('./pages/ParentSchoolRequests
 const AdminSchoolRequestsPage = lazy(() => import('./pages/AdminSchoolRequestsPage').then((m) => ({ default: m.AdminSchoolRequestsPage })));
 const AdminReferentialsPage = lazy(() => import('./pages/AdminReferentialsPage').then((m) => ({ default: m.AdminReferentialsPage })));
 const AccountSettingsPage = lazy(() => import('./pages/AccountSettingsPage').then((m) => ({ default: m.AccountSettingsPage })));
-const VerifyEmailPage = lazy(() => import('./pages/VerifyEmailPage').then((m) => ({ default: m.VerifyEmailPage })));
-const VerifyPhonePage = lazy(() => import('./pages/VerifyPhonePage').then((m) => ({ default: m.VerifyPhonePage })));
 const AdminInvitationAcceptPage = lazy(() => import('./pages/AdminInvitationAcceptPage').then((m) => ({ default: m.AdminInvitationAcceptPage })));
+// Avenant 01, Ch. A/B — onboarding par invitation du Professeur / groupes de niveau.
+const InvitationAcceptPage = lazy(() => import('./pages/InvitationAcceptPage').then((m) => ({ default: m.InvitationAcceptPage })));
+const TeacherInvitationPage = lazy(() => import('./pages/TeacherInvitationPage').then((m) => ({ default: m.TeacherInvitationPage })));
+const TeacherLevelPoolsPage = lazy(() => import('./pages/TeacherLevelPoolsPage').then((m) => ({ default: m.TeacherLevelPoolsPage })));
 
 function App() {
   return (
@@ -70,9 +71,10 @@ function App() {
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
-            <Route path="/verify-email" element={<VerifyEmailPage />} />
-            <Route path="/verify-phone" element={<VerifyPhonePage />} />
             <Route path="/admin-invitation" element={<AdminInvitationAcceptPage />} />
+            {/* Avenant 01, Ch. A.3.2 : page publique de consultation/consommation du lien
+                d'invitation d'un Professeur — accessible non authentifié (visiteur) ou connecté. */}
+            <Route path="/invitation/:token" element={<InvitationAcceptPage />} />
 
             <Route
               element={
@@ -115,6 +117,23 @@ function App() {
                   </ProtectedRoute>
                 }
               />
+              {/* Avenant 01, Ch. A/B — onboarding par invitation / salles d'attente (Professeur). */}
+              <Route
+                path="/teacher/invitation"
+                element={
+                  <ProtectedRoute roles={['TEACHER']}>
+                    <TeacherInvitationPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/teacher/level-pools"
+                element={
+                  <ProtectedRoute roles={['TEACHER']}>
+                    <TeacherLevelPoolsPage />
+                  </ProtectedRoute>
+                }
+              />
               <Route
                 path="/parent/children"
                 element={
@@ -131,14 +150,8 @@ function App() {
                   </ProtectedRoute>
                 }
               />
-              <Route
-                path="/parent/groups"
-                element={
-                  <ProtectedRoute roles={['PARENT']}>
-                    <ParentGroupSearchPage />
-                  </ProtectedRoute>
-                }
-              />
+              {/* Avenant 01, Ch. D.2/RM-PAR-020 : "/parent/groups" (recherche publique de groupes)
+                  est supprimée — le Parent n'initie plus jamais une inscription (Ch. C). */}
               <Route
                 path="/teacher/sessions"
                 element={

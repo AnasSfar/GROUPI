@@ -1,9 +1,15 @@
 import { IsOptional, IsString, IsUUID } from 'class-validator';
 
-/** Ch.11.4 : le Parent choisit un Professeur parmi les comptes validés — pas encore d'annuaire
- *  public dédié (hors périmètre Ch.11), cet endpoint expose une recherche minimale dans le
- *  seul but d'alimenter le formulaire de préinscription. */
+/**
+ * Avenant 01, Ch. D.4, RM-PAR-024 : le Parent choisit un Professeur parmi ceux auxquels
+ * `studentId` est déjà rattaché ou a déjà été inscrit — plus un mini-annuaire de tous les
+ * Professeurs validés (retiré, RM-PAR-020), seulement le formulaire de préinscription restreint
+ * au périmètre de cet enfant.
+ */
 export class EligibleTeachersQueryDto {
+  @IsUUID()
+  studentId!: string;
+
   @IsOptional()
   @IsString()
   city?: string;

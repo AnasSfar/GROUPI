@@ -34,7 +34,7 @@ async function main() {
   const permissions = process.argv.slice(6).length ? process.argv.slice(6) : ALL_PERMISSIONS;
   const plainPassword = process.env.LOCAL_ADMIN_PASSWORD ?? 'admin-local';
 
-  const existing = await prisma.user.findUnique({ where: { email } });
+  const existing = await prisma.user.findFirst({ where: { email } });
   if (existing) {
     console.log(`Compte déjà présent (${email}) — rien à faire.`);
     await prisma.$disconnect();

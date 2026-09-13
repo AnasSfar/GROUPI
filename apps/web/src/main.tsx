@@ -9,7 +9,7 @@ import { initTheme } from './utils/theme'
 initTheme()
 
 // Optionnel — sans VITE_SENTRY_DSN, aucune remontée d'erreur, comportement inchangé (même
-// convention que EmailService côté API : infra silencieusement désactivée sans configuration).
+// convention que côté API : infra silencieusement désactivée sans configuration).
 const sentryDsn = import.meta.env.VITE_SENTRY_DSN
 if (sentryDsn) {
   Sentry.init({

@@ -51,6 +51,18 @@ export interface UpdateStudentPayload {
   dateOfBirth?: string;
 }
 
+/**
+ * Avenant 01, Ch. D.3, RM-POOL-010/RM-PAR-023 : rattachement actif d'un enfant à la salle d'attente
+ * d'un Professeur, sans inscription standard correspondante — jamais un nom de groupe standard non
+ * rejoint ni celui d'un autre élève.
+ */
+export interface PendingLevelPoolAssignment {
+  id: string;
+  studentId: string;
+  teacher: { firstName: string; lastName: string };
+  schoolLevel: { id: string; name: string };
+}
+
 export type SchoolAdditionRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 
 export interface SchoolAdditionRequest {
@@ -129,6 +141,11 @@ export function reactivateStudent(accessToken: string, studentId: string): Promi
     method: 'POST',
     accessToken,
   });
+}
+
+/** Avenant 01, Ch. D.3 : alimente l'entrée "En attente d'affectation" du niveau 2 de navigation. */
+export function listPendingAssignments(accessToken: string): Promise<PendingLevelPoolAssignment[]> {
+  return apiRequest<PendingLevelPoolAssignment[]>('/parent-profile/me/pending-assignments', { accessToken });
 }
 
 /** Ch.6.7 — un Parent peut demander l'ajout d'un établissement absent du référentiel. */

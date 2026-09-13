@@ -1,13 +1,12 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
-import { EmailModule } from '../email/email.module';
+import { MessagingModule } from '../messaging/messaging.module';
 import { NotificationsController } from './notifications.controller';
 import { NotificationsService } from './notifications.service';
 
+/** Avenant 01, Ch. I.4/I.7 : `EmailModule` retiré — `NotificationsService` délègue à `MessagingService`. */
 @Module({
-  // RM-NOT-014 : EmailModule importé pour le réenvoi des e-mails critiques en échec
-  // (`NotificationsService.retryFailedCriticalEmails`).
-  imports: [AuthModule, EmailModule],
+  imports: [AuthModule, MessagingModule],
   controllers: [NotificationsController],
   providers: [NotificationsService],
   exports: [NotificationsService],

@@ -1,6 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { EmailService } from '../email/email.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateAbsenceNoticeDto } from './dto/create-absence-notice.dto';
 
@@ -13,7 +12,6 @@ import { CreateAbsenceNoticeDto } from './dto/create-absence-notice.dto';
 export class AbsenceNoticeService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly email: EmailService,
     private readonly notifications: NotificationsService,
   ) {}
 
@@ -93,12 +91,7 @@ export class AbsenceNoticeService {
     });
 
     // RM-DSH-006 : "le Professeur reçoit une notification immédiate" — pas de code NOT-DSH dédié
-    // dans le référentiel pour ce déclencheur précis (voir EmailService.sendAbsenceNoticeReported).
-    const teacherUser = await this.prisma.user.findUniqueOrThrow({
-      where: { id: session.group.teacherId },
-      select: { email: true },
-    });
-    const teacherEmail = teacherUser.email;
+    // dans le référentiel pour ce déclencheur précis. Avenant 01, Ch. I.4/I.7 : in-app uniquement.
     await this.notifications.notify({
       recipientUserId: session.group.teacherId,
       type: 'DSH_ABSENCE_NOTICE',
@@ -107,16 +100,6 @@ export class AbsenceNoticeService {
       body: `${student.firstName} ${student.lastName} — absence prévisible signalée pour la séance du ${session.date.toLocaleDateString('fr-FR')} à ${session.startTime} (groupe "${session.group.name}").`,
       refType: 'Session',
       refId: session.id,
-      sendEmail: teacherEmail
-        ? () =>
-            this.email.sendAbsenceNoticeReported(
-              teacherEmail,
-              `${student.firstName} ${student.lastName}`,
-              session.group.name,
-              session.date,
-              session.startTime,
-            )
-        : undefined,
     });
 
     return this.toView(notice);

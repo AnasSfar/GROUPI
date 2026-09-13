@@ -2,9 +2,11 @@ import * as Sentry from '@sentry/node';
 
 /**
  * Remontée d'erreurs Sentry (observabilité prod, voir apps/api/src/common/sentry-exception.filter.ts
- * pour la capture effective des 5xx). Suit exactement la convention EmailService (apps/api/src/email/
- * email.service.ts) pour l'infra optionnelle : sans SENTRY_DSN, `initSentry()` ne fait rien — aucun
- * appel réseau, aucun log, comportement dev/CI strictement inchangé, aucun compte Sentry requis.
+ * pour la capture effective des 5xx). Suit exactement la même convention que les services d'infra
+ * optionnelle du projet (ex. `SmsService`, apps/api/src/sms/sms.service.ts) : sans SENTRY_DSN,
+ * `initSentry()` ne fait rien — aucun appel réseau, aucun log, comportement dev/CI strictement
+ * inchangé, aucun compte Sentry requis. (Avenant 01, Ch. I.9 : le module `email/`/`EmailService`
+ * précédemment cité ici en exemple a été retiré — RM-SEC-052.)
  *
  * Doit être appelée en tout premier, avant les autres imports qui produisent des effets de bord
  * (recommandation Sentry Node), d'où sa présence en tête de main.ts et vercel-handler.ts plutôt

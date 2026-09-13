@@ -148,8 +148,8 @@ export interface TeacherAccountingIndicators {
   forecastRevenue: number;
   periodRevenue: {
     currentMonth: TeacherAccountingPeriodRevenue;
-    currentQuarter: TeacherAccountingPeriodRevenue;
-    currentYear: TeacherAccountingPeriodRevenue;
+    /** Avenant 01, Ch. E.1/E.2 : "année" = année académique OPEN courante, jamais l'année civile. */
+    currentAcademicYear: TeacherAccountingPeriodRevenue;
   };
   realizedRevenue: number;
   collectedRevenue: number;

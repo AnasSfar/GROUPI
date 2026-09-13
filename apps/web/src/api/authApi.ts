@@ -1,35 +1,23 @@
 import { apiRequest } from './client';
 
-/** Self-registration is only ever TEACHER or PARENT — Admin/SuperAdmin accounts are never self-created. */
+/** Self-registration n'existe plus que pour TEACHER (Avenant 01, Ch. A.2/D.2) — un Parent
+ * n'entre dans GROUPI que via un lien d'invitation. Admin/SuperAdmin ne sont jamais self-created. */
 export type Role = 'TEACHER' | 'PARENT';
 
-export interface InitialStudentPayload {
-  firstName: string;
-  lastName: string;
-  dateOfBirth?: string;
-  schoolLevelId: string;
-  schoolId: string;
-  schoolClass?: string;
-}
-
 export interface RegisterPayload {
-  /** Email facultatif, unique quand il est fourni. */
-  email?: string;
   password: string;
-  role: Role;
   firstName: string;
   lastName: string;
   phone: string;
   city: string;
   acceptTerms: boolean;
-  /** RM-TPR-001 : requis lorsque `role === 'TEACHER'`. */
-  subjectIds?: string[];
-  schoolLevelIds?: string[];
+  /** RM-TPR-001 */
+  subjectIds: string[];
+  schoolLevelIds: string[];
 }
 
 export interface RegisterResponse {
   id: string;
-  email: string | null;
   phone: string | null;
   status: string;
 }
@@ -41,20 +29,19 @@ export interface TokenPair {
 
 export interface CurrentUser {
   id: string;
+  /** Admin/Super Admin uniquement (Ch. H) — null pour un Professeur/Parent (Ch. I.1). */
   email: string | null;
   phone: string | null;
   roles: string[];
   status: string;
   administratorPermissions: string[] | null;
-  emailVerifiedAt: string | null;
-  phoneVerifiedAt: string | null;
 }
 
 export function register(payload: RegisterPayload): Promise<RegisterResponse> {
   return apiRequest<RegisterResponse>('/auth/register', { method: 'POST', body: payload });
 }
 
-/** RM-SEC-001 : `identifier` est l'adresse e-mail ou le numéro de téléphone du compte. */
+/** RM-SEC-001 : `identifier` est le téléphone (Professeur/Parent) ou l'e-mail (Admin, Ch. H). */
 export function login(identifier: string, password: string): Promise<TokenPair> {
   return apiRequest<TokenPair>('/auth/login', { method: 'POST', body: { identifier, password } });
 }
@@ -123,22 +110,19 @@ export function fetchLoginHistory(accessToken: string): Promise<LoginHistoryEntr
   return apiRequest<LoginHistoryEntry[]>('/auth/me/login-history', { accessToken });
 }
 
-/** Ch.9.5, ERR-SEC-012 — lien reçu par e-mail à l'inscription. */
-export function verifyEmail(token: string): Promise<void> {
-  return apiRequest<void>('/auth/verify-email', { method: 'POST', body: { token } });
+export interface AssistedResetLinkResponse {
+  token: string;
+  url: string;
+  expiresAt: string;
 }
 
-export function resendVerificationEmail(accessToken: string): Promise<void> {
-  return apiRequest<void>('/auth/resend-verification', { method: 'POST', accessToken });
-}
-
-/** Ch.9.5 — équivalent de `verifyEmail` pour un compte identifié (ou complété) par téléphone. */
-export function verifyPhone(code: string): Promise<void> {
-  return apiRequest<void>('/auth/verify-phone', { method: 'POST', body: { code } });
-}
-
-export function resendVerificationPhone(accessToken: string): Promise<void> {
-  return apiRequest<void>('/auth/resend-verification-phone', { method: 'POST', accessToken });
+/** Ch. I.3 : reset assisté — un Professeur (pour l'un de ses Parents) ou un Administrateur
+ * (pour n'importe quel compte) génère un lien de réinitialisation à transmettre hors bande. */
+export function generateAssistedResetLink(accessToken: string, targetUserId: string): Promise<AssistedResetLinkResponse> {
+  return apiRequest<AssistedResetLinkResponse>(`/auth/users/${targetUserId}/assisted-reset-link`, {
+    method: 'POST',
+    accessToken,
+  });
 }
 
 export interface AddRolePayload {
@@ -155,7 +139,7 @@ export interface AddRolePayload {
 
 export interface AddRoleResponse {
   id: string;
-  email: string | null;
+  phone: string | null;
   status: string;
   roles: string[];
 }

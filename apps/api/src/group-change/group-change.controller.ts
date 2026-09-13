@@ -1,12 +1,14 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { GroupChangeService } from './group-change.service';
 import { CreateGroupChangeRequestDto } from './dto/create-group-change-request.dto';
 import { TeacherInitiateGroupChangeRequestDto } from './dto/teacher-initiate-group-change-request.dto';
 import { AcceptGroupChangeRequestDto } from './dto/accept-group-change-request.dto';
 import { RejectGroupChangeRequestDto } from './dto/reject-group-change-request.dto';
+import { EligibleTargetGroupsQueryDto } from './dto/eligible-target-groups-query.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { TeacherValidatedGuard } from '../auth/guards/teacher-validated.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
@@ -21,7 +23,7 @@ import { SubscriptionGuard } from '../subscriptions/subscription.guard';
  * no-op pour le Parent.
  */
 @Controller('group-changes')
-@UseGuards(JwtAuthGuard, RolesGuard, SubscriptionGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, TeacherValidatedGuard, SubscriptionGuard)
 export class GroupChangeController {
   constructor(private readonly service: GroupChangeService) {}
 
@@ -35,6 +37,17 @@ export class GroupChangeController {
   @Roles(Role.PARENT)
   listMine(@CurrentUser() user: AuthenticatedUser) {
     return this.service.listMineForParent(user.id);
+  }
+
+  /**
+   * Avenant 01, Ch. D.2/D.3/D.4 : remplace la recherche de groupes supprimée pour ce seul besoin —
+   * groupes standard éligibles (même Professeur, même matière/niveau, RM-PAR-025) comme cible d'un
+   * changement pour `enrollmentId`.
+   */
+  @Get('eligible-target-groups')
+  @Roles(Role.PARENT)
+  listEligibleTargetGroups(@CurrentUser() user: AuthenticatedUser, @Query() query: EligibleTargetGroupsQueryDto) {
+    return this.service.listEligibleTargetGroups(user.id, query.enrollmentId);
   }
 
   @Post(':id/cancel')

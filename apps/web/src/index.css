@@ -56,6 +56,9 @@
   --radius-pill: 999px;
   --focus-ring: 0 0 0 3px var(--accent-bg);
   --profile-cover-bg: linear-gradient(135deg, var(--sidebar-bg), var(--link));
+  /* Dégradé de marque (navy → turquoise) : réservé aux touches "vivantes" à faible surface —
+     logo, pastille de nav active, bouton primaire, anneau de jauge — jamais un grand aplat. */
+  --brand-gradient: linear-gradient(135deg, var(--brand-navy), var(--link));
 
   --sidebar-text: #cfe0ec;
   --sidebar-text-muted: #b9cddb;
@@ -686,6 +689,7 @@ code {
 }
 
 .app-dock-brand {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -697,19 +701,56 @@ code {
   color: var(--accent);
 }
 
+/* Halo animé derrière le logo : lueur douce en respiration continue, indépendante du survol,
+   pour donner un point de vie à la nav sans jamais gêner la lisibilité (opacité faible, flou). */
+.app-dock-brand::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: var(--radius-pill);
+  background: var(--brand-gradient);
+  opacity: 0.16;
+  filter: blur(6px);
+  animation: groupi-logo-breathe 4.5s ease-in-out infinite;
+  z-index: 0;
+}
+
 .app-dock-brand:hover {
   background: var(--hover);
   opacity: 1;
 }
 
+.app-dock-brand:hover::before {
+  opacity: 0.32;
+}
+
 .app-dock-brand img {
+  position: relative;
+  z-index: 1;
   width: 30px;
   height: 30px;
   border-radius: var(--radius-sm);
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.app-dock-brand:hover img {
+  transform: scale(1.08) rotate(-6deg);
 }
 
 .app-dock-brand span {
   display: none;
+}
+
+@keyframes groupi-logo-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.14;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 0.3;
+  }
 }
 
 .app-dock-nav {
@@ -748,16 +789,23 @@ code {
   color: var(--text-muted);
   font-size: 12.5px;
   font-weight: 650;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
 
 .app-dock-link:hover {
   background: var(--hover);
   color: var(--text-h);
   text-decoration: none;
+  transform: translateY(-1px);
+}
+
+.app-dock-link:hover svg {
+  transform: scale(1.08);
 }
 
 .app-dock-link.active {
   background: var(--accent-bg);
+  background-image: linear-gradient(135deg, color-mix(in srgb, var(--brand-navy) 14%, transparent), color-mix(in srgb, var(--link) 14%, transparent));
   color: var(--accent);
   box-shadow: var(--shadow-accent);
 }
@@ -765,6 +813,7 @@ code {
 .app-dock-link svg {
   width: 18px;
   height: 18px;
+  transition: transform 0.15s ease;
 }
 
 .app-dock-link span {
@@ -1740,7 +1789,103 @@ body:has(.landing-page) .theme-toggle-floating {
   }
 }
 
+/* --- Actions rapides du tableau de bord (Professeur) ------------------- */
+
+.dash-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.dash-shortcut {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text-h);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.dash-shortcut:hover:not(:disabled) {
+  text-decoration: none;
+  background: var(--link-bg);
+  border-color: var(--link-border);
+  color: var(--text-h);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.dash-shortcut svg {
+  width: 18px;
+  height: 18px;
+  color: var(--link);
+  flex: none;
+}
+
+/* Liste de sélection compacte (ex. choisir une séance pour l'appel), dans une modale. */
+.quick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.quick-list-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.quick-list-row:hover {
+  background: var(--hover);
+  border-color: var(--border-strong);
+}
+
+.quick-list-date {
+  font-weight: 600;
+  color: var(--text-h);
+  min-width: 132px;
+}
+
+.quick-list-group {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-list-action {
+  color: var(--link);
+  font-weight: 600;
+  flex: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-shortcut {
+    transition: none;
+  }
+}
+
 .dash-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1750,14 +1895,32 @@ body:has(.landing-page) .theme-toggle-floating {
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
   color: inherit;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  overflow: hidden;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.dash-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--brand-gradient);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.25s ease;
 }
 
 a.dash-card:hover {
   text-decoration: none;
-  transform: translateY(-2px);
+  transform: translateY(-3px);
   box-shadow: var(--shadow-md);
   border-color: var(--accent-border);
+}
+
+a.dash-card:hover::before {
+  transform: scaleX(1);
 }
 
 .dash-card-icon {
@@ -1769,6 +1932,13 @@ a.dash-card:hover {
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.2s ease;
+}
+
+a.dash-card:hover .dash-card-icon {
+  transform: scale(1.1) rotate(-4deg);
+  background: var(--brand-gradient);
+  color: var(--text-on-accent);
 }
 
 .dash-card-icon svg {
@@ -2770,21 +2940,25 @@ button:disabled {
 /* Bouton "primaire" implicite : submit d'un formulaire, action directe d'une section
    (Enregistrer), ou premier bouton d'une ligne d'actions (Valider / Ouvrir / Suspendre...). */
 .card-section form > button[type='submit'],
-.card-section > button,
+.card-section > button:not(.ghost-link),
 .page-actions .btn-primary,
-.admin-actions button:not(.danger):not(.ghost):first-child {
-  background: var(--accent);
+.admin-actions button:not(.danger):not(.ghost):not(.ghost-link):first-child {
+  background: var(--brand-gradient);
   border-color: var(--accent);
   color: var(--text-on-accent);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
 }
 
 .card-section form > button[type='submit']:hover:not(:disabled),
-.card-section > button:hover:not(:disabled),
+.card-section > button:not(.ghost-link):hover:not(:disabled),
 .page-actions .btn-primary:hover:not(:disabled),
-.admin-actions button:not(.danger):not(.ghost):first-child:hover:not(:disabled) {
-  background: var(--accent-hover);
+.admin-actions button:not(.danger):not(.ghost):not(.ghost-link):first-child:hover:not(:disabled) {
+  background: var(--brand-gradient);
   border-color: var(--accent-hover);
   color: var(--text-on-accent);
+  filter: brightness(1.06);
+  box-shadow: var(--shadow-accent);
+  transform: translateY(-1px);
 }
 
 .card-section > button {
@@ -3179,6 +3353,36 @@ button.ghost:hover:not(:disabled) {
   margin-top: 2px;
 }
 
+/* Avenant 01, Ch. B — carte cliquable "Salle d'attente <niveau>" (TeacherLevelPoolsPage), variante
+   sélectionnable de .stat-tile. */
+.level-pool-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-shell);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.level-pool-card:hover {
+  border-color: var(--link);
+}
+
+.level-pool-card.active {
+  border-left-color: var(--link);
+  box-shadow: 0 0 0 1px var(--link) inset;
+}
+
+.level-pool-card strong {
+  color: var(--text-h);
+}
+
 .meter {
   display: flex;
   align-items: center;
@@ -3214,6 +3418,91 @@ button.ghost:hover:not(:disabled) {
   color: var(--text-h);
   min-width: 3.5ch;
   text-align: right;
+}
+
+/* --- Jauge circulaire (RadialGauge) : lecture rapide d'un taux clé (assiduité, occupation...)
+   en complément des tuiles KPI chiffrées — le remplissage porte la sévérité, comme .meter. --- */
+
+.gauge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px;
+  margin-bottom: 18px;
+}
+
+.radial-gauge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  min-width: 108px;
+}
+
+.radial-gauge-ring {
+  position: relative;
+  display: inline-flex;
+}
+
+.radial-gauge-ring svg {
+  display: block;
+  transform: rotate(-90deg);
+  overflow: visible;
+}
+
+.radial-gauge-track {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 8;
+}
+
+.radial-gauge-fill {
+  fill: none;
+  stroke: var(--link);
+  stroke-width: 8;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 1s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.radial-gauge.tone-green .radial-gauge-fill {
+  stroke: var(--success);
+}
+
+.radial-gauge.tone-amber .radial-gauge-fill {
+  stroke: var(--warning);
+}
+
+.radial-gauge.tone-red .radial-gauge-fill {
+  stroke: var(--danger);
+}
+
+.radial-gauge.tone-info .radial-gauge-fill {
+  stroke: var(--info);
+}
+
+.radial-gauge-value {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.radial-gauge-value strong {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-h);
+  font-variant-numeric: tabular-nums;
+}
+
+.radial-gauge-label {
+  max-width: 128px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  text-align: center;
+  line-height: 1.35;
 }
 
 .alert-banner {
@@ -3514,6 +3803,7 @@ button.ghost:hover:not(:disabled) {
    --bg-shell, pas d'ombre, pas de liseré de couleur — seule l'icône est teintée par ton,
    directement (pas de puce/chip de fond), exactement comme dans le mockup. */
 .stat-tile-icon {
+  position: relative;
   padding: 14px;
   background: var(--bg-shell);
   box-shadow: none;
@@ -3521,6 +3811,70 @@ button.ghost:hover:not(:disabled) {
      les tuiles Ch.14 Présences) — sans ça, ce liseré teal persiste par-dessus cette variante
      alors qu'aucune règle ici ne le mentionnait pour le neutraliser. */
   border-left: 1px solid var(--border);
+  overflow: hidden;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  animation: groupi-tile-in 0.4s ease-out backwards;
+}
+
+.stat-tile-icon::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.stat-tile-icon:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-left-color: var(--border);
+}
+
+.stat-tile-icon:hover::after {
+  opacity: 1;
+}
+
+.stat-tile-icon.tone-teal::after {
+  background: var(--link);
+}
+
+.stat-tile-icon.tone-green::after {
+  background: var(--success);
+}
+
+.stat-tile-icon.tone-amber::after {
+  background: var(--warning);
+}
+
+.stat-tile-icon.tone-red::after {
+  background: var(--danger);
+}
+
+.stat-tile-icon.tone-info::after {
+  background: var(--info);
+}
+
+/* Cascade d'entrée légère (dashboard) : chaque tuile d'une même grille apparaît avec un léger
+   décalage — lecture plus vivante qu'un rendu statique en bloc, sans gêner la lisibilité. */
+.card-grid.stat-grid .stat-tile-icon:nth-child(1) { animation-delay: 0.02s; }
+.card-grid.stat-grid .stat-tile-icon:nth-child(2) { animation-delay: 0.06s; }
+.card-grid.stat-grid .stat-tile-icon:nth-child(3) { animation-delay: 0.1s; }
+.card-grid.stat-grid .stat-tile-icon:nth-child(4) { animation-delay: 0.14s; }
+.card-grid.stat-grid .stat-tile-icon:nth-child(5) { animation-delay: 0.18s; }
+.card-grid.stat-grid .stat-tile-icon:nth-child(6) { animation-delay: 0.22s; }
+
+@keyframes groupi-tile-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .stat-tile-icon .stat-value {
@@ -3864,13 +4218,25 @@ button.ghost:hover:not(:disabled) {
   }
 
   .dash-card,
+  .dash-card-icon,
+  .dash-card::before,
   .app-sidebar-link,
+  .app-dock-link,
+  .app-dock-link svg,
+  .app-dock-brand img,
+  .stat-tile-icon,
+  .radial-gauge-fill,
   button,
   input,
   select,
   .select-trigger,
   textarea {
     transition: none;
+  }
+
+  .app-dock-brand::before,
+  .stat-tile-icon {
+    animation: none;
   }
 
   .toast {
@@ -3917,6 +4283,18 @@ button.ghost:hover:not(:disabled) {
   max-width: 34vw;
   height: auto;
   display: block;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.3s ease;
+}
+
+.landing-brand:hover img {
+  transform: scale(1.04);
+  filter: drop-shadow(0 6px 14px color-mix(in srgb, var(--link) 35%, transparent));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-brand img {
+    transition: none;
+  }
 }
 
 .landing-nav-links {
@@ -4714,5 +5092,217 @@ a.week-calendar-event:hover {
   }
 }
 
+/* --- Calendrier mensuel (Ch.11, "Mes séances" Professeur) --------------- */
 
+.month-calendar-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.month-calendar-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.month-calendar-nav button {
+  padding: 6px 10px;
+}
+
+.month-calendar-nav svg {
+  width: 16px;
+  height: 16px;
+}
+
+.month-calendar-label {
+  color: var(--text-h);
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.month-calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.month-calendar-weekday {
+  padding: 0 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  text-align: center;
+}
+
+.month-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.month-calendar-day {
+  min-height: 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-shell);
+  overflow: hidden;
+}
+
+.month-calendar-day.is-outside {
+  background: transparent;
+  border-color: transparent;
+}
+
+.month-calendar-day.is-outside .month-calendar-day-number {
+  color: var(--text-muted);
+  opacity: 0.55;
+}
+
+.month-calendar-day.is-today {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+
+.month-calendar-day-number {
+  color: var(--text-h);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.month-calendar-day.is-today .month-calendar-day-number {
+  color: var(--accent);
+}
+
+.month-calendar-day-events {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.month-calendar-event {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 2px 6px;
+  border: none;
+  border-left: 3px solid var(--link);
+  border-radius: var(--radius-sm);
+  background: var(--link-bg);
+  color: var(--text-h);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.month-calendar-event:hover {
+  filter: brightness(0.97);
+  color: var(--text-h);
+}
+
+:root[data-theme='dark'] .month-calendar-event:hover {
+  filter: brightness(1.15);
+}
+
+.month-calendar-event-time {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.month-calendar-event-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.month-calendar-event.tone-success {
+  border-left-color: var(--success);
+  background: var(--success-bg);
+}
+
+.month-calendar-event.tone-warning {
+  border-left-color: var(--warning);
+  background: var(--warning-bg);
+}
+
+.month-calendar-event.tone-danger {
+  border-left-color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.month-calendar-event.tone-info {
+  border-left-color: var(--info);
+  background: var(--info-bg);
+}
+
+.month-calendar-event.tone-neutral {
+  border-left-color: var(--border-strong);
+  background: var(--surface);
+}
+
+.month-calendar-day-more {
+  padding: 1px 4px;
+  border: none;
+  background: none;
+  color: var(--link);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.month-calendar-day-more:hover {
+  text-decoration: underline;
+  border: none;
+  color: var(--link);
+}
+
+@media (max-width: 720px) {
+  .month-calendar-weekday {
+    font-size: 9.5px;
+  }
+
+  .month-calendar-day {
+    min-height: 64px;
+    padding: 4px;
+  }
+
+  .month-calendar-event {
+    font-size: 10px;
+    padding: 1px 4px;
+  }
+
+  .month-calendar-event-title {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .month-calendar-grid,
+  .month-calendar-weekdays {
+    gap: 3px;
+  }
+
+  .month-calendar-day {
+    min-height: 52px;
+  }
+}
 

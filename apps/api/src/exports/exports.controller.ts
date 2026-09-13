@@ -5,6 +5,7 @@ import { ExportsService, FORMAT_MIME } from './exports.service';
 import { CreateExportDto } from './dto/create-export.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { TeacherValidatedGuard } from '../auth/guards/teacher-validated.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
@@ -15,7 +16,7 @@ import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
  * service quel que soit le rôle du token).
  */
 @Controller('exports')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, TeacherValidatedGuard)
 export class ExportsController {
   constructor(private readonly service: ExportsService) {}
 

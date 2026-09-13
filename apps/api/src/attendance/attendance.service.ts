@@ -1,7 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { AbsenceBillingPolicy, ActivityPriority, Attendance, AttendanceStatus, Session } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { EmailService } from '../email/email.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AccountingService } from '../accounting/accounting.service';
 import { computeLockDeadline, isLockable, theoreticalStart, theoreticalEnd } from '../sessions/sessions.service';
@@ -60,7 +59,6 @@ const ATT_PRIORITY: Record<AttendanceStatus, ActivityPriority> = {
 export class AttendanceService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly email: EmailService,
     private readonly notifications: NotificationsService,
     private readonly accounting: AccountingService,
   ) {}
@@ -286,15 +284,9 @@ export class AttendanceService {
     if (existing && existing.status !== 'NOT_SET') {
       const student = await this.prisma.student.findUniqueOrThrow({
         where: { id: studentId },
-        select: {
-          firstName: true,
-          lastName: true,
-          parentId: true,
-          parent: { select: { user: { select: { email: true } } } },
-        },
+        select: { firstName: true, lastName: true, parentId: true },
       });
       const label = STATUS_LABELS[dto.status];
-      const parentEmail = student.parent.user.email;
       await this.notifications.notify({
         recipientUserId: student.parentId,
         type: `ATT_CORRECTED_${dto.status}`,
@@ -303,15 +295,6 @@ export class AttendanceService {
         body: `${student.firstName} ${student.lastName} : la présence à la séance du ${session.date.toLocaleDateString('fr-FR')} a été corrigée en "${label}" (NOT-ATT-005).`,
         refType: 'Attendance',
         refId: attendance.id,
-        sendEmail: parentEmail
-          ? () =>
-              this.email.sendAttendanceRecorded(
-                parentEmail,
-                `${student.firstName} ${student.lastName}`,
-                label,
-                session.date,
-              )
-          : undefined,
       });
     }
 
@@ -426,23 +409,19 @@ export class AttendanceService {
 
     await this.prisma.session.update({ where: { id: sessionId }, data: { status: 'COMPLETED' } });
 
-    // NOT-ATT-001/002/003/004 : une Activity par élève dans tous les cas (RM-NOT-004) ; l'e-mail
-    // n'est envoyé que pour les absences (Important), pas pour Présent/Retard (Information) —
-    // correction assumée par rapport au comportement précédent qui envoyait un e-mail systématique.
+    // NOT-ATT-001/002/003/004 : une Activity par élève dans tous les cas (RM-NOT-004). Avenant 01,
+    // Ch. I.4/I.7 (RM-NOT-050/051) : in-app uniquement, quelle que soit la priorité.
     const notified = await this.prisma.attendance.findMany({
       // RM-ATT-011 : exclut toute ligne NOT_SET résiduelle (élève réinitialisé puis retiré de
       // l'inscription active avant validation) — jamais de notification pour un statut vide.
       where: { sessionId, status: { not: 'NOT_SET' } },
       include: {
-        student: {
-          select: { firstName: true, lastName: true, parentId: true, parent: { select: { user: { select: { email: true } } } } },
-        },
+        student: { select: { firstName: true, lastName: true, parentId: true } },
       },
     });
     for (const a of notified) {
       const label = STATUS_LABELS[a.status];
       const priority = ATT_PRIORITY[a.status];
-      const parentEmail = a.student.parent.user.email;
       await this.notifications.notify({
         recipientUserId: a.student.parentId,
         type: `ATT_${a.status}`,
@@ -451,16 +430,6 @@ export class AttendanceService {
         body: `${a.student.firstName} ${a.student.lastName} est marqué "${label}" à la séance du ${session.date.toLocaleDateString('fr-FR')}.`,
         refType: 'Attendance',
         refId: a.id,
-        sendEmail:
-          priority === 'INFORMATION' || !parentEmail
-            ? undefined
-            : () =>
-                this.email.sendAttendanceRecorded(
-                  parentEmail,
-                  `${a.student.firstName} ${a.student.lastName}`,
-                  label,
-                  session.date,
-                ),
       });
     }
 
@@ -498,11 +467,6 @@ export class AttendanceService {
         return streak === threshold;
       });
       if (toAlert.length > 0) {
-        const teacher = await this.prisma.user.findUniqueOrThrow({
-          where: { id: session.group.teacherId },
-          select: { email: true },
-        });
-        const teacherEmail = teacher.email;
         for (const a of toAlert) {
           await this.notifications.notify({
             recipientUserId: session.group.teacherId,
@@ -512,10 +476,6 @@ export class AttendanceService {
             body: `${a.student.firstName} ${a.student.lastName} totalise ${threshold} absences non excusées consécutives.`,
             refType: 'Student',
             refId: a.studentId,
-            sendEmail: teacherEmail
-              ? () =>
-                  this.email.sendAbandonmentAlert(teacherEmail, `${a.student.firstName} ${a.student.lastName}`, threshold)
-              : undefined,
           });
         }
       }

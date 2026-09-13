@@ -4,6 +4,7 @@ import * as request from 'supertest';
 import * as argon2 from 'argon2';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { registerParentDirect } from './helpers/register-parent-direct';
 
 /**
  * E2E tests for the subscriptions module (Ch.21 — Gestion des abonnements Professeur), run against
@@ -23,39 +24,46 @@ describe('Subscriptions (e2e)', () => {
 
   interface Actor {
     id: string;
-    email: string;
+    identifier: string;
     token: string;
   }
 
   async function registerAndActivate(role: 'TEACHER' | 'PARENT', label: string): Promise<Actor> {
-    const email = `e2e-abo-${role.toLowerCase()}-${label}-${runId}@example.com`;
-    const initialStudent =
-      role === 'PARENT'
-        ? {
-            firstName: 'Kid',
-            lastName: label,
-            schoolLevelId: (
-              await prisma.schoolLevel.findFirstOrThrow({ where: { isActive: true, code: { startsWith: 'PRIM' } } })
-            ).id,
-            schoolId: (await prisma.school.findFirstOrThrow({ where: { isActive: true, type: 'PRIMARY' } })).id,
-          }
-        : undefined;
-    const res = await api()
-      .post('/api/v1/auth/register')
-      .send({
-        email,
+    const identifier = `e2eabo-${role.toLowerCase()}-${label}-${runId}`;
+    let userId: string;
+    if (role === 'TEACHER') {
+      const res = await api()
+        .post('/api/v1/auth/register')
+        .send({
+          password,
+          firstName: 'Test',
+          lastName: label,
+          phone: identifier,
+          city: 'Tunis',
+          acceptTerms: true,
+          subjectIds: [subjectId],
+          schoolLevelIds: [schoolLevelId],
+        })
+        .expect(201);
+      userId = res.body.id as string;
+    } else {
+      const parentSchoolLevelId = (
+        await prisma.schoolLevel.findFirstOrThrow({ where: { isActive: true, code: { startsWith: 'PRIM' } } })
+      ).id;
+      const parentSchoolId = (await prisma.school.findFirstOrThrow({ where: { isActive: true, type: 'PRIMARY' } })).id;
+      const created = await registerParentDirect(prisma, {
+        phone: identifier,
         password,
-        role,
         firstName: 'Test',
         lastName: label,
-        phone: '20000000',
         city: 'Tunis',
-        acceptTerms: true,
-        ...(role === 'TEACHER' ? { subjectIds: [subjectId], schoolLevelIds: [schoolLevelId] } : {}),
-        ...(role === 'PARENT' ? { initialStudent } : {}),
-      })
-      .expect(201);
-    const userId = res.body.id as string;
+        studentFirstName: 'Kid',
+        studentLastName: label,
+        schoolLevelId: parentSchoolLevelId,
+        schoolId: parentSchoolId,
+      });
+      userId = created.userId;
+    }
 
     await prisma.user.update({ where: { id: userId }, data: { status: 'ACTIVE' } });
     if (role === 'TEACHER') {
@@ -64,8 +72,8 @@ describe('Subscriptions (e2e)', () => {
       await prisma.parentProfile.update({ where: { id: userId }, data: { validatedAt: new Date() } });
     }
 
-    const loginRes = await api().post('/api/v1/auth/login').send({ email, password }).expect(200);
-    return { id: userId, email, token: loginRes.body.accessToken as string };
+    const loginRes = await api().post('/api/v1/auth/login').send({ identifier, password }).expect(200);
+    return { id: userId, identifier, token: loginRes.body.accessToken as string };
   }
 
   /** Poll (`emailSentAt` est renseigné de façon asynchrone, hors chemin critique). */
@@ -116,7 +124,7 @@ describe('Subscriptions (e2e)', () => {
     });
     const superAdminLogin = await api()
       .post('/api/v1/auth/login')
-      .send({ email: superAdminEmail, password })
+      .send({ identifier: superAdminEmail, password })
       .expect(200);
     superAdminToken = superAdminLogin.body.accessToken as string;
 
@@ -183,13 +191,22 @@ describe('Subscriptions (e2e)', () => {
     await prisma.userSession.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.passwordResetToken.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.emailVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
+    await prisma.phoneVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.teacherSubject.deleteMany({ where: { teacherProfileId: { in: teacherIds } } });
     await prisma.teacherSchoolLevel.deleteMany({ where: { teacherProfileId: { in: teacherIds } } });
     await prisma.teacherProfile.deleteMany({ where: { id: { in: teacherIds } } });
+    const students = await prisma.student.findMany({ where: { parentId: { in: parentIds } }, select: { id: true } });
+    const studentIds = students.map((s) => s.id);
+    if (studentIds.length > 0) {
+      await prisma.student.updateMany({ where: { id: { in: studentIds } }, data: { currentSchoolSituationId: null } });
+      await prisma.studentSchoolSituation.deleteMany({ where: { studentId: { in: studentIds } } });
+      await prisma.student.deleteMany({ where: { id: { in: studentIds } } });
+    }
     await prisma.parentProfile.deleteMany({ where: { id: { in: parentIds } } });
+    await prisma.userDevice.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.user.deleteMany({ where: { id: { in: userIds } } });
 
-    const superAdmin = await prisma.user.findUnique({ where: { email: `e2e-abo-superadmin-${runId}@example.com` } });
+    const superAdmin = await prisma.user.findFirst({ where: { email: `e2e-abo-superadmin-${runId}@example.com` } });
     if (superAdmin) {
       await prisma.userSession.deleteMany({ where: { userId: superAdmin.id } });
       await prisma.loginHistory.deleteMany({ where: { userId: superAdmin.id } });
@@ -285,7 +302,7 @@ describe('Subscriptions (e2e)', () => {
         .expect(400);
     });
 
-    it('suspends the active subscription, notifying the teacher (NOT-ABO-006, Critique -> e-mail)', async () => {
+    it('suspends the active subscription, notifying the teacher (NOT-ABO-006, Critique — in-app only, Avenant 01 Ch. I.4/I.7)', async () => {
       const res = await api()
         .post(`/api/v1/admin/subscriptions/${subscriptionId}/suspend`)
         .set('Authorization', `Bearer ${superAdminToken}`)
@@ -300,7 +317,8 @@ describe('Subscriptions (e2e)', () => {
       );
       expect(found).toBeDefined();
       expect(found.priority).toBe('CRITICAL');
-      expect(found.emailSentAt).not.toBeNull();
+      // Avenant 01, Ch. I.4/I.7 (RM-NOT-050) : plus aucun canal e-mail, même pour du Critique.
+      expect(found.emailSentAt).toBeNull();
     });
 
     it('rejects suspending a subscription that is not active', async () => {
@@ -311,7 +329,7 @@ describe('Subscriptions (e2e)', () => {
         .expect(400);
     });
 
-    it('reactivates the suspended subscription, notifying the teacher (NOT-ABO-007, Important -> e-mail)', async () => {
+    it('reactivates the suspended subscription, notifying the teacher (NOT-ABO-007, Important — in-app only, Avenant 01 Ch. I.4/I.7)', async () => {
       const res = await api()
         .post(`/api/v1/admin/subscriptions/${subscriptionId}/reactivate`)
         .set('Authorization', `Bearer ${superAdminToken}`)
@@ -326,7 +344,8 @@ describe('Subscriptions (e2e)', () => {
       );
       expect(found).toBeDefined();
       expect(found.priority).toBe('IMPORTANT');
-      expect(found.emailSentAt).not.toBeNull();
+      // Avenant 01, Ch. I.4/I.7 (RM-NOT-050) : plus aucun canal e-mail, même pour de l'Important.
+      expect(found.emailSentAt).toBeNull();
     });
 
     it('expires lazily once past its end date (RM-ABO-002/RM-SUB-024)', async () => {

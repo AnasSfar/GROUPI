@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
-import { EmailModule } from '../email/email.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { SchoolSituationModule } from '../school-situation/school-situation.module';
 import { PreEnrollmentsModule } from '../pre-enrollments/pre-enrollments.module';
@@ -21,7 +20,6 @@ import { TemporalJobsController } from './temporal-jobs.controller';
   // RM-TRS-013/RM-GEN-020 : AuthModule importé uniquement pour injecter AuthService.sweepStaleDisabledAccounts().
   imports: [
     ScheduleModule.forRoot(),
-    EmailModule,
     NotificationsModule,
     SchoolSituationModule,
     PreEnrollmentsModule,

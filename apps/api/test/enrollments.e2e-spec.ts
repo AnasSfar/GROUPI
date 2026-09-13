@@ -4,6 +4,8 @@ import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { grantActiveSubscription } from './helpers/grant-subscription';
+import { createPendingEnrollmentDirect } from './helpers/create-enrollment';
+import { registerParentDirect } from './helpers/register-parent-direct';
 
 /**
  * E2E tests for the enrollments module (Ch.12 — Les Inscriptions), run against the real
@@ -33,39 +35,46 @@ describe('Enrollments (e2e)', () => {
 
   interface Actor {
     id: string;
-    email: string;
+    identifier: string;
     token: string;
   }
 
   async function registerAndActivate(role: 'TEACHER' | 'PARENT', label: string): Promise<Actor> {
-    const email = `e2e-ins-${role.toLowerCase()}-${label}-${runId}@example.com`;
-    const initialStudent =
-      role === 'PARENT'
-        ? {
-            firstName: 'Kid',
-            lastName: label,
-            schoolLevelId: (
-              await prisma.schoolLevel.findFirstOrThrow({ where: { isActive: true, code: { startsWith: 'PRIM' } } })
-            ).id,
-            schoolId: (await prisma.school.findFirstOrThrow({ where: { isActive: true, type: 'PRIMARY' } })).id,
-          }
-        : undefined;
-    const res = await api()
-      .post('/api/v1/auth/register')
-      .send({
-        email,
+    const identifier = `e2eins-${role.toLowerCase()}-${label}-${runId}`;
+    let userId: string;
+    if (role === 'TEACHER') {
+      const res = await api()
+        .post('/api/v1/auth/register')
+        .send({
+          password,
+          firstName: 'Test',
+          lastName: label,
+          phone: identifier,
+          city: 'Tunis',
+          acceptTerms: true,
+          subjectIds: [subjectId],
+          schoolLevelIds: [schoolLevelId],
+        })
+        .expect(201);
+      userId = res.body.id as string;
+    } else {
+      const parentSchoolLevelId = (
+        await prisma.schoolLevel.findFirstOrThrow({ where: { isActive: true, code: { startsWith: 'PRIM' } } })
+      ).id;
+      const parentSchoolId = (await prisma.school.findFirstOrThrow({ where: { isActive: true, type: 'PRIMARY' } })).id;
+      const created = await registerParentDirect(prisma, {
+        phone: identifier,
         password,
-        role,
         firstName: 'Test',
         lastName: label,
-        phone: '20000000',
         city: 'Tunis',
-        acceptTerms: true,
-        ...(role === 'TEACHER' ? { subjectIds: [subjectId], schoolLevelIds: [schoolLevelId] } : {}),
-        ...(role === 'PARENT' ? { initialStudent } : {}),
-      })
-      .expect(201);
-    const userId = res.body.id as string;
+        studentFirstName: 'Kid',
+        studentLastName: label,
+        schoolLevelId: parentSchoolLevelId,
+        schoolId: parentSchoolId,
+      });
+      userId = created.userId;
+    }
 
     await prisma.user.update({ where: { id: userId }, data: { status: 'ACTIVE' } });
     if (role === 'TEACHER') {
@@ -76,8 +85,17 @@ describe('Enrollments (e2e)', () => {
       await prisma.parentProfile.update({ where: { id: userId }, data: { validatedAt: new Date() } });
     }
 
-    const loginRes = await api().post('/api/v1/auth/login').send({ email, password }).expect(200);
-    return { id: userId, email, token: loginRes.body.accessToken as string };
+    const loginRes = await api().post('/api/v1/auth/login').send({ identifier, password }).expect(200);
+    return { id: userId, identifier, token: loginRes.body.accessToken as string };
+  }
+
+  const SCHEDULE_DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY'] as const;
+  let scheduleSeq = 0;
+  function nextSchedule() {
+    const seq = scheduleSeq++;
+    const dayOfWeek = SCHEDULE_DAYS[seq % SCHEDULE_DAYS.length];
+    const hour = 8 + (Math.floor(seq / SCHEDULE_DAYS.length) % 12);
+    return { dayOfWeek, startTime: `${String(hour).padStart(2, '0')}:00`, durationMinutes: 60 };
   }
 
   async function createGroup(
@@ -100,7 +118,7 @@ describe('Enrollments (e2e)', () => {
         absenceBillingPolicy: 'ALL_BILLED',
         visibilityWhenFull: 'VISIBLE',
         startDate: today,
-        schedules: [{ dayOfWeek: 'MONDAY', startTime: '18:00', durationMinutes: 60 }],
+        schedules: [nextSchedule()],
       })
       .expect(201);
     if (!open) {
@@ -122,11 +140,15 @@ describe('Enrollments (e2e)', () => {
     return res.body;
   }
 
-  function requestEnrollment(parentToken: string, studentId: string, groupId: string) {
-    return api()
-      .post('/api/v1/enrollments')
-      .set('Authorization', `Bearer ${parentToken}`)
-      .send({ studentId, groupId });
+  /**
+   * Avenant 01, Ch. C/D.2, RM-PAR-021 : `POST /enrollments` (demande d'inscription à l'initiative
+   * du Parent) est supprimé — voir le describe dédié plus bas. Les tests de ce fichier qui portent
+   * sur la DÉCISION du Professeur (accept/reject/suspend/reactivate/archive) ou sur l'annulation
+   * (`cancel`, conservée) ont seulement besoin d'une inscription `PENDING_VALIDATION` de départ,
+   * créée ici directement en base (voir `helpers/create-enrollment.ts`).
+   */
+  function createPendingEnrollment(studentId: string, groupId: string) {
+    return createPendingEnrollmentDirect(prisma, studentId, groupId);
   }
 
   let teacher1: Actor;
@@ -233,94 +255,76 @@ describe('Enrollments (e2e)', () => {
       await prisma.userSession.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.passwordResetToken.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.emailVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
+      await prisma.phoneVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.subscription.deleteMany({ where: { teacherId: { in: teacherIds } } });
       await prisma.teacherSubject.deleteMany({ where: { teacherProfileId: { in: teacherIds } } });
       await prisma.teacherSchoolLevel.deleteMany({ where: { teacherProfileId: { in: teacherIds } } });
       await prisma.teacherProfile.deleteMany({ where: { id: { in: teacherIds } } });
       await prisma.parentProfile.deleteMany({ where: { id: { in: parentIds } } });
-      await prisma.user.deleteMany({ where: { id: { in: userIds } } });
+      await prisma.userDevice.deleteMany({ where: { userId: { in: userIds } } });
+    await prisma.user.deleteMany({ where: { id: { in: userIds } } });
     }
 
     await app.close();
   });
 
-  describe('POST /enrollments (création)', () => {
+  /**
+   * Avenant 01, Ch. C/D.2, RM-PAR-021, ERR-PAR-023 : la demande d'inscription à l'initiative du
+   * Parent est retirée — les vérifications ERR-INS-001/002/009/016 qu'elle portait (capacité,
+   * doublon, groupe non ouvert) relèvent désormais de l'affectation Professeur (Ch. C, module
+   * séparé, hors périmètre de ce chantier) et ne sont donc plus testées ici.
+   */
+  describe('POST /enrollments (supprimé — Ch. C/D.2)', () => {
+    it("l'ancienne demande d'inscription à l'initiative du Parent a été retirée -> 404 (ERR-PAR-023)", async () => {
+      const student = await createStudent(parent1.token, `S-removed-${runId}`);
+      await api()
+        .post('/api/v1/enrollments')
+        .set('Authorization', `Bearer ${parent1.token}`)
+        .send({ studentId: student.id, groupId: groupA.id })
+        .expect(404);
+    });
+  });
+
+  describe('POST /enrollments/:id/cancel (conservé)', () => {
     let student1: any;
     let enrollment1: any;
 
-    it('crée une demande valide -> 201 PENDING_VALIDATION', async () => {
+    it('annule une demande en attente -> CANCELLED (RM-INS-038)', async () => {
       student1 = await createStudent(parent1.token, `S1-${runId}`);
-      const res = await requestEnrollment(parent1.token, student1.id, groupA.id).expect(201);
-      expect(res.body.status).toBe('PENDING_VALIDATION');
-      expect(res.body.student.id).toBe(student1.id);
-      expect(res.body.group.id).toBe(groupA.id);
-      enrollment1 = res.body;
-    });
+      enrollment1 = await createPendingEnrollment(student1.id, groupA.id);
 
-    it('refuse une demande dupliquée pour le même élève et le même groupe -> 400 (ERR-INS-002/009)', async () => {
-      const res = await requestEnrollment(parent1.token, student1.id, groupA.id).expect(400);
-      expect(res.body.message).toMatch(/ERR-INS-002|ERR-INS-009/);
-    });
-
-    it('refuse si le groupe n\'est pas ouvert (DRAFT) -> 400 (ERR-INS-016)', async () => {
-      const student2 = await createStudent(parent1.token, `S2-${runId}`);
-      const res = await requestEnrollment(parent1.token, student2.id, groupB.id).expect(400);
-      expect(res.body.message).toMatch(/ERR-INS-016/);
-    });
-
-    it('refuse si le groupe est complet -> 400 (ERR-INS-001)', async () => {
-      // Remplit le groupe C (capacité 1) : une inscription ACTIVE consomme l'unique place.
-      const studentFill = await createStudent(parent1.token, `S-fill-${runId}`);
-      const fillRes = await requestEnrollment(parent1.token, studentFill.id, groupC.id).expect(201);
-      await api()
-        .post(`/api/v1/groups/${groupC.id}/enrollments/${fillRes.body.id}/accept`)
-        .set('Authorization', `Bearer ${teacher1.token}`)
-        .send({})
+      const res = await api()
+        .post(`/api/v1/enrollments/${enrollment1.id}/cancel`)
+        .set('Authorization', `Bearer ${parent1.token}`)
         .expect(201);
-
-      const studentOverflow = await createStudent(parent1.token, `S-overflow-${runId}`);
-      const res = await requestEnrollment(parent1.token, studentOverflow.id, groupC.id).expect(400);
-      expect(res.body.message).toMatch(/ERR-INS-001/);
+      expect(res.body.status).toBe('CANCELLED');
     });
 
-    describe('POST /enrollments/:id/cancel', () => {
-      it("refuse l'annulation par un autre parent -> 403/404", async () => {
-        const res = await api()
-          .post(`/api/v1/enrollments/${enrollment1.id}/cancel`)
-          .set('Authorization', `Bearer ${parent2.token}`);
-        expect([403, 404]).toContain(res.status);
-      });
+    it("refuse l'annulation par un autre parent -> 403/404", async () => {
+      const otherStudent = await createStudent(parent1.token, `S1b-${runId}`);
+      const otherEnrollment = await createPendingEnrollment(otherStudent.id, groupA.id);
+      const res = await api()
+        .post(`/api/v1/enrollments/${otherEnrollment.id}/cancel`)
+        .set('Authorization', `Bearer ${parent2.token}`);
+      expect([403, 404]).toContain(res.status);
+    });
 
-      it('annule une demande en attente -> CANCELLED (RM-INS-038)', async () => {
-        const res = await api()
-          .post(`/api/v1/enrollments/${enrollment1.id}/cancel`)
-          .set('Authorization', `Bearer ${parent1.token}`)
-          .expect(201);
-        expect(res.body.status).toBe('CANCELLED');
-      });
-
-      it('refuse une seconde annulation -> 400 (ERR-INS-019)', async () => {
-        const res = await api()
-          .post(`/api/v1/enrollments/${enrollment1.id}/cancel`)
-          .set('Authorization', `Bearer ${parent1.token}`)
-          .expect(400);
-        expect(res.body.message).toMatch(/ERR-INS-019/);
-      });
-
-      it('permet une nouvelle demande pour le même élève/groupe après annulation', async () => {
-        const res = await requestEnrollment(parent1.token, student1.id, groupA.id).expect(201);
-        expect(res.body.status).toBe('PENDING_VALIDATION');
-      });
+    it('refuse une seconde annulation -> 400 (ERR-INS-019)', async () => {
+      const res = await api()
+        .post(`/api/v1/enrollments/${enrollment1.id}/cancel`)
+        .set('Authorization', `Bearer ${parent1.token}`)
+        .expect(400);
+      expect(res.body.message).toMatch(/ERR-INS-019/);
     });
   });
 
   describe('Décision du Professeur', () => {
     it('accepte une demande -> ACTIVE, et fait passer le groupe à FULL si la capacité est atteinte', async () => {
       const student = await createStudent(parent1.token, `S-accept-${runId}`);
-      const reqRes = await requestEnrollment(parent1.token, student.id, groupD.id).expect(201);
+      const reqRes = await createPendingEnrollment(student.id, groupD.id);
 
       const res = await api()
-        .post(`/api/v1/groups/${groupD.id}/enrollments/${reqRes.body.id}/accept`)
+        .post(`/api/v1/groups/${groupD.id}/enrollments/${reqRes.id}/accept`)
         .set('Authorization', `Bearer ${teacher1.token}`)
         .send({ customPrice: 15 })
         .expect(201);
@@ -332,10 +336,10 @@ describe('Enrollments (e2e)', () => {
 
     it('refuse une demande -> REJECTED', async () => {
       const student = await createStudent(parent1.token, `S-reject-${runId}`);
-      const reqRes = await requestEnrollment(parent1.token, student.id, groupE.id).expect(201);
+      const reqRes = await createPendingEnrollment(student.id, groupE.id);
 
       const res = await api()
-        .post(`/api/v1/groups/${groupE.id}/enrollments/${reqRes.body.id}/reject`)
+        .post(`/api/v1/groups/${groupE.id}/enrollments/${reqRes.id}/reject`)
         .set('Authorization', `Bearer ${teacher1.token}`)
         .send({ comment: 'Groupe non adapté' })
         .expect(201);
@@ -414,11 +418,11 @@ describe('Enrollments (e2e)', () => {
   describe('Expiration automatique (RM-INS-026, appliquée à la lecture)', () => {
     it('transforme une demande PENDING_VALIDATION en EXPIRED après le délai de 7 jours', async () => {
       const student = await createStudent(parent1.token, `S-expire-${runId}`);
-      const reqRes = await requestEnrollment(parent1.token, student.id, groupA.id).expect(201);
+      const reqRes = await createPendingEnrollment(student.id, groupA.id);
 
       const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
       await prisma.enrollment.update({
-        where: { id: reqRes.body.id },
+        where: { id: reqRes.id },
         data: { requestedAt: eightDaysAgo },
       });
 
@@ -426,10 +430,10 @@ describe('Enrollments (e2e)', () => {
         .get('/api/v1/enrollments/mine')
         .set('Authorization', `Bearer ${parent1.token}`)
         .expect(200);
-      const expired = mineRes.body.find((e: any) => e.id === reqRes.body.id);
+      const expired = mineRes.body.find((e: any) => e.id === reqRes.id);
       expect(expired.status).toBe('EXPIRED');
 
-      const persisted = await prisma.enrollment.findUniqueOrThrow({ where: { id: reqRes.body.id } });
+      const persisted = await prisma.enrollment.findUniqueOrThrow({ where: { id: reqRes.id } });
       expect(persisted.status).toBe('EXPIRED');
     });
   });

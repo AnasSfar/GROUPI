@@ -6,6 +6,7 @@ import { SetTeachingModeDto } from './dto/set-teaching-mode.dto';
 import { UpdateSessionCommentDto } from './dto/update-session-comment.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { TeacherValidatedGuard } from '../auth/guards/teacher-validated.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
@@ -13,7 +14,7 @@ import { SubscriptionGuard } from '../subscriptions/subscription.guard';
 
 /** Ch.13 : opérations sur une séance individuelle — Professeur propriétaire du groupe uniquement. */
 @Controller('sessions')
-@UseGuards(JwtAuthGuard, RolesGuard, SubscriptionGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, TeacherValidatedGuard, SubscriptionGuard)
 @Roles(Role.TEACHER)
 export class SessionsController {
   constructor(private readonly service: SessionsService) {}

@@ -1,11 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { UserStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { EmailService } from '../email/email.service';
-
-/** RM-CYC-014 : statuts pour lesquels la notification (priorité CRITICAL) est aussi envoyée par e-mail. */
-const CRITICAL_EMAIL_STATUSES = new Set<UserStatus>(['SUSPENDED', 'DISABLED', 'ARCHIVED']);
+import { LevelPoolsService } from '../level-pools/level-pools.service';
 
 /** RM-CYC-002/003 : seules ces transitions sont autorisées, toute autre est refusée (ERR-CYC-004). */
 const ALLOWED_TRANSITIONS: Record<UserStatus, UserStatus[]> = {
@@ -47,10 +44,12 @@ interface TransitionMeta {
 
 @Injectable()
 export class AccountLifecycleService {
+  private readonly logger = new Logger(AccountLifecycleService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
-    private readonly email: EmailService,
+    private readonly levelPools: LevelPoolsService,
   ) {}
 
   async listUsers(status?: UserStatus) {
@@ -182,13 +181,36 @@ export class AccountLifecycleService {
       return updated;
     });
 
+    // Avenant 01, RM-POOL-001/RM-TPR-053 : à la 1ère validation du Professeur (PENDING_VALIDATION ->
+    // ACTIVE), les niveaux déjà déclarés à l'inscription sont `isValidated: true` par défaut (schema)
+    // et ne passent donc jamais par `TeacherProfileService.validatePendingSchoolLevel` (réservé aux
+    // ajouts ultérieurs sur un profil déjà VALIDATED, RM-TPR-004) — la création des groupes de niveau
+    // correspondants est donc déclenchée ici. Idempotent (voir `LevelPoolsService`) : sans effet si
+    // rappelé (ex. AJOUT->ACTIVE déjà traité). Jamais bloquant pour la validation elle-même.
+    if (toStatus === 'ACTIVE' && target.roles.includes('TEACHER') && target.teacherProfile) {
+      for (const level of target.teacherProfile.schoolLevels) {
+        try {
+          await this.levelPools.ensureGroupsForValidatedLevel(targetUserId, level.schoolLevelId);
+        } catch (err) {
+          // Ne doit jamais faire échouer une validation déjà actée (ex. aucune année OPEN pour
+          // l'instant) — le groupe de niveau sera recréé au besoin (ouverture d'année, RM-INV-006).
+          this.logger.warn(
+            `Création du groupe de niveau différée pour ${targetUserId}/${level.schoolLevelId} : ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        }
+      }
+    }
+
     // RM-CYC-014/032/033 : la notification n'est émise qu'une fois le changement d'état et l'audit
     // validés par la transaction ci-dessus — jamais avant, et jamais si la transaction a échoué.
     // Hors chemin critique (Ch.24) : un échec de notification ne doit jamais invalider la transition
     // déjà appliquée.
     const title = NOTIFICATION_TITLE_BY_STATUS[toStatus];
     const body = comment ?? reason;
-    const targetEmail = updated.email;
+    // Avenant 01, Ch. I.4/I.7 (RM-NOT-050/051) : notification in-app uniquement, quelle que soit la
+    // priorité — plus d'envoi e-mail (EmailService/module email/ retirés).
     await this.notifications.notify({
       recipientUserId: targetUserId,
       type: ACTION_BY_STATUS[toStatus],
@@ -197,12 +219,6 @@ export class AccountLifecycleService {
       body,
       refType: 'User',
       refId: targetUserId,
-      // RM-CYC-014 : e-mail effectif en plus de l'activité en-app pour les transitions critiques
-      // (suspension/désactivation/archivage) — PENDING_VALIDATION/ACTIVE restent notification interne
-      // uniquement (priorité non-critique).
-      sendEmail: CRITICAL_EMAIL_STATUSES.has(toStatus) && targetEmail
-        ? () => this.email.sendAccountStatusChanged(targetEmail, title, body)
-        : undefined,
     });
 
     return updated;

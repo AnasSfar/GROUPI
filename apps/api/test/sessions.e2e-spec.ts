@@ -26,8 +26,8 @@ describe('Sessions (e2e)', () => {
   let prisma: PrismaService;
 
   const runId = Date.now();
-  const teacherEmail = `e2e-ses-teacher-${runId}@example.com`;
-  const outsiderEmail = `e2e-ses-outsider-${runId}@example.com`;
+  const teacherPhone = `e2eses-teacher-${runId}`;
+  const outsiderPhone = `e2eses-outsider-${runId}`;
   const password = 'CorrectHorse123';
 
   let teacherToken: string;
@@ -71,16 +71,14 @@ describe('Sessions (e2e)', () => {
 
   const api = () => request(app.getHttpServer());
 
-  async function registerAndValidateTeacher(email: string): Promise<string> {
+  async function registerAndValidateTeacher(phone: string): Promise<string> {
     const registerRes = await api()
       .post('/api/v1/auth/register')
       .send({
-        email,
         password,
-        role: 'TEACHER',
         firstName: 'Prof',
         lastName: 'Séances',
-        phone: '20000001',
+        phone,
         city: 'Tunis',
         acceptTerms: true,
         subjectIds: [subjectId],
@@ -92,10 +90,11 @@ describe('Sessions (e2e)', () => {
       where: { id: registerRes.body.id },
       data: { status: 'VALIDATED' },
     });
+    await prisma.user.update({ where: { id: registerRes.body.id }, data: { status: 'ACTIVE' } });
     // Ch.22 : SubscriptionGuard exige un abonnement exploitable pour créer/modifier.
     await grantActiveSubscription(prisma, registerRes.body.id, academicYearId);
 
-    const loginRes = await api().post('/api/v1/auth/login').send({ email, password }).expect(200);
+    const loginRes = await api().post('/api/v1/auth/login').send({ identifier: phone, password }).expect(200);
     return loginRes.body.accessToken as string;
   }
 
@@ -143,13 +142,13 @@ describe('Sessions (e2e)', () => {
     });
     academicYearId = academicYear.id;
 
-    teacherToken = await registerAndValidateTeacher(teacherEmail);
-    outsiderToken = await registerAndValidateTeacher(outsiderEmail);
+    teacherToken = await registerAndValidateTeacher(teacherPhone);
+    outsiderToken = await registerAndValidateTeacher(outsiderPhone);
   });
 
   afterAll(async () => {
     const users = await prisma.user.findMany({
-      where: { email: { startsWith: 'e2e-ses-' } },
+      where: { phone: { startsWith: 'e2eses-' } },
       select: { id: true },
     });
     const userIds = users.map((u) => u.id);
@@ -183,8 +182,10 @@ describe('Sessions (e2e)', () => {
       await prisma.userSession.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.passwordResetToken.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.emailVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
+      await prisma.phoneVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.teacherProfile.deleteMany({ where: { id: { in: userIds } } });
-      await prisma.user.deleteMany({ where: { id: { in: userIds } } });
+      await prisma.userDevice.deleteMany({ where: { userId: { in: userIds } } });
+    await prisma.user.deleteMany({ where: { id: { in: userIds } } });
     }
 
     await app.close();
@@ -394,7 +395,7 @@ describe('Sessions (e2e)', () => {
     it('refuses generation for a group without any weekly schedule (ERR-SES-024)', async () => {
       const group = await prisma.group.create({
         data: {
-          teacherId: (await prisma.user.findUniqueOrThrow({ where: { email: teacherEmail } })).id,
+          teacherId: (await prisma.user.findFirstOrThrow({ where: { phone: teacherPhone } })).id,
           subjectId,
           schoolLevelId,
           academicYearId,
@@ -460,7 +461,7 @@ describe('Sessions (e2e)', () => {
         .set('Authorization', `Bearer ${teacherToken}`)
         .expect(201);
 
-      const teacher = await prisma.user.findUniqueOrThrow({ where: { email: teacherEmail } });
+      const teacher = await prisma.user.findFirstOrThrow({ where: { phone: teacherPhone } });
       const conflictActivity = await prisma.activity.findFirst({
         where: { userId: teacher.id, type: 'SES_SCHEDULE_CONFLICT', refId: groupB.id },
       });
@@ -475,7 +476,7 @@ describe('Sessions (e2e)', () => {
       const group = await createGroup(`E2E-SES-${runId} Groupe Prof Suspendu`, [
         { dayOfWeek: scheduleDay1, startTime: '16:00', durationMinutes: 60 },
       ]);
-      const teacher = await prisma.user.findUniqueOrThrow({ where: { email: teacherEmail } });
+      const teacher = await prisma.user.findFirstOrThrow({ where: { phone: teacherPhone } });
       await prisma.teacherProfile.update({ where: { id: teacher.id }, data: { status: 'SUSPENDED' } });
 
       const res = await api()

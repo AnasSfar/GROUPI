@@ -3,7 +3,6 @@ import { Cron } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { EmailService } from '../email/email.service';
 import { theoreticalStart, theoreticalEnd } from '../sessions/sessions.service';
 import { SchoolSituationService } from '../school-situation/school-situation.service';
 import { PreEnrollmentsService } from '../pre-enrollments/pre-enrollments.service';
@@ -50,7 +49,6 @@ export class TemporalJobsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
-    private readonly email: EmailService,
     private readonly schoolSituation: SchoolSituationService,
     private readonly preEnrollments: PreEnrollmentsService,
     private readonly enrollmentConversations: EnrollmentConversationsService,
@@ -62,8 +60,6 @@ export class TemporalJobsService {
   @Cron('0 * * * *')
   async runHourlyCron(): Promise<void> {
     await this.runHourlyJobs(new Date());
-    // RM-NOT-014 : tentative de réenvoi des notifications critiques dont l'e-mail initial a échoué.
-    await this.notifications.retryFailedCriticalEmails(new Date());
   }
 
   @Cron('15 6 * * *')
@@ -184,7 +180,6 @@ export class TemporalJobsService {
         skipped++;
         continue;
       }
-      const teacherEmail = session.group.teacher.user.email;
       await this.notifications.notify({
         recipientUserId: session.group.teacherId,
         type: 'SES_ATTENDANCE_MISSING_J1',
@@ -193,9 +188,6 @@ export class TemporalJobsService {
         body: `Les pr\u00e9sences de la s\u00e9ance du groupe "${session.group.name}" du ${session.date.toLocaleDateString('fr-FR')} n'ont pas encore \u00e9t\u00e9 saisies.`,
         refType: 'Session',
         refId: session.id,
-        sendEmail: teacherEmail
-          ? () => this.email.sendSessionAttendanceMissing(teacherEmail, session.group.name, session.date)
-          : undefined,
       });
       sent++;
     }
@@ -253,7 +245,6 @@ export class TemporalJobsService {
     let skipped = 0;
     for (const sub of subs) {
       if (!sub.expiresAt) continue;
-      const teacherEmail = sub.teacher.user.email;
       for (const days of [15, 7, 3]) {
         const reminderDay = dateOnly(addDays(sub.expiresAt, -days));
         if (dateOnly(now).getTime() !== reminderDay.getTime()) continue;
@@ -273,9 +264,6 @@ export class TemporalJobsService {
           body: `Votre abonnement "${sub.plan.name}" expire le ${sub.expiresAt.toLocaleDateString('fr-FR')}.`,
           refType: 'Subscription',
           refId: sub.id,
-          sendEmail: teacherEmail
-            ? () => this.email.sendSubscriptionExpiryReminder(teacherEmail, sub.plan.name, sub.expiresAt!, days)
-            : undefined,
         });
         sent++;
       }
@@ -293,9 +281,6 @@ export class TemporalJobsService {
             body: `Votre abonnement "${sub.plan.name}" a expir\u00e9 le ${sub.expiresAt.toLocaleDateString('fr-FR')}.`,
             refType: 'Subscription',
             refId: sub.id,
-            sendEmail: teacherEmail
-              ? () => this.email.sendSubscriptionExpired(teacherEmail, sub.plan.name, sub.expiresAt!)
-              : undefined,
           });
           sent++;
         } else skipped++;
@@ -326,9 +311,6 @@ export class TemporalJobsService {
               body: `Le d\u00e9lai de gr\u00e2ce de 7 jours apr\u00e8s expiration de l'abonnement "${sub.plan.name}" est d\u00e9pass\u00e9.`,
               refType: 'Subscription',
               refId: sub.id,
-              sendEmail: teacherEmail
-                ? () => this.email.sendSubscriptionGraceSuspended(teacherEmail, sub.plan.name)
-                : undefined,
             });
             sent++;
           } else skipped++;
@@ -530,7 +512,6 @@ export class TemporalJobsService {
         continue;
       }
       const studentName = `${account.enrollment.student.firstName} ${account.enrollment.student.lastName}`;
-      const parentEmail = account.enrollment.student.parent.user.email;
       await this.notifications.notify({
         recipientUserId: account.enrollment.student.parentId,
         type: 'CPT_PAYMENT_REMINDER',
@@ -539,9 +520,6 @@ export class TemporalJobsService {
         body: `Solde d\u00e9biteur de ${Math.abs(balance).toFixed(3)} TND pour ${studentName} (groupe "${account.enrollment.group.name}").`,
         refType: 'AccountingAccount',
         refId: account.id,
-        sendEmail: parentEmail
-          ? () => this.email.sendPaymentReminder(parentEmail, studentName, Math.abs(balance))
-          : undefined,
       });
       sent++;
     }
@@ -571,7 +549,6 @@ export class TemporalJobsService {
           continue;
         }
         const studentName = `${e.student.firstName} ${e.student.lastName}`;
-        const parentEmail = e.student.parent.user.email;
         await this.notifications.notify({
           recipientUserId: e.student.parentId,
           type: 'DSH_ABSENCE_NOTICE_DEADLINE',
@@ -580,9 +557,6 @@ export class TemporalJobsService {
           body: `La s\u00e9ance de ${studentName} dans le groupe "${session.group.name}" commence \u00e0 ${session.startTime}.`,
           refType: 'Session',
           refId: session.id,
-          sendEmail: parentEmail
-            ? () => this.email.sendAbsenceNoticeDeadline(parentEmail, studentName, session.group.name, session.date, session.startTime)
-            : undefined,
         });
         sent++;
       }

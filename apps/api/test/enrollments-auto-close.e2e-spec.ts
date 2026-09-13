@@ -4,6 +4,8 @@ import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { grantActiveSubscription } from './helpers/grant-subscription';
+import { createPendingEnrollmentDirect } from './helpers/create-enrollment';
+import { registerParentDirect } from './helpers/register-parent-direct';
 
 /**
  * E2E tests for the automatic closure cascade (Ch.12 Annexe M — ERR-INS-025/029/031):
@@ -32,39 +34,46 @@ describe('Enrollments — clôture automatique (ERR-INS-025/029/031) (e2e)', () 
 
   interface Actor {
     id: string;
-    email: string;
+    identifier: string;
     token: string;
   }
 
   async function registerAndActivate(role: 'TEACHER' | 'PARENT', label: string): Promise<Actor> {
-    const email = `e2e-insac-${role.toLowerCase()}-${label}-${runId}@example.com`;
-    const initialStudent =
-      role === 'PARENT'
-        ? {
-            firstName: 'Kid',
-            lastName: label,
-            schoolLevelId: (
-              await prisma.schoolLevel.findFirstOrThrow({ where: { isActive: true, code: { startsWith: 'PRIM' } } })
-            ).id,
-            schoolId: (await prisma.school.findFirstOrThrow({ where: { isActive: true, type: 'PRIMARY' } })).id,
-          }
-        : undefined;
-    const res = await api()
-      .post('/api/v1/auth/register')
-      .send({
-        email,
+    const identifier = `e2e-insac-${role.toLowerCase()}-${label}-${runId}`;
+    let userId: string;
+    if (role === 'TEACHER') {
+      const res = await api()
+        .post('/api/v1/auth/register')
+        .send({
+          password,
+          firstName: 'Test',
+          lastName: label,
+          phone: identifier,
+          city: 'Tunis',
+          acceptTerms: true,
+          subjectIds: [subjectId],
+          schoolLevelIds: [schoolLevelId],
+        })
+        .expect(201);
+      userId = res.body.id as string;
+    } else {
+      const parentSchoolLevelId = (
+        await prisma.schoolLevel.findFirstOrThrow({ where: { isActive: true, code: { startsWith: 'PRIM' } } })
+      ).id;
+      const parentSchoolId = (await prisma.school.findFirstOrThrow({ where: { isActive: true, type: 'PRIMARY' } })).id;
+      const created = await registerParentDirect(prisma, {
+        phone: identifier,
         password,
-        role,
         firstName: 'Test',
         lastName: label,
-        phone: '20000000',
         city: 'Tunis',
-        acceptTerms: true,
-        ...(role === 'TEACHER' ? { subjectIds: [subjectId], schoolLevelIds: [schoolLevelId] } : {}),
-        ...(role === 'PARENT' ? { initialStudent } : {}),
-      })
-      .expect(201);
-    const userId = res.body.id as string;
+        studentFirstName: 'Kid',
+        studentLastName: label,
+        schoolLevelId: parentSchoolLevelId,
+        schoolId: parentSchoolId,
+      });
+      userId = created.userId;
+    }
 
     await prisma.user.update({ where: { id: userId }, data: { status: 'ACTIVE' } });
     if (role === 'TEACHER') {
@@ -75,8 +84,8 @@ describe('Enrollments — clôture automatique (ERR-INS-025/029/031) (e2e)', () 
       await prisma.parentProfile.update({ where: { id: userId }, data: { validatedAt: new Date() } });
     }
 
-    const loginRes = await api().post('/api/v1/auth/login').send({ email, password }).expect(200);
-    return { id: userId, email, token: loginRes.body.accessToken as string };
+    const loginRes = await api().post('/api/v1/auth/login').send({ identifier, password }).expect(200);
+    return { id: userId, identifier, token: loginRes.body.accessToken as string };
   }
 
   async function createGroup(teacherToken: string, name: string, capacity: number): Promise<any> {
@@ -113,11 +122,14 @@ describe('Enrollments — clôture automatique (ERR-INS-025/029/031) (e2e)', () 
     return res.body;
   }
 
-  function requestEnrollment(parentToken: string, studentId: string, groupId: string) {
-    return api()
-      .post('/api/v1/enrollments')
-      .set('Authorization', `Bearer ${parentToken}`)
-      .send({ studentId, groupId });
+  /**
+   * Avenant 01, Ch. C/D.2, RM-PAR-021 : `POST /enrollments` (demande d'inscription à l'initiative
+   * du Parent) est supprimé — cette suite teste la cascade de clôture automatique (ERR-INS-025/
+   * 029/031), pas la création de la demande elle-même : une inscription `PENDING_VALIDATION` est
+   * créée directement en base (voir `helpers/create-enrollment.ts`).
+   */
+  function createPendingEnrollment(studentId: string, groupId: string) {
+    return createPendingEnrollmentDirect(prisma, studentId, groupId);
   }
 
   let teacher: Actor;
@@ -208,12 +220,14 @@ describe('Enrollments — clôture automatique (ERR-INS-025/029/031) (e2e)', () 
       await prisma.userSession.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.passwordResetToken.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.emailVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
+      await prisma.phoneVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.subscription.deleteMany({ where: { teacherId: { in: teacherIds } } });
       await prisma.teacherSubject.deleteMany({ where: { teacherProfileId: { in: teacherIds } } });
       await prisma.teacherSchoolLevel.deleteMany({ where: { teacherProfileId: { in: teacherIds } } });
       await prisma.teacherProfile.deleteMany({ where: { id: { in: teacherIds } } });
       await prisma.parentProfile.deleteMany({ where: { id: { in: parentIds } } });
-      await prisma.user.deleteMany({ where: { id: { in: userIds } } });
+      await prisma.userDevice.deleteMany({ where: { userId: { in: userIds } } });
+    await prisma.user.deleteMany({ where: { id: { in: userIds } } });
     }
 
     await app.close();
@@ -225,17 +239,17 @@ describe('Enrollments — clôture automatique (ERR-INS-025/029/031) (e2e)', () 
 
       // Une inscription ACTIVE dans ce même groupe : doit rester ACTIVE après l'archivage (hors scope).
       const studentActive = await createStudent(parent.token, `S-active-${runId}`);
-      const activeReq = await requestEnrollment(parent.token, studentActive.id, group.id).expect(201);
+      const activeReq = await createPendingEnrollment(studentActive.id, group.id);
       await api()
-        .post(`/api/v1/groups/${group.id}/enrollments/${activeReq.body.id}/accept`)
+        .post(`/api/v1/groups/${group.id}/enrollments/${activeReq.id}/accept`)
         .set('Authorization', `Bearer ${teacher.token}`)
         .send({})
         .expect(201);
 
       // Une demande encore PENDING_VALIDATION au moment de l'archivage.
       const studentPending = await createStudent(parent.token, `S-pending-${runId}`);
-      const pendingReq = await requestEnrollment(parent.token, studentPending.id, group.id).expect(201);
-      expect(pendingReq.body.status).toBe('PENDING_VALIDATION');
+      const pendingReq = await createPendingEnrollment(studentPending.id, group.id);
+      expect(pendingReq.status).toBe('PENDING_VALIDATION');
 
       // ALLOWED_TRANSITIONS impose CLOSED avant ARCHIVED.
       await api()
@@ -248,17 +262,17 @@ describe('Enrollments — clôture automatique (ERR-INS-025/029/031) (e2e)', () 
         .expect(201);
       expect(archiveRes.body.status).toBe('ARCHIVED');
 
-      const closedEnrollment = await prisma.enrollment.findUniqueOrThrow({ where: { id: pendingReq.body.id } });
+      const closedEnrollment = await prisma.enrollment.findUniqueOrThrow({ where: { id: pendingReq.id } });
       expect(closedEnrollment.status).toBe('REJECTED');
       expect(closedEnrollment.decidedById).toBeNull();
       expect(closedEnrollment.decidedAt).not.toBeNull();
 
       // Hors scope : l'inscription ACTIVE n'est pas touchée par la cascade.
-      const untouchedEnrollment = await prisma.enrollment.findUniqueOrThrow({ where: { id: activeReq.body.id } });
+      const untouchedEnrollment = await prisma.enrollment.findUniqueOrThrow({ where: { id: activeReq.id } });
       expect(untouchedEnrollment.status).toBe('ACTIVE');
 
       const activity = await prisma.activity.findFirst({
-        where: { userId: parent.id, type: 'INS_AUTO_CLOSED_GROUP_ARCHIVED', refId: pendingReq.body.id },
+        where: { userId: parent.id, type: 'INS_AUTO_CLOSED_GROUP_ARCHIVED', refId: pendingReq.id },
         orderBy: { createdAt: 'desc' },
       });
       expect(activity).not.toBeNull();
@@ -270,8 +284,8 @@ describe('Enrollments — clôture automatique (ERR-INS-025/029/031) (e2e)', () 
     it('clôture automatiquement (REJECTED) une demande PENDING_VALIDATION et notifie le Professeur', async () => {
       const group = await createGroup(teacher.token, `E2E-INSAC Groupe eleve ${runId}`, 2);
       const student = await createStudent(parent.token, `S-arch-${runId}`);
-      const reqRes = await requestEnrollment(parent.token, student.id, group.id).expect(201);
-      expect(reqRes.body.status).toBe('PENDING_VALIDATION');
+      const reqRes = await createPendingEnrollment(student.id, group.id);
+      expect(reqRes.status).toBe('PENDING_VALIDATION');
 
       const archiveRes = await api()
         .post(`/api/v1/parent-profile/me/students/${student.id}/archive`)
@@ -279,13 +293,13 @@ describe('Enrollments — clôture automatique (ERR-INS-025/029/031) (e2e)', () 
         .expect(201);
       expect(archiveRes.body.status).toBe('ARCHIVED');
 
-      const closedEnrollment = await prisma.enrollment.findUniqueOrThrow({ where: { id: reqRes.body.id } });
+      const closedEnrollment = await prisma.enrollment.findUniqueOrThrow({ where: { id: reqRes.id } });
       expect(closedEnrollment.status).toBe('REJECTED');
       expect(closedEnrollment.decidedById).toBeNull();
       expect(closedEnrollment.decidedAt).not.toBeNull();
 
       const activity = await prisma.activity.findFirst({
-        where: { userId: teacher.id, type: 'INS_AUTO_CLOSED_STUDENT_ARCHIVED', refId: reqRes.body.id },
+        where: { userId: teacher.id, type: 'INS_AUTO_CLOSED_STUDENT_ARCHIVED', refId: reqRes.id },
         orderBy: { createdAt: 'desc' },
       });
       expect(activity).not.toBeNull();

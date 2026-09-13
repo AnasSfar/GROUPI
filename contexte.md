@@ -3,6 +3,8 @@
 > Ce fichier est le point d'entrée pour comprendre GROUPI avant de coder. Il résume le référentiel fonctionnel officiel (`RÉFÉRENTIEL FONCTIONNEL GROUPI.docx` / `.pdf`, Version 1.0). **En cas de doute ou de divergence, le référentiel fait foi**, pas ce résumé.
 >
 > Le texte intégral, découpé par partie, est dans [`docs/referentiel/`](docs/referentiel/). Des skills Claude Code par domaine (`.claude/skills/`) chargent la bonne partie selon le sujet sur lequel on travaille — invoque-les plutôt que de relire tout le document.
+>
+> **⚠️ Avenant en vigueur** : [`docs/referentiel/AVENANT-01-onboarding-invitation-et-portail-parent.md`](docs/referentiel/AVENANT-01-onboarding-invitation-et-portail-parent.md) (V1.1, 2026-09-11) redéfinit l'onboarding (lien d'invitation Professeur → groupes de niveau/salles d'attente → affectation), cloisonne le portail Parent, supprime la recherche de groupes et la demande d'inscription à l'initiative du Parent, passe les comptes à une identité **téléphone uniquement** (e-mail entièrement retiré du produit), notifications **in-app uniquement** en V1.1 (SMS/WhatsApp différés, façade `MessagingService` en place ; le prof partage le lien via un bouton `wa.me` manuel ; réinitialisation de mot de passe assistée par prof/support), rend le compte Parent actif sans validation admin, verrouille l'accès du Professeur non validé, et ajuste le CA prévisionnel (2 périodes, année académique). **En cas de divergence avec le V1.0, l'avenant fait foi.** À implémenter — pas encore codé.
 
 ## État du dépôt
 

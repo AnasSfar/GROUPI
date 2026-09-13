@@ -5,6 +5,7 @@ import { AppModule } from '../src/app.module';
 import { PreEnrollmentsModule } from '../src/pre-enrollments/pre-enrollments.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { grantActiveSubscription } from './helpers/grant-subscription';
+import { registerParentDirect } from './helpers/register-parent-direct';
 
 /**
  * E2E tests for the pre-enrollments module (/api/v1/pre-enrollments/*, and
@@ -31,9 +32,9 @@ describe('Pre-enrollments (e2e)', () => {
   const runId = Date.now();
   const now = new Date();
 
-  const teacherEmail = `e2e-pre-teacher-${runId}@example.com`;
-  const parentEmail = `e2e-pre-parent-${runId}@example.com`;
-  const otherParentEmail = `e2e-pre-parent2-${runId}@example.com`;
+  const teacherPhone = `e2epre-teacher-${runId}`;
+  const parentPhone = `e2epre-parent-${runId}`;
+  const otherParentPhone = `e2epre-parent2-${runId}`;
   const password = 'CorrectHorse123';
 
   let teacherId: string;
@@ -91,6 +92,7 @@ describe('Pre-enrollments (e2e)', () => {
       data: { name: `E2E Pre Level ${runId}`, code: `COL${runId}`, order: 1, isActive: true },
     });
     schoolLevelId = schoolLevel.id;
+    await prisma.subjectLevel.create({ data: { subjectId, schoolLevelId, isAllowed: true, isActive: true } });
 
     const pastYear = await prisma.academicYear.create({
       data: {
@@ -126,12 +128,10 @@ describe('Pre-enrollments (e2e)', () => {
     const teacherRegister = await api()
       .post('/api/v1/auth/register')
       .send({
-        email: teacherEmail,
         password,
-        role: 'TEACHER',
         firstName: 'Pre',
         lastName: 'Teacher',
-        phone: '20000010',
+        phone: teacherPhone,
         city: city.name,
         acceptTerms: true,
         subjectIds: [subjectId],
@@ -145,53 +145,49 @@ describe('Pre-enrollments (e2e)', () => {
     // Ch.22 : SubscriptionGuard exige un abonnement exploitable pour créer/modifier (ici `propose`).
     await grantActiveSubscription(prisma, teacherId, currentYearId);
 
-    const parentRegister = await api()
-      .post('/api/v1/auth/register')
-      .send({
-        email: parentEmail,
-        password,
-        role: 'PARENT',
-        firstName: 'Pre',
-        lastName: 'Parent',
-        phone: '20000011',
-        city: city.name,
-        acceptTerms: true,
-        initialStudent: { firstName: 'Kid', lastName: 'Parent', schoolLevelId, schoolId },
-      })
-      .expect(201);
-    parentId = parentRegister.body.id;
+    const parentCreated = await registerParentDirect(prisma, {
+      phone: parentPhone,
+      password,
+      firstName: 'Pre',
+      lastName: 'Parent',
+      city: city.name,
+      studentFirstName: 'Kid',
+      studentLastName: 'Parent',
+      schoolLevelId,
+      schoolId,
+      academicYearId: currentYearId,
+    });
+    parentId = parentCreated.userId;
 
-    const otherParentRegister = await api()
-      .post('/api/v1/auth/register')
-      .send({
-        email: otherParentEmail,
-        password,
-        role: 'PARENT',
-        firstName: 'Other',
-        lastName: 'Parent',
-        phone: '20000012',
-        city: city.name,
-        acceptTerms: true,
-        initialStudent: { firstName: 'Kid', lastName: 'Other', schoolLevelId, schoolId },
-      })
-      .expect(201);
-    otherParentId = otherParentRegister.body.id;
+    const otherParentCreated = await registerParentDirect(prisma, {
+      phone: otherParentPhone,
+      password,
+      firstName: 'Other',
+      lastName: 'Parent',
+      city: city.name,
+      studentFirstName: 'Kid',
+      studentLastName: 'Other',
+      schoolLevelId,
+      schoolId,
+      academicYearId: currentYearId,
+    });
+    otherParentId = otherParentCreated.userId;
 
     const teacherLogin = await api()
       .post('/api/v1/auth/login')
-      .send({ email: teacherEmail, password })
+      .send({ identifier: teacherPhone, password })
       .expect(200);
     teacherToken = teacherLogin.body.accessToken;
 
     const parentLogin = await api()
       .post('/api/v1/auth/login')
-      .send({ email: parentEmail, password })
+      .send({ identifier: parentPhone, password })
       .expect(200);
     parentToken = parentLogin.body.accessToken;
 
     const otherParentLogin = await api()
       .post('/api/v1/auth/login')
-      .send({ email: otherParentEmail, password })
+      .send({ identifier: otherParentPhone, password })
       .expect(200);
     otherParentToken = otherParentLogin.body.accessToken;
 
@@ -209,11 +205,34 @@ describe('Pre-enrollments (e2e)', () => {
       .send({ firstName: 'Enfant', lastName: 'B', schoolLevelId, schoolId })
       .expect(201);
     studentBId = studentB.body.id;
+
+    // Avenant 01, Ch. D.4 (RM-PAR-024/ERR-PAR-021) : la préinscription est désormais restreinte
+    // aux Professeurs déjà rattachés à l'enfant — une inscription existante (n'importe quel
+    // statut) chez `teacherId` suffit à rendre studentA éligible pour le reste de cette suite.
+    const linkGroup = await prisma.group.create({
+      data: {
+        teacherId,
+        subjectId,
+        schoolLevelId,
+        academicYearId: currentYearId,
+        name: `E2E-PRE-${runId} Groupe Lien Préinscription`,
+        capacity: 30,
+        publicPrice: 30,
+        teachingMode: 'PRESENTIAL',
+        absenceBillingPolicy: 'ALL_BILLED',
+        visibilityWhenFull: 'VISIBLE',
+        startDate: now,
+        status: 'ACTIVE',
+      },
+    });
+    await prisma.enrollment.create({
+      data: { studentId: studentAId, groupId: linkGroup.id, status: 'PENDING_VALIDATION', requestedAt: now },
+    });
   });
 
   afterAll(async () => {
     const users = await prisma.user.findMany({
-      where: { email: { startsWith: 'e2e-pre-' } },
+      where: { phone: { startsWith: 'e2epre-' } },
       select: { id: true },
     });
     const userIds = users.map((u) => u.id);
@@ -270,6 +289,7 @@ describe('Pre-enrollments (e2e)', () => {
     await prisma.teacherSchoolLevel.deleteMany({ where: { teacherProfileId: { in: userIds } } });
     await prisma.school.deleteMany({ where: { id: schoolId } });
     await prisma.city.deleteMany({ where: { id: cityId } });
+    await prisma.subjectLevel.deleteMany({ where: { subjectId, schoolLevelId } });
     await prisma.subject.deleteMany({ where: { id: subjectId } });
     await prisma.schoolLevel.deleteMany({ where: { id: schoolLevelId } });
 
@@ -278,8 +298,10 @@ describe('Pre-enrollments (e2e)', () => {
     await prisma.userSession.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.passwordResetToken.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.emailVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
+    await prisma.phoneVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.teacherProfile.deleteMany({ where: { id: { in: userIds } } });
     await prisma.parentProfile.deleteMany({ where: { id: { in: userIds } } });
+    await prisma.userDevice.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.user.deleteMany({ where: { id: { in: userIds } } });
 
     await app.close();

@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
-import { EmailModule } from '../email/email.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { AccountingModule } from '../accounting/accounting.module';
@@ -9,7 +8,7 @@ import { GroupGroupChangeController } from './group-group-change.controller';
 import { GroupChangeService } from './group-change.service';
 
 @Module({
-  imports: [AuthModule, EmailModule, NotificationsModule, SubscriptionsModule, AccountingModule],
+  imports: [AuthModule, NotificationsModule, SubscriptionsModule, AccountingModule],
   controllers: [GroupChangeController, GroupGroupChangeController],
   providers: [GroupChangeService],
   exports: [GroupChangeService],

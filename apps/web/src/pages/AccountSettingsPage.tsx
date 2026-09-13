@@ -351,45 +351,9 @@ export function AccountSettingsPage() {
   const [confirming, setConfirming] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [resent, setResent] = useState(false);
-  const [resending, setResending] = useState(false);
-  const [phoneResent, setPhoneResent] = useState(false);
-  const [phoneResending, setPhoneResending] = useState(false);
   const [loggingOutAll, setLoggingOutAll] = useState(false);
   const [confirmingDeletion, setConfirmingDeletion] = useState(false);
   const [deleting, setDeleting] = useState(false);
-
-  async function handleResendVerification() {
-    const token = getAccessToken();
-    if (!token) return;
-    setResending(true);
-    setError(null);
-    try {
-      await authApi.resendVerificationEmail(token);
-      setResent(true);
-      showToast('E-mail de vérification envoyé');
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Impossible d'envoyer l'e-mail de vérification.");
-    } finally {
-      setResending(false);
-    }
-  }
-
-  async function handleResendPhoneVerification() {
-    const token = getAccessToken();
-    if (!token) return;
-    setPhoneResending(true);
-    setError(null);
-    try {
-      await authApi.resendVerificationPhone(token);
-      setPhoneResent(true);
-      showToast('Code de vérification envoyé par SMS');
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Impossible d'envoyer le code de vérification.");
-    } finally {
-      setPhoneResending(false);
-    }
-  }
 
   async function handleDeactivate() {
     const token = getAccessToken();
@@ -464,59 +428,12 @@ export function AccountSettingsPage() {
           <strong>{currentUser?.roles.map((role) => ROLE_LABELS[role] ?? role).join(', ')}</strong>
         </p>
 
-        {/* RM-SEC-001 : l'identifiant du compte est l'e-mail OU le téléphone — chacun n'est affiché
-            (avec son bloc de vérification) que s'il est effectivement renseigné sur ce compte. */}
-        {currentUser?.email && (
-          <>
-            <p className="summary-row" style={{ marginTop: 8 }}>
-              Email : <strong>{currentUser.email}</strong>{' '}
-              {currentUser.emailVerifiedAt ? (
-                <span className="badge badge-success">Vérifié</span>
-              ) : (
-                <span className="badge badge-warning">Non vérifié</span>
-              )}
-            </p>
-            {!currentUser.emailVerifiedAt && (
-              <div className="page-actions" style={{ marginTop: 8 }}>
-                {resent ? (
-                  <span className="table-hint">E-mail de vérification envoyé.</span>
-                ) : (
-                  <button type="button" className="ghost" onClick={handleResendVerification} disabled={resending}>
-                    {resending ? 'Envoi...' : "Renvoyer l'e-mail de vérification"}
-                  </button>
-                )}
-              </div>
-            )}
-          </>
-        )}
-
+        {/* Avenant 01, Ch. I.1 : le téléphone est le seul identifiant du compte, jamais vérifié
+            par code en V1.1 (Ch. I.2). */}
         {currentUser?.phone && (
-          <>
-            <p className="summary-row" style={{ marginTop: 8 }}>
-              Téléphone : <strong>{currentUser.phone}</strong>{' '}
-              {currentUser.phoneVerifiedAt ? (
-                <span className="badge badge-success">Vérifié</span>
-              ) : (
-                <span className="badge badge-warning">Non vérifié</span>
-              )}
-            </p>
-            {!currentUser.phoneVerifiedAt && (
-              <div className="page-actions" style={{ marginTop: 8 }}>
-                {phoneResent ? (
-                  <span className="table-hint">Code de vérification envoyé par SMS.</span>
-                ) : (
-                  <button
-                    type="button"
-                    className="ghost"
-                    onClick={handleResendPhoneVerification}
-                    disabled={phoneResending}
-                  >
-                    {phoneResending ? 'Envoi...' : 'Renvoyer le code de vérification'}
-                  </button>
-                )}
-              </div>
-            )}
-          </>
+          <p className="summary-row" style={{ marginTop: 8 }}>
+            Téléphone : <strong>{currentUser.phone}</strong>
+          </p>
         )}
       </section>
 

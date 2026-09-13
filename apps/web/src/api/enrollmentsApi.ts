@@ -85,19 +85,11 @@ export interface TeacherEnrollment {
   parentPaymentBehavior: ParentPaymentBehavior;
 }
 
-export interface CreateEnrollmentPayload {
-  studentId: string;
-  groupId: string;
-}
+// Avenant 01, Ch. C/D.2/RM-PAR-021 : `createEnrollment` (demande d'inscription à l'initiative du
+// Parent, `POST /enrollments`) a été retiré avec l'endpoint correspondant — remplacé par
+// l'affectation Professeur (Ch. C) ou la transformation d'une préinscription confirmée (Ch. 11).
 
 // --- Vue Parent -------------------------------------------------------------
-
-export function createEnrollment(
-  accessToken: string,
-  payload: CreateEnrollmentPayload,
-): Promise<ParentEnrollment> {
-  return apiRequest<ParentEnrollment>('/enrollments', { method: 'POST', accessToken, body: payload });
-}
 
 export function listMine(accessToken: string): Promise<ParentEnrollment[]> {
   return apiRequest<ParentEnrollment[]>('/enrollments/mine', { accessToken });

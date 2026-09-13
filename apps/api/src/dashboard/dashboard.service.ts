@@ -94,7 +94,7 @@ export class DashboardService {
       return {
         id: g.id,
         name: g.name,
-        subject: g.subject.name,
+        subject: g.subject?.name ?? '—',
         schoolLevel: g.schoolLevel.name,
         status: g.status,
         capacity: g.capacity,
@@ -498,7 +498,7 @@ export class DashboardService {
         group: {
           id: e.group.id,
           name: e.group.name,
-          subject: e.group.subject.name,
+          subject: e.group.subject?.name ?? '—',
           schoolLevel: e.group.schoolLevel.name,
           teacher: e.group.teacher,
           teachingMode: e.group.teachingMode,
@@ -611,7 +611,7 @@ export class DashboardService {
     const pendingAccountValidations = has('ACC_VALIDATE')
       ? await this.prisma.user.findMany({
           where: { status: 'PENDING_VALIDATION', roles: { has: 'TEACHER' } },
-          select: { id: true, email: true, roles: true, createdAt: true },
+          select: { id: true, phone: true, roles: true, createdAt: true },
           orderBy: { createdAt: 'asc' },
           take: 20,
         })
@@ -644,16 +644,7 @@ export class DashboardService {
       ? await this.buildAdminSubscriptionsSection(alerts)
       : null;
 
-    const auditLogSection = has('AUDIT_VIEW')
-      ? {
-          totalCount: await this.prisma.auditLog.count(),
-          recent: await this.prisma.auditLog.findMany({
-            orderBy: { createdAt: 'desc' },
-            take: 20,
-            select: { id: true, action: true, targetType: true, targetId: true, userId: true, createdAt: true },
-          }),
-        }
-      : null;
+    const auditLogSection = has('AUDIT_VIEW') ? await this.buildAdminAuditLogSection() : null;
 
     return {
       overview,
@@ -682,6 +673,60 @@ export class DashboardService {
       });
     }
     return { pendingPaymentCount: pendingPayment, activeCount: active, suspendedCount: suspended, expiredCount: expired };
+  }
+
+  /**
+   * `AuditLog.userId` pointe vers `User` (identifiants de connexion), mais le nom affichable vit
+   * dans le profil du rôle (`TeacherProfile`/`ParentProfile`/`Administrator`, chacun partageant sa
+   * clé primaire avec `User`) — jamais deux à la fois pour un même compte. On résout donc les noms
+   * en un aller-retour supplémentaire plutôt que d'exposer l'UUID brut dans le tableau de bord.
+   */
+  private async buildAdminAuditLogSection() {
+    const [totalCount, recent] = await Promise.all([
+      this.prisma.auditLog.count(),
+      this.prisma.auditLog.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        select: {
+          id: true,
+          action: true,
+          targetType: true,
+          targetId: true,
+          userId: true,
+          newValues: true,
+          createdAt: true,
+        },
+      }),
+    ]);
+
+    const actorIds = [...new Set(recent.map((r) => r.userId).filter((id): id is string => id !== null))];
+    const actors = actorIds.length
+      ? await this.prisma.user.findMany({
+          where: { id: { in: actorIds } },
+          select: {
+            id: true,
+            email: true,
+            teacherProfile: { select: { firstName: true, lastName: true } },
+            parentProfile: { select: { firstName: true, lastName: true } },
+            administrator: { select: { firstName: true, lastName: true } },
+          },
+        })
+      : [];
+
+    const actorNameById = new Map<string, string>();
+    for (const actor of actors) {
+      const profile = actor.teacherProfile ?? actor.parentProfile ?? actor.administrator;
+      const name = profile?.firstName && profile?.lastName ? `${profile.firstName} ${profile.lastName}` : actor.email ?? 'Compte sans nom';
+      actorNameById.set(actor.id, name);
+    }
+
+    return {
+      totalCount,
+      recent: recent.map((r) => ({
+        ...r,
+        actorName: r.userId ? actorNameById.get(r.userId) ?? 'Compte supprimé' : 'Système',
+      })),
+    };
   }
 
   /** Ch.16.6 : vision complète, sans filtrage par permission (Super Admin = tous les droits). */

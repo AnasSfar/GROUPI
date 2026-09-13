@@ -5,6 +5,7 @@ import { CreateAnnouncementDto } from './dto/create-announcement.dto';
 import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { TeacherValidatedGuard } from '../auth/guards/teacher-validated.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
@@ -15,7 +16,7 @@ import { SubscriptionGuard } from '../subscriptions/subscription.guard';
  * Ch.22 : `SubscriptionGuard` ne s'applique qu'au Professeur (création/modification) — no-op pour le Parent.
  */
 @Controller('groups/:groupId/announcements')
-@UseGuards(JwtAuthGuard, RolesGuard, SubscriptionGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, TeacherValidatedGuard, SubscriptionGuard)
 export class GroupAnnouncementsController {
   constructor(private readonly service: GroupAnnouncementsService) {}
 

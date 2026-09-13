@@ -16,8 +16,6 @@ import { RefreshDto } from './dto/refresh.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
-import { VerifyEmailDto } from './dto/verify-email.dto';
-import { VerifyPhoneDto } from './dto/verify-phone.dto';
 import { AddRoleDto } from './dto/add-role.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
@@ -85,32 +83,14 @@ export class AuthController {
     return this.authService.resetPassword(dto);
   }
 
-  @Post('verify-email')
-  @HttpCode(204)
-  verifyEmail(@Body() dto: VerifyEmailDto) {
-    return this.authService.verifyEmail(dto);
-  }
-
-  @Post('resend-verification')
-  @HttpCode(204)
+  /** Ch. I.3 : reset assisté — un Professeur (pour l'un de ses Parents) ou un Administrateur
+   * (pour n'importe quel compte) génère un lien de réinitialisation à usage unique, transmis
+   * hors bande. Le contrôle fin (qui peut réinitialiser qui) vit dans `AuthService`. */
+  @Post('users/:id/assisted-reset-link')
   @UseGuards(JwtAuthGuard)
-  resendVerification(@CurrentUser() user: AuthenticatedUser) {
-    return this.authService.resendVerificationEmail(user.id);
+  generateAssistedResetLink(@CurrentUser() user: AuthenticatedUser, @Param('id') targetUserId: string) {
+    return this.authService.generateAssistedResetLink(user, targetUserId);
   }
-
-  @Post('verify-phone')
-  @HttpCode(204)
-  verifyPhone(@Body() dto: VerifyPhoneDto) {
-    return this.authService.verifyPhone(dto);
-  }
-
-  @Post('resend-verification-phone')
-  @HttpCode(204)
-  @UseGuards(JwtAuthGuard)
-  resendVerificationPhone(@CurrentUser() user: AuthenticatedUser) {
-    return this.authService.resendVerificationSms(user.id);
-  }
-
 
   @Post('me/deactivate')
   @HttpCode(204)

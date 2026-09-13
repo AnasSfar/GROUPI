@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Select } from '../components/Select';
 import { useToast } from '../components/Toast';
-import { EmptyState } from '../components/UiState';
+import { MonthCalendar, type MonthCalendarEvent } from '../components/MonthCalendar';
+import type { WeekCalendarTone } from '../components/WeekCalendar';
 import { ApiError } from '../api/client';
 import * as groupsApi from '../api/groupsApi';
 import * as sessionsApi from '../api/sessionsApi';
@@ -28,6 +29,14 @@ const STATUS_BADGE: Record<SessionStatus, string> = {
   CANCELLED: 'badge-danger',
   COMPLETED: 'badge-success',
   LOCKED: 'badge-neutral',
+};
+
+const STATUS_TONE: Record<SessionStatus, WeekCalendarTone> = {
+  PLANNED: 'info',
+  POSTPONED: 'warning',
+  CANCELLED: 'danger',
+  COMPLETED: 'success',
+  LOCKED: 'neutral',
 };
 
 const MODE_LABELS: Record<Group['teachingMode'], string> = {
@@ -65,16 +74,18 @@ function sessionTimestamp(row: SessionRow): number {
 export function TeacherAllSessionsPage() {
   const { getAccessToken } = useAuth();
   const { showToast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [rows, setRows] = useState<SessionRow[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [locations, setLocations] = useState<TeachingLocation[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState('');
   const [statusFilter, setStatusFilter] = useState<SessionStatus | ''>('');
-  const [periodFilter, setPeriodFilter] = useState<'ALL' | 'TODAY' | 'UPCOMING' | 'PAST'>('ALL');
+  const [monthCursor, setMonthCursor] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const [selectedRow, setSelectedRow] = useState<SessionRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showCreateForm, setShowCreateForm] = useState(() => searchParams.get('create') === '1');
   const [createGroupId, setCreateGroupId] = useState('');
   const [date, setDate] = useState('');
   const [startTime, setStartTime] = useState('18:00');
@@ -132,6 +143,17 @@ export function TeacherAllSessionsPage() {
     applyGroupDefaults(groups[0].id, groups);
   }, [createGroupId, groups]);
 
+  // Accès rapide (tableau de bord) : "?create=1" ouvre directement le formulaire de création.
+  useEffect(() => {
+    if (searchParams.get('create') === '1') {
+      setSearchParams((params) => {
+        params.delete('create');
+        return params;
+      }, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function handleCreateSession(event: FormEvent) {
     event.preventDefault();
     const token = getAccessToken();
@@ -164,19 +186,37 @@ export function TeacherAllSessionsPage() {
   }
 
   const filteredRows = useMemo(() => {
-    const today = new Date();
-    const todayKey = today.toISOString().slice(0, 10);
-    const now = Date.now();
     return rows.filter((row) => {
-      const dateKey = row.session.date.slice(0, 10);
       if (selectedGroupId && row.group.id !== selectedGroupId) return false;
       if (statusFilter && row.session.status !== statusFilter) return false;
-      if (periodFilter === 'TODAY' && dateKey !== todayKey) return false;
-      if (periodFilter === 'UPCOMING' && sessionTimestamp(row) < now) return false;
-      if (periodFilter === 'PAST' && sessionTimestamp(row) >= now) return false;
       return true;
     });
-  }, [periodFilter, rows, selectedGroupId, statusFilter]);
+  }, [rows, selectedGroupId, statusFilter]);
+
+  const calendarEvents = useMemo<MonthCalendarEvent[]>(
+    () =>
+      filteredRows.map(({ session, group }) => ({
+        id: session.id,
+        date: session.date,
+        startTime: session.startTime,
+        title: group.name,
+        subtitle: `${group.subject.name} - ${group.schoolLevel.name}`,
+        tone: STATUS_TONE[session.status],
+        onClick: () => setSelectedRow({ session, group }),
+      })),
+    [filteredRows],
+  );
+
+  function handleNavigateMonth(direction: 'prev' | 'next' | 'today') {
+    setMonthCursor((cursor) => {
+      if (direction === 'today') {
+        const now = new Date();
+        return new Date(now.getFullYear(), now.getMonth(), 1);
+      }
+      const delta = direction === 'next' ? 1 : -1;
+      return new Date(cursor.getFullYear(), cursor.getMonth() + delta, 1);
+    });
+  }
 
   if (loading) {
     return <p>Chargement...</p>;
@@ -293,15 +333,6 @@ export function TeacherAllSessionsPage() {
             </Select>
           </label>
           <label>
-            Periode
-            <Select value={periodFilter} onChange={(e) => setPeriodFilter(e.target.value as typeof periodFilter)}>
-              <option value="ALL">Toutes</option>
-              <option value="TODAY">Aujourd'hui</option>
-              <option value="UPCOMING">A venir</option>
-              <option value="PAST">Passees</option>
-            </Select>
-          </label>
-          <label>
             Statut
             <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as SessionStatus | '')}>
               <option value="">Tous</option>
@@ -314,64 +345,54 @@ export function TeacherAllSessionsPage() {
           </label>
         </div>
 
-        {filteredRows.length === 0 ? (
-          <EmptyState title="Aucune seance">Aucune seance ne correspond aux filtres actuels.</EmptyState>
-        ) : (
-          <div className="table-wrap section-spacer">
-            <table className="admin-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Heure</th>
-                  <th>Groupe</th>
-                  <th>Matiere / Niveau</th>
-                  <th>Duree</th>
-                  <th>Mode</th>
-                  <th>Statut</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRows.map(({ session, group }) => (
-                  <tr key={session.id}>
-                    <td data-label="Date">
-                      {new Date(session.date).toLocaleDateString('fr-FR', {
-                        weekday: 'long',
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: 'numeric',
-                      })}
-                    </td>
-                    <td data-label="Heure">{session.startTime}</td>
-                    <td data-label="Groupe">{group.name}</td>
-                    <td data-label="Matiere / Niveau">
-                      {group.subject.name} - {group.schoolLevel.name}
-                    </td>
-                    <td data-label="Duree">{formatDuration(session.durationMinutes)}</td>
-                    <td data-label="Mode">{MODE_LABELS[session.teachingMode]}</td>
-                    <td data-label="Statut">
-                      <span className={`badge ${STATUS_BADGE[session.status]}`}>
-                        {STATUS_LABELS[session.status]}
-                      </span>
-                    </td>
-                    <td className="admin-actions">
-                      {canOpenAttendance(session) ? (
-                        <Link to={`/teacher/sessions/${session.id}/attendance`}>
-                          {attendanceLabel(session.status)}
-                        </Link>
-                      ) : (
-                        <span className="table-hint">{attendanceUnavailableLabel(session)}</span>
-                      )}
-                      <Link to={`/teacher/sessions/${session.id}/payments`}>Saisir les paiements</Link>
-                      <Link to={`/teacher/groups/${group.id}/sessions`}>Voir</Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <div className="section-spacer">
+          <MonthCalendar month={monthCursor} events={calendarEvents} onNavigate={handleNavigateMonth} />
+        </div>
       </section>
+
+      {selectedRow && (
+        <div className="terms-modal-backdrop" onClick={() => setSelectedRow(null)}>
+          <div className="terms-modal" onClick={(e) => e.stopPropagation()}>
+            <h2>{selectedRow.group.name}</h2>
+            <p className="table-hint">
+              {selectedRow.group.subject.name} - {selectedRow.group.schoolLevel.name}
+            </p>
+            <div className="section-spacer">
+              <p>
+                {new Date(selectedRow.session.date).toLocaleDateString('fr-FR', {
+                  weekday: 'long',
+                  day: '2-digit',
+                  month: '2-digit',
+                  year: 'numeric',
+                })}{' '}
+                a {selectedRow.session.startTime} - {formatDuration(selectedRow.session.durationMinutes)}
+              </p>
+              <p className="table-hint">
+                {MODE_LABELS[selectedRow.session.teachingMode]}{' '}
+                <span className={`badge ${STATUS_BADGE[selectedRow.session.status]}`}>
+                  {STATUS_LABELS[selectedRow.session.status]}
+                </span>
+              </p>
+            </div>
+            <div className="admin-actions section-spacer">
+              {canOpenAttendance(selectedRow.session) ? (
+                <Link to={`/teacher/sessions/${selectedRow.session.id}/attendance`}>
+                  {attendanceLabel(selectedRow.session.status)}
+                </Link>
+              ) : (
+                <span className="table-hint">{attendanceUnavailableLabel(selectedRow.session)}</span>
+              )}
+              <Link to={`/teacher/sessions/${selectedRow.session.id}/payments`}>Saisir les paiements</Link>
+              <Link to={`/teacher/groups/${selectedRow.group.id}/sessions`}>Voir</Link>
+            </div>
+            <div className="terms-modal-actions">
+              <button type="button" className="ghost" onClick={() => setSelectedRow(null)}>
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

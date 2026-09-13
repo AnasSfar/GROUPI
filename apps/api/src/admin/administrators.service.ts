@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import { randomBytes, createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { PasswordService } from '../auth/password.service';
-import { EmailService } from '../email/email.service';
 import { InviteAdministratorDto } from './dto/invite-administrator.dto';
 import { PromoteAdministratorDto } from './dto/promote-administrator.dto';
 import { AcceptAdministratorInvitationDto } from './dto/accept-administrator-invitation.dto';
@@ -13,23 +12,35 @@ interface ActionMeta {
   ipAddress?: string;
 }
 
-/** PERM-ACC-001 : créer/promouvoir un Administrateur n'est jamais délégable — Super Admin uniquement. */
+/**
+ * PERM-ACC-001 : créer/promouvoir un Administrateur n'est jamais délégable — Super Admin uniquement.
+ *
+ * Avenant 01, Ch. H.4 (point laissé ouvert) : l'e-mail est entièrement retiré du produit
+ * (RM-SEC-052), mais l'invitation d'un Administrateur restait, en V1.0, fondée sur un envoi
+ * d'e-mail (`EmailService.sendAdminInvitation`, supprimé avec le module `email/`). Le produit doit
+ * encore trancher entre (a) un lien partagé hors bande par le Super Administrateur lui-même
+ * (retenu ici a minima, par symétrie avec la réinitialisation assistée de mot de passe, Ch. I.3) ou
+ * (b) une création directe avec mot de passe temporaire. `InviteAdministratorDto.email` reste donc
+ * en l'état (hors périmètre de ce chantier, Ch. I ne couvre que Professeur/Parent) : `invite()` ne
+ * l'utilise plus pour délivrer quoi que ce soit, il ne fait plus que renvoyer l'URL d'invitation à
+ * transmettre manuellement — ne pas prendre ce choix minimal pour une décision produit actée.
+ */
 @Injectable()
 export class AdministratorsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly password: PasswordService,
-    private readonly email: EmailService,
     private readonly config: ConfigService,
   ) {}
 
   /**
    * RM-CYC-022 : compte créé directement ACTIVE (pas de PENDING_VALIDATION — ce processus est
    * réservé à Professeur/Parent). Le mot de passe initial est aléatoire et inconnu de quiconque ;
-   * l'invité ne peut se connecter qu'après avoir fixé le sien via le lien envoyé par e-mail.
+   * l'invité ne peut se connecter qu'après avoir fixé le sien via le lien d'invitation retourné ici
+   * (Ch. H.4 : transmission hors bande par le Super Administrateur, plus d'envoi automatique).
    */
   async invite(actorUserId: string, dto: InviteAdministratorDto, meta: ActionMeta = {}) {
-    const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    const existing = await this.prisma.user.findFirst({ where: { email: dto.email } });
     if (existing) {
       throw new ConflictException('Un compte existe déjà avec cette adresse e-mail');
     }
@@ -68,9 +79,15 @@ export class AdministratorsService {
       return created;
     });
 
-    await this.sendInvitationEmail(user.id, dto.email);
+    const invitationUrl = await this.createInvitationToken(user.id);
 
-    return { id: user.id, email: user.email, status: user.status, permissions: dto.permissions };
+    return {
+      id: user.id,
+      email: user.email,
+      status: user.status,
+      permissions: dto.permissions,
+      invitationUrl,
+    };
   }
 
   /**
@@ -198,7 +215,13 @@ export class AdministratorsService {
     ]);
   }
 
-  private async sendInvitationEmail(userId: string, email: string): Promise<void> {
+  /**
+   * Ch. H.4 (point ouvert, non tranché) : ne fait plus qu'émettre le jeton et renvoyer l'URL à
+   * transmettre hors bande par le Super Administrateur — plus d'envoi automatique (module `email/`
+   * retiré). Note : la page frontend `/admin/accept-invitation` référencée ici n'existe pas encore
+   * (lacune préexistante, hors périmètre de ce chantier).
+   */
+  private async createInvitationToken(userId: string): Promise<string> {
     const ttlMinutes = this.config.get<number>('ADMIN_INVITATION_TTL_MINUTES', 60 * 24 * 7);
     const rawToken = randomBytes(32).toString('hex');
 
@@ -210,7 +233,8 @@ export class AdministratorsService {
       },
     });
 
-    await this.email.sendAdminInvitation(email, rawToken);
+    const baseUrl = this.config.get<string>('PUBLIC_APP_URL') ?? this.config.get<string>('CORS_ORIGIN') ?? 'http://localhost:5173';
+    return `${baseUrl}/admin/accept-invitation?token=${rawToken}`;
   }
 
   private hashToken(token: string): string {

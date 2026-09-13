@@ -118,7 +118,7 @@ export class ExportDataBuilder {
     ];
     const rows = groups.map((g) => ({
       name: g.name,
-      subject: g.subject.name,
+      subject: g.subject?.name ?? '—',
       level: g.schoolLevel.name,
       academicYear: g.academicYear.label,
       status: g.status,
@@ -144,7 +144,7 @@ export class ExportDataBuilder {
         ...(criteria.studentId ? { studentId: criteria.studentId } : {}),
       },
       include: {
-        student: { include: { parent: { include: { user: true } } } },
+        student: { include: { parent: true } },
         group: { select: { name: true, subject: { select: { name: true } }, schoolLevel: { select: { name: true } } } },
       },
       orderBy: { createdAt: 'desc' },
@@ -156,16 +156,14 @@ export class ExportDataBuilder {
       { key: 'subject', label: 'Matière' },
       { key: 'level', label: 'Niveau' },
       { key: 'status', label: "Statut d'inscription" },
-      { key: 'parentEmail', label: 'Email du parent' },
       { key: 'parentPhone', label: 'Téléphone du parent' },
     ];
     const rows = enrollments.map((e) => ({
       student: `${e.student.firstName} ${e.student.lastName}`,
       group: e.group.name,
-      subject: e.group.subject.name,
+      subject: e.group.subject?.name ?? '—',
       level: e.group.schoolLevel.name,
       status: e.status,
-      parentEmail: e.student.parent.user.email,
       parentPhone: e.student.parent.phone,
     }));
     return { columns, rows };
@@ -571,7 +569,7 @@ export class ExportDataBuilder {
       where: { id: userId },
       include: { teacherProfile: true, parentProfile: true },
     });
-    push('Compte', 'Email', user.email);
+    push('Compte', 'Téléphone', user.phone);
     push('Compte', 'Rôles', user.roles.join(', '));
     push('Compte', 'Statut', user.status);
     push('Compte', 'Créé le', dateOnly(user.createdAt));

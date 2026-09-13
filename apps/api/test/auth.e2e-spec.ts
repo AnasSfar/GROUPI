@@ -8,16 +8,17 @@ import { PrismaService } from '../src/prisma/prisma.service';
  * E2E tests for the auth module (/api/v1/auth/*), run against a real Postgres database
  * (`groupi_test`, isolated from the dev `groupi` database — see test/jest-e2e.setup.ts).
  *
- * Each test uses a unique email (per-suite prefix + describe-local counter) so the suites are
- * independently re-runnable without truncating tables; afterAll additionally cleans up rows
- * created by this file's teacher account, to keep repeated local runs tidy.
+ * Avenant 01, Ch. I.1 : le téléphone est le seul identifiant de compte (e-mail entièrement
+ * retiré) — chaque test utilise un numéro unique (préfixe par suite + compteur local à la
+ * `describe`) pour que les suites restent rejouables sans troncature de table ; `afterAll`
+ * nettoie en plus les lignes créées par le compte Professeur de ce fichier.
  */
 describe('Auth (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
 
   const runId = Date.now();
-  const teacherEmail = `e2e-teacher-${runId}@example.com`;
+  const teacherPhone = `e2eauth-teacher-${runId}`;
   const teacherPassword = 'CorrectHorse123';
 
   let subjectId: string;
@@ -46,11 +47,14 @@ describe('Auth (e2e)', () => {
       data: { name: `E2E Auth Level ${runId}`, code: `E2EAUTHLVL${runId}`, order: 999, isActive: true },
     });
     schoolLevelId = schoolLevel.id;
+    // RM-TPR-001/008 : AuthService.register() vérifie la compatibilité matière/niveau (ERR-TPR-001/002)
+    // avant de créer le profil — une combinaison fraîchement créée doit être explicitement autorisée.
+    await prisma.subjectLevel.create({ data: { subjectId, schoolLevelId, isAllowed: true, isActive: true } });
   });
 
   afterAll(async () => {
-    // Clean up everything created under the emails used in this file so the suite can be
-    // re-run indefinitely without accumulating rows or hitting unique-email conflicts.
+    // Clean up everything created under the phones used in this file so the suite can be
+    // re-run indefinitely without accumulating rows or hitting unique-phone conflicts.
     // Scoped to this file's own prefixes (not the broader 'e2e-') — other e2e suites
     // (enrollments: 'e2e-ins-', sessions: 'e2e-ses-', ...) also start with 'e2e-' and manage
     // their own cleanup; a broad 'e2e-' match here could try to delete their still-referenced
@@ -58,9 +62,9 @@ describe('Auth (e2e)', () => {
     const users = await prisma.user.findMany({
       where: {
         OR: [
-          { email: { startsWith: 'e2e-teacher-' } },
-          { email: { startsWith: 'e2e-lockout-' } },
-          { email: { startsWith: 'e2e-pwdthrottle-' } },
+          { phone: { startsWith: 'e2eauth-teacher-' } },
+          { phone: { startsWith: 'e2eauth-lockout-' } },
+          { phone: { startsWith: 'e2eauth-pwdthrottle-' } },
         ],
       },
       select: { id: true },
@@ -71,12 +75,16 @@ describe('Auth (e2e)', () => {
       await prisma.userSession.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.passwordResetToken.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.emailVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
+      await prisma.phoneVerificationToken.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.teacherSubject.deleteMany({ where: { teacherProfileId: { in: userIds } } });
       await prisma.teacherSchoolLevel.deleteMany({ where: { teacherProfileId: { in: userIds } } });
       await prisma.teacherProfile.deleteMany({ where: { id: { in: userIds } } });
       await prisma.parentProfile.deleteMany({ where: { id: { in: userIds } } });
-      await prisma.user.deleteMany({ where: { id: { in: userIds } } });
+      await prisma.userDevice.deleteMany({ where: { userId: { in: userIds } } });
+      await prisma.activity.deleteMany({ where: { userId: { in: userIds } } });
+    await prisma.user.deleteMany({ where: { id: { in: userIds } } });
     }
+    await prisma.subjectLevel.deleteMany({ where: { subjectId, schoolLevelId } });
     await prisma.subject.deleteMany({ where: { id: subjectId } });
     await prisma.schoolLevel.deleteMany({ where: { id: schoolLevelId } });
     await app.close();
@@ -88,12 +96,10 @@ describe('Auth (e2e)', () => {
     const res = await api()
       .post('/api/v1/auth/register')
       .send({
-        email: teacherEmail,
         password: teacherPassword,
-        role: 'TEACHER',
         firstName: 'Jane',
         lastName: 'Doe',
-        phone: '20000000',
+        phone: teacherPhone,
         city: 'Tunis',
         acceptTerms: true,
         subjectIds: [subjectId],
@@ -102,22 +108,20 @@ describe('Auth (e2e)', () => {
       .expect(201);
 
     expect(res.body).toMatchObject({
-      email: teacherEmail,
+      phone: teacherPhone,
       status: 'PENDING_VALIDATION',
     });
     expect(res.body.id).toEqual(expect.any(String));
   });
 
-  it('rejects registering the same email twice -> 409', async () => {
+  it('rejects registering the same phone twice -> 409', async () => {
     await api()
       .post('/api/v1/auth/register')
       .send({
-        email: teacherEmail,
         password: teacherPassword,
-        role: 'TEACHER',
         firstName: 'Jane',
         lastName: 'Doe',
-        phone: '20000000',
+        phone: teacherPhone,
         city: 'Tunis',
         acceptTerms: true,
         subjectIds: [subjectId],
@@ -129,7 +133,7 @@ describe('Auth (e2e)', () => {
   it('logs in with correct credentials -> 200 with tokens', async () => {
     const res = await api()
       .post('/api/v1/auth/login')
-      .send({ identifier: teacherEmail, password: teacherPassword })
+      .send({ identifier: teacherPhone, password: teacherPassword })
       .expect(200);
 
     expect(res.body).toEqual(
@@ -143,7 +147,7 @@ describe('Auth (e2e)', () => {
   it('rejects login with the wrong password', async () => {
     await api()
       .post('/api/v1/auth/login')
-      .send({ identifier: teacherEmail, password: 'totally-wrong' })
+      .send({ identifier: teacherPhone, password: 'totally-wrong' })
       .expect(401);
   });
 
@@ -151,7 +155,7 @@ describe('Auth (e2e)', () => {
     it('returns 200 with a valid access token', async () => {
       const loginRes = await api()
         .post('/api/v1/auth/login')
-        .send({ identifier: teacherEmail, password: teacherPassword })
+        .send({ identifier: teacherPhone, password: teacherPassword })
         .expect(200);
 
       const meRes = await api()
@@ -159,7 +163,7 @@ describe('Auth (e2e)', () => {
         .set('Authorization', `Bearer ${loginRes.body.accessToken}`)
         .expect(200);
 
-      expect(meRes.body).toMatchObject({ email: teacherEmail, roles: ['TEACHER'] });
+      expect(meRes.body).toMatchObject({ phone: teacherPhone, roles: ['TEACHER'] });
     });
 
     it('returns 401 without a token', async () => {
@@ -178,7 +182,7 @@ describe('Auth (e2e)', () => {
     it('rotates tokens on success, and the old refresh token becomes unusable', async () => {
       const loginRes = await api()
         .post('/api/v1/auth/login')
-        .send({ identifier: teacherEmail, password: teacherPassword })
+        .send({ identifier: teacherPhone, password: teacherPassword })
         .expect(200);
       const oldRefreshToken = loginRes.body.refreshToken;
 
@@ -215,11 +219,11 @@ describe('Auth (e2e)', () => {
     it('revokes all sessions, so a subsequent refresh with any of them fails', async () => {
       const login1 = await api()
         .post('/api/v1/auth/login')
-        .send({ identifier: teacherEmail, password: teacherPassword })
+        .send({ identifier: teacherPhone, password: teacherPassword })
         .expect(200);
       const login2 = await api()
         .post('/api/v1/auth/login')
-        .send({ identifier: teacherEmail, password: teacherPassword })
+        .send({ identifier: teacherPhone, password: teacherPassword })
         .expect(200);
 
       await api()
@@ -243,7 +247,7 @@ describe('Auth (e2e)', () => {
     it('revokes only the targeted session (idempotent)', async () => {
       const login = await api()
         .post('/api/v1/auth/login')
-        .send({ identifier: teacherEmail, password: teacherPassword })
+        .send({ identifier: teacherPhone, password: teacherPassword })
         .expect(200);
 
       await api().post('/api/v1/auth/logout').send({ refreshToken: login.body.refreshToken }).expect(204);
@@ -259,19 +263,17 @@ describe('Auth (e2e)', () => {
   });
 
   describe('account lockout after repeated failed logins', () => {
-    const lockoutEmail = `e2e-lockout-${runId}@example.com`;
+    const lockoutPhone = `e2eauth-lockout-${runId}`;
     const lockoutPassword = 'CorrectHorse123';
 
     beforeAll(async () => {
       await api()
         .post('/api/v1/auth/register')
         .send({
-          email: lockoutEmail,
           password: lockoutPassword,
-          role: 'TEACHER',
           firstName: 'Lock',
           lastName: 'Out',
-          phone: '20000002',
+          phone: lockoutPhone,
           city: 'Tunis',
           acceptTerms: true,
           subjectIds: [subjectId],
@@ -284,14 +286,14 @@ describe('Auth (e2e)', () => {
       for (let i = 0; i < 5; i++) {
         await api()
           .post('/api/v1/auth/login')
-          .send({ identifier: lockoutEmail, password: 'wrong-password' })
+          .send({ identifier: lockoutPhone, password: 'wrong-password' })
           .expect(401);
       }
 
       // Even the correct password is now rejected because the account is locked.
       const res = await api()
         .post('/api/v1/auth/login')
-        .send({ identifier: lockoutEmail, password: lockoutPassword })
+        .send({ identifier: lockoutPhone, password: lockoutPassword })
         .expect(401);
 
       expect(res.body.message).toMatch(/verrouill/i);
@@ -299,18 +301,16 @@ describe('Auth (e2e)', () => {
   });
 
   describe('password change throttle (ERR-SEC-008)', () => {
-    const throttleEmail = `e2e-pwdthrottle-${runId}@example.com`;
+    const throttlePhone = `e2eauth-pwdthrottle-${runId}`;
 
     beforeAll(async () => {
       await api()
         .post('/api/v1/auth/register')
         .send({
-          email: throttleEmail,
           password: 'CorrectHorse123',
-          role: 'TEACHER',
           firstName: 'Pwd',
           lastName: 'Throttle',
-          phone: '20000003',
+          phone: throttlePhone,
           city: 'Tunis',
           acceptTerms: true,
           subjectIds: [subjectId],
@@ -325,7 +325,7 @@ describe('Auth (e2e)', () => {
       for (let i = 0; i < 3; i++) {
         const loginRes = await api()
           .post('/api/v1/auth/login')
-          .send({ identifier: throttleEmail, password: currentPassword })
+          .send({ identifier: throttlePhone, password: currentPassword })
           .expect(200);
         const newPassword = `NewPassword${i}23`;
         await api()
@@ -338,7 +338,7 @@ describe('Auth (e2e)', () => {
 
       const loginRes = await api()
         .post('/api/v1/auth/login')
-        .send({ identifier: throttleEmail, password: currentPassword })
+        .send({ identifier: throttlePhone, password: currentPassword })
         .expect(200);
       const res = await api()
         .post('/api/v1/auth/change-password')

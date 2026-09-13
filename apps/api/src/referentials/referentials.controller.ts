@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Logger,
   NotFoundException,
   Param,
   Patch,
@@ -20,12 +21,20 @@ import { CreateAcademicYearDto } from './dto/create-academic-year.dto';
 import { RejectSchoolAdditionRequestDto } from './dto/reject-school-addition-request.dto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
+import { LevelPoolsService } from '../level-pools/level-pools.service';
+import { ParentInvitationsService } from '../parent-invitations/parent-invitations.service';
 
 /** Lecture seule des référentiels officiels (Ch.23) — utilisés pour peupler les sélecteurs du frontend. */
 @Controller('referentials')
 @UseGuards(JwtAuthGuard)
 export class ReferentialsController {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(ReferentialsController.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly levelPools: LevelPoolsService,
+    private readonly parentInvitations: ParentInvitationsService,
+  ) {}
 
   /** Public : matières/niveaux doivent être sélectionnables dès le formulaire d'inscription (RM-TPR-001), avant authentification. */
   @Get('subjects')
@@ -197,10 +206,29 @@ export class ReferentialsController {
       throw new BadRequestException(`Une année académique "${dto.label}" existe déjà`);
     }
 
-    return this.prisma.academicYear.create({
+    const created = await this.prisma.academicYear.create({
       data: { label: dto.label, startDate, endDate, status: 'OPEN' },
       select: { id: true, label: true, status: true, startDate: true, endDate: true },
     });
+
+    // Avenant 01, RM-INV-006/B.3 : à l'ouverture d'une nouvelle année académique, reconduit les
+    // groupes de niveau manquants et les liens d'invitation manquants pour chaque Professeur déjà
+    // validé — jamais bloquant pour la création de l'année elle-même.
+    try {
+      await this.levelPools.ensureGroupsForNewAcademicYear(created.id);
+      await this.parentInvitations.ensureInvitationsForNewAcademicYear(created.id);
+    } catch (err) {
+      // Best-effort : rattrapable paresseusement plus tard (GET /teacher/invitation génère à la
+      // volée, RM-INV-001 ; les groupes de niveau manquants seront recréés à la prochaine validation
+      // de niveau ou au prochain appel explicite).
+      this.logger.warn(
+        `Reconduction des groupes de niveau/liens d'invitation différée pour l'année ${created.id} : ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+
+    return created;
   }
 
   /**

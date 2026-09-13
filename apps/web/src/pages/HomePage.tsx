@@ -225,10 +225,10 @@ export function HomePage() {
             <div className="landing-inline-cta">
               <div>
                 <p className="landing-kicker">Prêt à suivre facilement les séances de vos enfants ?</p>
-                <h3>Ouvrez un compte GROUPI et suivez leur progression en temps réel.</h3>
+                <h3>Demandez le lien d'invitation à votre professeur pour ouvrir votre compte GROUPI.</h3>
               </div>
-              <Link to="/register?role=parent" className="landing-button landing-button-primary">
-                PARENT : Créer mon compte
+              <Link to="/login" className="landing-button landing-button-primary">
+                J'ai déjà un lien / un compte
               </Link>
             </div>
           </div>
