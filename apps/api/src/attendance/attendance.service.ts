@@ -3,7 +3,7 @@ import { AbsenceBillingPolicy, ActivityPriority, Attendance, AttendanceStatus, S
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AccountingService } from '../accounting/accounting.service';
-import { computeLockDeadline, isLockable, theoreticalStart, theoreticalEnd } from '../sessions/sessions.service';
+import { computeLockDeadline, isLockable, theoreticalStart } from '../sessions/sessions.service';
 import { SetAttendanceDto } from './dto/set-attendance.dto';
 import type { AttendanceStatsPeriod } from './dto/attendance-stats-query.dto';
 
@@ -382,13 +382,9 @@ export class AttendanceService {
     if (theoreticalStart(session) > new Date()) {
       throw new BadRequestException('Séance non encore commencée : validation refusée (ERR-ATT-004)');
     }
-    // RM-SES-038 : passage à TERMINEE (COMPLETED) autorisé seulement si l'heure de fin théorique
-    // est atteinte ou dépassée — pas seulement l'heure de début (RM-SES-037, déjà vérifié ci-dessus).
-    if (theoreticalEnd(session) > new Date()) {
-      throw new BadRequestException(
-        'Séance non encore terminée : validation refusée (RM-SES-038/ERR-ATT-004)',
-      );
-    }
+    // Avenant 05 : RM-SES-038 amendée — la validation (et donc la facturation) n'attend plus la fin
+    // théorique de la séance. Le Professeur peut valider dès que tous les élèves sont renseignés,
+    // pour pouvoir encaisser un paiement pendant le cours plutôt qu'après sa fin théorique.
 
     const [eligible, attendances] = await Promise.all([
       this.prisma.enrollment.findMany({ where: { groupId: session.groupId, status: 'ACTIVE' } }),

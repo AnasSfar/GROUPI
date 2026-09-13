@@ -138,6 +138,17 @@
   box-sizing: border-box;
 }
 
+/* Filet de sécurité générique : un `<select>` natif se dimensionne par défaut à son option la
+   plus large (ex. un long intitulé de niveau scolaire), même stretché par un parent flex — c'est
+   ce qui a fait déborder tout un formulaire mobile alors que le reste (inputs, `.select` maison)
+   respectait déjà son conteneur. `.select-trigger` (le combobox maison) n'est pas un vrai
+   `<select>` et n'est pas concerné, d'où l'exclusion explicite. */
+select:not(.select-trigger) {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
 body {
   margin: 0;
   /* Filet de sécurité : un débordement horizontal ponctuel (texte long, contenu RTL...) ne doit
@@ -650,20 +661,24 @@ code {
 
 .app-dock {
   --dock-bottom: 22px;
+  --dock-height: 64px;
   box-sizing: border-box;
   position: fixed;
   top: auto;
   left: 50%;
   right: auto;
+  /* Valeur de repli CSS pure ; sur mobile, un script synchronise `top`/`bottom` avec
+     `window.visualViewport` (cf. AppLayout) pour rester ancré à la zone réellement visible
+     même quand la barre d'adresse du navigateur apparaît/disparaît. */
   bottom: max(var(--dock-bottom), env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%);
   z-index: 80;
   width: auto;
   min-width: 0;
   max-width: min(1120px, calc(100vw - 32px));
-  height: 64px;
+  height: var(--dock-height);
   min-height: 0;
-  max-height: 64px;
+  max-height: var(--dock-height);
   margin: 0;
   padding: 8px;
   border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
@@ -880,12 +895,13 @@ code {
 @media (max-width: 480px) {
   .app-dock {
     --dock-bottom: 14px;
+    --dock-height: 58px;
     left: 10px;
     right: 10px;
     width: calc(100vw - 20px);
     max-width: none;
-    height: 58px;
-    max-height: 58px;
+    height: var(--dock-height);
+    max-height: var(--dock-height);
     padding: 7px;
     border-radius: 29px;
     transform: none;
@@ -1385,6 +1401,99 @@ body:has(.landing-page) .theme-toggle-floating {
   align-self: center;
 }
 
+/* Écran d'accueil de la page publique d'invitation (avant le formulaire) : le logo apparaît au
+   centre puis remonte en haut avec une transition smooth, avant que les options (se connecter /
+   créer un compte / app mobile) ne s'affichent en dessous. */
+.invite-welcome {
+  position: relative;
+  width: 100%;
+  max-width: 380px;
+  min-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.invite-welcome-logo {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  transition: top 0.6s cubic-bezier(0.22, 1, 0.36, 1), transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.invite-welcome-logo img {
+  width: 72px;
+  height: 72px;
+  display: block;
+}
+
+.invite-welcome-logo.is-settled {
+  top: 0;
+  transform: translate(-50%, 0);
+}
+
+.invite-welcome-options {
+  margin-top: 132px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.5s ease 0.15s, transform 0.5s ease 0.15s;
+  pointer-events: none;
+}
+
+.invite-welcome-options.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.invite-welcome-options h1 {
+  margin: 0;
+}
+
+.invite-welcome-options p {
+  margin: 0;
+  color: var(--text-muted);
+  max-width: 320px;
+}
+
+.invite-welcome-cta {
+  width: 100%;
+  max-width: 300px;
+}
+
+.invite-welcome-store {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--text-muted);
+  font-size: 13px;
+  background: var(--surface);
+}
+
+.invite-welcome-store svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .invite-welcome-logo,
+  .invite-welcome-options {
+    transition: none;
+  }
+}
+
 .auth-card label {
   display: flex;
   flex-direction: column;
@@ -1745,6 +1854,66 @@ body:has(.landing-page) .theme-toggle-floating {
   margin-top: 20px;
 }
 
+/* Bloc "lien d'invitation" (TeacherInvitationModal, GroupInvitationModal, TeacherInvitationPage) :
+   le lien en lecture seule vit dans un encadré neutre plutôt qu'un <input> nu (sans quoi il rend
+   comme un champ de formulaire cassé), et les actions qui l'accompagnent portent une icône pour se
+   distinguer au premier coup d'œil (copier / partager / régénérer / activer-désactiver). */
+.invite-link-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 14px;
+  padding: 9px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-shell);
+}
+
+.invite-link-box input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-h);
+}
+
+.invite-link-box input:focus-visible {
+  outline: none;
+}
+
+.invite-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.invite-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.invite-actions button svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
+.invite-actions + .form-hint {
+  margin-top: 14px;
+}
+
+.invite-actions .whatsapp-btn svg {
+  color: #25d366;
+}
+
+.invite-actions .whatsapp-btn:hover:not(:disabled) {
+  border-color: #25d366;
+  color: var(--text-h);
+}
+
 .terms-modal h3 {
   margin: 16px 0 8px;
   font-size: 13px;
@@ -1789,7 +1958,10 @@ body:has(.landing-page) .theme-toggle-floating {
 
 .field-row label {
   flex: 1 1 160px;
-  min-width: 160px;
+  /* `min(160px, 100%)` plutôt que `160px` fixe : un floor de 160px ne peut jamais forcer un
+     conteneur plus étroit que lui (ex. un mobile en portrait très étroit) à déborder — protection
+     générique contre le débordement horizontal de tout formulaire à deux colonnes (RM layout). */
+  min-width: min(160px, 100%);
 }
 
 /* Formulaire "Ajouter un enfant" (ParentChildrenPage) : le field-row générique étire ses labels
@@ -1800,9 +1972,20 @@ body:has(.landing-page) .theme-toggle-floating {
   align-items: flex-start;
 }
 
+/* Protection générique (pas seulement `.child-form`) : tout `.field-row` à deux colonnes repasse
+   en une seule colonne sous ~640px, où deux champs de 160px + le gap ne tiennent plus à côté d'un
+   label texte — sans ça, le contenu déborde de l'écran au lieu de s'empiler (vu sur la page
+   d'invitation Parent, mais le même `.field-row` est réutilisé dans une dizaine de formulaires). */
 @media (max-width: 640px) {
-  .child-form .field-row {
+  .field-row {
     flex-direction: column;
+  }
+  .field-row label {
+    /* `flex: 1 1 160px` visait une largeur de colonne en mode ligne : en `flex-direction: column`
+       ce même 160px devient un plancher de HAUTEUR (et `flex-grow: 1` étire chaque label pour
+       combler l'espace vertical restant), d'où les grands vides entre champs empilés. */
+    flex: 0 0 auto;
+    min-width: 0;
   }
 }
 
@@ -2570,7 +2753,13 @@ a.dash-card:hover .dash-card-icon {
 
 .select {
   position: relative;
-  display: inline-block;
+  /* `inline-block` sans largeur explicite se dimensionne au contenu (shrink-to-fit) : comme
+     `.select-value` est en `white-space: nowrap`, un libellé long (ex. nom d'établissement)
+     élargissait tout le composant au-delà de son conteneur au lieu de s'y limiter et de tronquer
+     par ellipsis — d'où des débordements horizontaux sur mobile (RM protection layout). */
+  display: block;
+  width: 100%;
+  min-width: 0;
 }
 
 .select-trigger {
@@ -2596,6 +2785,11 @@ a.dash-card:hover .dash-card-icon {
 }
 
 .select-value {
+  /* Sans `min-width: 0`, un flex item nowrap refuse de descendre sous son propre min-content
+     (texte long non coupé, ex. nom d'établissement) : l'ellipsis ne se déclenchait donc jamais et
+     forçait `.select-trigger` — et toute la chaîne de conteneurs flex parents — à s'élargir. */
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3686,6 +3880,36 @@ button.ghost:hover:not(:disabled) {
   margin: 0;
   padding-left: 18px;
   font-size: 13px;
+}
+
+.alert-banner-info {
+  background: var(--info-bg);
+  border-color: var(--info);
+}
+
+.alert-banner-info h3 {
+  color: var(--info);
+}
+
+.alert-banner-info p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.alert-banner-info .btn-primary,
+.alert-banner-info button.btn-primary {
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+.phone-exists-banner {
+  animation: toast-in 0.22s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .phone-exists-banner {
+    animation: none;
+  }
 }
 
 /* --- Centre d'activités (Ch.18) -------------------------------------------- */

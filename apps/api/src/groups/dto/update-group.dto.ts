@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsBoolean,
   IsDateString,
@@ -75,10 +76,12 @@ export class UpdateGroupDto {
   @IsDateString()
   endDate?: string;
 
+  /** Avenant 04 : un groupe n'a qu'un seul créneau récurrent (amende RM-GRP-007). */
   @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => GroupScheduleDto)
   @ArrayMinSize(1, { message: 'Le planning ne peut pas être vide (ERR-GRP-007)' })
+  @ArrayMaxSize(1, { message: 'Un groupe ne peut avoir qu’un seul créneau de planning (Avenant 04)' })
   schedules?: GroupScheduleDto[];
 
   /**

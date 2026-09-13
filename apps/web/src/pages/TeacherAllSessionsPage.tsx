@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Select } from '../components/Select';
 import { useToast } from '../components/Toast';
+import { useConfirm } from '../components/ConfirmDialog';
 import { MonthCalendar, type MonthCalendarEvent } from '../components/MonthCalendar';
 import type { WeekCalendarTone } from '../components/WeekCalendar';
 import { ApiError } from '../api/client';
@@ -66,14 +67,61 @@ function attendanceUnavailableLabel(session: Session): string {
   return 'Appel indisponible';
 }
 
+function canOpenPayments(session: Session): boolean {
+  return session.status === 'COMPLETED' || session.status === 'LOCKED';
+}
+
 function sessionTimestamp(row: SessionRow): number {
   return sessionStartTimestamp(row.session.date, row.session.startTime);
+}
+
+/** Ch.13.3/13.8 : formulaire inline pour saisir la nouvelle date/heure d'un report. */
+function PostponePrompt({
+  initialDate,
+  initialStartTime,
+  initialDuration,
+  onConfirm,
+  onCancel,
+}: {
+  initialDate: string;
+  initialStartTime: string;
+  initialDuration: number;
+  onConfirm: (date: string, startTime: string, durationMinutes: number) => void;
+  onCancel: () => void;
+}) {
+  const [date, setDate] = useState(initialDate);
+  const [startTime, setStartTime] = useState(initialStartTime);
+  const [durationMinutes, setDurationMinutes] = useState(String(initialDuration));
+
+  return (
+    <div className="reason-prompt">
+      <input type="date" value={date} onChange={(e) => setDate(e.target.value)} autoFocus />
+      <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+      <input
+        type="number"
+        min={1}
+        value={durationMinutes}
+        onChange={(e) => setDurationMinutes(e.target.value)}
+      />
+      <button
+        type="button"
+        disabled={!date || !startTime}
+        onClick={() => onConfirm(date, startTime, Number(durationMinutes))}
+      >
+        Confirmer
+      </button>
+      <button type="button" className="ghost" onClick={onCancel}>
+        Annuler
+      </button>
+    </div>
+  );
 }
 
 /** Vue operationnelle Professeur : une ligne par occurrence de seance, tous groupes confondus. */
 export function TeacherAllSessionsPage() {
   const { getAccessToken } = useAuth();
   const { showToast } = useToast();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [rows, setRows] = useState<SessionRow[]>([]);
@@ -83,6 +131,7 @@ export function TeacherAllSessionsPage() {
   const [statusFilter, setStatusFilter] = useState<SessionStatus | ''>('');
   const [monthCursor, setMonthCursor] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [selectedRow, setSelectedRow] = useState<SessionRow | null>(null);
+  const [isRescheduling, setIsRescheduling] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -178,6 +227,49 @@ export function TeacherAllSessionsPage() {
     }
   }
 
+  async function handlePostponeConfirm(newDate: string, newStartTime: string, newDurationMinutes: number) {
+    const token = getAccessToken();
+    if (!token || !selectedRow) return;
+    setError(null);
+    setNotice(null);
+    try {
+      await sessionsApi.postponeSession(token, selectedRow.session.id, {
+        date: newDate,
+        startTime: newStartTime,
+        durationMinutes: newDurationMinutes,
+      });
+      setIsRescheduling(false);
+      setSelectedRow(null);
+      setNotice('Seance reportee.');
+      showToast('Seance reportee');
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Report impossible.');
+    }
+  }
+
+  async function handleSuspend() {
+    const token = getAccessToken();
+    if (!token || !selectedRow) return;
+    const ok = await confirm({
+      title: 'Suspendre cette seance ?',
+      message: 'La seance sera annulee et ne sera plus comptabilisee.',
+      confirmLabel: 'Suspendre',
+      danger: true,
+    });
+    if (!ok) return;
+    setError(null);
+    setNotice(null);
+    try {
+      await sessionsApi.cancelSession(token, selectedRow.session.id);
+      setSelectedRow(null);
+      showToast('Seance suspendue');
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Suspension impossible.');
+    }
+  }
+
   function handleToggleCreateForm() {
     setShowCreateForm((visible) => {
       const nextVisible = !visible;
@@ -203,7 +295,10 @@ export function TeacherAllSessionsPage() {
         title: group.name,
         subtitle: `${group.subject.name} - ${group.schoolLevel.name}`,
         tone: STATUS_TONE[session.status],
-        onClick: () => setSelectedRow({ session, group }),
+        onClick: () => {
+          setIsRescheduling(false);
+          setSelectedRow({ session, group });
+        },
       })),
     [filteredRows],
   );
@@ -354,7 +449,13 @@ export function TeacherAllSessionsPage() {
       </section>
 
       {selectedRow && (
-        <div className="terms-modal-backdrop" onClick={() => setSelectedRow(null)}>
+        <div
+          className="terms-modal-backdrop"
+          onClick={() => {
+            setIsRescheduling(false);
+            setSelectedRow(null);
+          }}
+        >
           <div className="terms-modal" onClick={(e) => e.stopPropagation()}>
             <h2>{selectedRow.group.name}</h2>
             <p className="table-hint">
@@ -377,7 +478,8 @@ export function TeacherAllSessionsPage() {
                 </span>
               </p>
             </div>
-            <div className="admin-actions section-spacer">
+
+            <div className="admin-actions action-chips section-spacer">
               {canOpenAttendance(selectedRow.session) ? (
                 <Link to={`/teacher/sessions/${selectedRow.session.id}/attendance`}>
                   {attendanceLabel(selectedRow.session.status)}
@@ -385,11 +487,50 @@ export function TeacherAllSessionsPage() {
               ) : (
                 <span className="table-hint">{attendanceUnavailableLabel(selectedRow.session)}</span>
               )}
-              <Link to={`/teacher/sessions/${selectedRow.session.id}/payments`}>Saisir les paiements</Link>
-              <Link to={`/teacher/groups/${selectedRow.group.id}/sessions`}>Voir</Link>
+              {canOpenPayments(selectedRow.session) ? (
+                <Link to={`/teacher/sessions/${selectedRow.session.id}/payments`}>Saisir les paiements</Link>
+              ) : (
+                <span className="table-hint">Paiements disponibles apres la seance</span>
+              )}
             </div>
+
+            <Link className="ghost-link section-spacer" to={`/teacher/groups/${selectedRow.group.id}/sessions`}>
+              Voir toutes les seances du groupe
+            </Link>
+
+            {selectedRow.session.status === 'PLANNED' && (
+              <>
+                <h3>Gestion de la seance</h3>
+                {isRescheduling ? (
+                  <PostponePrompt
+                    initialDate={selectedRow.session.date.slice(0, 10)}
+                    initialStartTime={selectedRow.session.startTime}
+                    initialDuration={selectedRow.session.durationMinutes}
+                    onConfirm={handlePostponeConfirm}
+                    onCancel={() => setIsRescheduling(false)}
+                  />
+                ) : (
+                  <div className="field-row">
+                    <button type="button" onClick={() => setIsRescheduling(true)}>
+                      Decaler / avancer la seance
+                    </button>
+                    <button type="button" className="danger" onClick={handleSuspend}>
+                      Suspendre la seance
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+
             <div className="terms-modal-actions">
-              <button type="button" className="ghost" onClick={() => setSelectedRow(null)}>
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => {
+                  setIsRescheduling(false);
+                  setSelectedRow(null);
+                }}
+              >
                 Fermer
               </button>
             </div>

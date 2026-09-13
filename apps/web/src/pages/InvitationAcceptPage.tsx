@@ -9,6 +9,7 @@ import type { InvitationPreview } from '../api/parentInvitationsApi';
 import type { Student } from '../api/parentProfileApi';
 import type { City, School, SchoolLevel } from '../api/referentialsApi';
 import { Select } from '../components/Select';
+import { IconDownload } from '../components/icons';
 
 type SchoolType = School['type'];
 
@@ -34,6 +35,18 @@ export function InvitationAcceptPage() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(true);
 
+  // Écran d'accueil avant le formulaire : la majorité des familles qui ouvrent ce lien n'ont pas
+  // encore de compte, donc on ne les jette pas directement dans un formulaire — on les rassure
+  // d'abord (marque GROUPI, choix explicite "j'ai déjà un compte" vs "je n'en ai pas").
+  const [entered, setEntered] = useState(false);
+  const [welcomeSettled, setWelcomeSettled] = useState(false);
+
+  useEffect(() => {
+    if (isParentLoggedIn) return;
+    const timer = setTimeout(() => setWelcomeSettled(true), 700);
+    return () => clearTimeout(timer);
+  }, [isParentLoggedIn]);
+
   // Cas 1 — création de compte
   const [phone, setPhone] = useState('');
   const [firstName, setFirstName] = useState('');
@@ -41,6 +54,13 @@ export function InvitationAcceptPage() {
   const [city, setCity] = useState('');
   const [password, setPassword] = useState('');
   const [acceptTerms, setAcceptTerms] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
+
+  /** Détection en direct d'un compte existant pendant la saisie du téléphone — dès qu'un match est
+   *  trouvé, on arrête la création et on propose la connexion plutôt que de laisser le formulaire
+   *  échouer au submit (ERR-SEC-050). */
+  const [phoneAccountExists, setPhoneAccountExists] = useState(false);
+  const [checkingPhone, setCheckingPhone] = useState(false);
 
   // Enfant
   const [childMode, setChildMode] = useState<'NEW' | 'EXISTING'>('NEW');
@@ -52,6 +72,7 @@ export function InvitationAcceptPage() {
   const [schools, setSchools] = useState<School[]>([]);
   const [studentFirstName, setStudentFirstName] = useState('');
   const [studentLastName, setStudentLastName] = useState('');
+  const [studentLastNameTouched, setStudentLastNameTouched] = useState(false);
   const [studentDateOfBirth, setStudentDateOfBirth] = useState('');
   const [studentSchoolLevelId, setStudentSchoolLevelId] = useState('');
   const [studentCityId, setStudentCityId] = useState('');
@@ -74,6 +95,42 @@ export function InvitationAcceptPage() {
     referentialsApi.listCities().then(setCities).catch(() => setCities([]));
     referentialsApi.listSchools().then(setSchools).catch(() => setSchools([]));
   }, []);
+
+  // Cas 1 uniquement : dès que le téléphone ressemble à un numéro complet, on vérifie côté serveur
+  // si un compte existe déjà — évite de laisser la famille remplir tout le formulaire pour rien.
+  useEffect(() => {
+    if (isParentLoggedIn) return;
+    const trimmed = phone.trim();
+    if (trimmed.length < 8) {
+      setPhoneAccountExists(false);
+      return;
+    }
+    let cancelled = false;
+    setCheckingPhone(true);
+    const timer = setTimeout(() => {
+      parentInvitationsApi
+        .checkPhoneExists(trimmed)
+        .then((result) => {
+          if (!cancelled) setPhoneAccountExists(result.exists);
+        })
+        .catch(() => {
+          if (!cancelled) setPhoneAccountExists(false);
+        })
+        .finally(() => {
+          if (!cancelled) setCheckingPhone(false);
+        });
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [phone, isParentLoggedIn]);
+
+  // Le nom de l'enfant s'écrit en même temps que celui du parent (cas fréquent), tant que la famille
+  // n'a pas modifié ce champ elle-même directement.
+  useEffect(() => {
+    if (!studentLastNameTouched) setStudentLastName(lastName);
+  }, [lastName, studentLastNameTouched]);
 
   useEffect(() => {
     if (!isParentLoggedIn) return;
@@ -108,7 +165,14 @@ export function InvitationAcceptPage() {
   }, [schoolsForSelectedLevel, studentCityId]);
 
   const accountValid =
-    isParentLoggedIn || (phone.trim() !== '' && firstName.trim() !== '' && lastName.trim() !== '' && city.trim() !== '' && password.length >= 8 && acceptTerms);
+    isParentLoggedIn ||
+    (!phoneAccountExists &&
+      phone.trim() !== '' &&
+      firstName.trim() !== '' &&
+      lastName.trim() !== '' &&
+      city.trim() !== '' &&
+      password.length >= 8 &&
+      acceptTerms);
   const childValid =
     childMode === 'EXISTING'
       ? existingStudentId !== ''
@@ -153,6 +217,32 @@ export function InvitationAcceptPage() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  if (!isParentLoggedIn && !entered) {
+    return (
+      <div className="auth-page">
+        <div className="invite-welcome">
+          <div className={`invite-welcome-logo${welcomeSettled ? ' is-settled' : ''}`}>
+            <img src="/favicon.png" alt="GROUPI" />
+          </div>
+          <div className={`invite-welcome-options${welcomeSettled ? ' is-visible' : ''}`}>
+            <h1>Bienvenue sur GROUPI</h1>
+            <p>Suivez la scolarité de votre enfant : présences, groupes, paiements, tout au même endroit.</p>
+            <button type="button" className="btn-primary invite-welcome-cta" onClick={() => setEntered(true)}>
+              Je n'ai pas encore de compte
+            </button>
+            <button type="button" className="ghost-link" onClick={() => navigate('/login')}>
+              J'ai déjà un compte — Se connecter
+            </button>
+            <div className="invite-welcome-store">
+              <IconDownload aria-hidden="true" />
+              <span>Bientôt disponible sur Google Play</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (loadingPreview) {
@@ -208,7 +298,6 @@ export function InvitationAcceptPage() {
         {!isParentLoggedIn && (
           <fieldset className="auth-fieldset">
             <legend>Votre compte Parent</legend>
-            <p className="form-hint">Aucun e-mail requis : votre numéro de téléphone est votre identifiant.</p>
             <div className="field-row">
               <label>
                 Prénom *
@@ -222,33 +311,63 @@ export function InvitationAcceptPage() {
             <div className="field-row">
               <label>
                 Téléphone *
-                <input type="tel" required value={phone} onChange={(e) => setPhone(e.target.value)} />
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  autoComplete="tel"
+                  required
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                />
               </label>
               <label>
                 Ville *
                 <input type="text" required value={city} onChange={(e) => setCity(e.target.value)} />
               </label>
             </div>
-            <label>
-              Mot de passe *
-              <input
-                type="password"
-                required
-                minLength={8}
-                autoComplete="new-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </label>
-            <label className="terms-row">
-              <input type="checkbox" checked={acceptTerms} onChange={(e) => setAcceptTerms(e.target.checked)} />
-              <span>J'accepte les conditions d'utilisation de GROUPI</span>
-            </label>
+
+            {phoneAccountExists ? (
+              <div className="alert-banner alert-banner-info phone-exists-banner" role="alert">
+                <h3>Un compte existe déjà avec ce numéro</h3>
+                <p>
+                  Connectez-vous plutôt pour retrouver votre espace — vous pourrez ensuite ajouter
+                  cet enfant depuis votre compte.
+                </p>
+                <button type="button" className="btn-primary" onClick={() => navigate('/login')}>
+                  Se connecter
+                </button>
+              </div>
+            ) : (
+              <>
+                <label>
+                  Mot de passe *
+                  <input
+                    type="password"
+                    required
+                    minLength={8}
+                    autoComplete="new-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                </label>
+                <div className="terms-row" onClick={() => setShowTerms(true)}>
+                  <input type="checkbox" checked={acceptTerms} readOnly aria-label="Conditions d'utilisation acceptées" />
+                  <span>
+                    J'accepte les{' '}
+                    <button type="button" className="terms-link" onClick={() => setShowTerms(true)}>
+                      conditions d'utilisation
+                    </button>{' '}
+                    de GROUPI
+                  </span>
+                </div>
+              </>
+            )}
           </fieldset>
         )}
 
-        <fieldset className="auth-fieldset">
-          <legend>Votre enfant</legend>
+        {!phoneAccountExists && (
+          <fieldset className="auth-fieldset">
+            <legend>Votre enfant</legend>
 
           {isParentLoggedIn && existingStudents.length > 0 && (
             <div className="role-toggle" role="radiogroup" aria-label="Enfant">
@@ -283,7 +402,15 @@ export function InvitationAcceptPage() {
                 </label>
                 <label>
                   Nom de l'enfant *
-                  <input type="text" required value={studentLastName} onChange={(e) => setStudentLastName(e.target.value)} />
+                  <input
+                    type="text"
+                    required
+                    value={studentLastName}
+                    onChange={(e) => {
+                      setStudentLastName(e.target.value);
+                      setStudentLastNameTouched(true);
+                    }}
+                  />
                 </label>
               </div>
               <label>
@@ -292,14 +419,19 @@ export function InvitationAcceptPage() {
               </label>
               <label>
                 Niveau scolaire *
-                <select required value={studentSchoolLevelId} onChange={(e) => setStudentSchoolLevelId(e.target.value)}>
+                <Select
+                  searchable
+                  searchPlaceholder="Rechercher un niveau..."
+                  value={studentSchoolLevelId}
+                  onChange={(e) => setStudentSchoolLevelId(e.target.value)}
+                >
                   <option value="">Sélectionner un niveau</option>
                   {schoolLevels.map((level) => (
                     <option key={level.id} value={level.id}>
                       {level.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
               <div className="field-row">
                 <label>
@@ -336,16 +468,60 @@ export function InvitationAcceptPage() {
             </>
           )}
         </fieldset>
+        )}
 
-        <button type="submit" disabled={submitting || !accountValid || !childValid}>
-          {submitting ? 'Envoi...' : isParentLoggedIn ? 'Ajouter cet enfant' : 'Créer mon compte'}
-        </button>
-        {!isParentLoggedIn && (
+        {!phoneAccountExists && (
+          <button type="submit" disabled={submitting || !accountValid || !childValid || checkingPhone}>
+            {submitting ? 'Envoi...' : isParentLoggedIn ? 'Ajouter cet enfant' : 'Créer mon compte'}
+          </button>
+        )}
+        {!isParentLoggedIn && !phoneAccountExists && (
           <p className="auth-links">
             Déjà un compte GROUPI ? Connectez-vous puis rouvrez ce lien.
           </p>
         )}
       </form>
+
+      {showTerms && (
+        <div className="terms-modal-backdrop" role="presentation" onClick={() => setShowTerms(false)}>
+          <section
+            className="terms-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="terms-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 id="terms-title">Conditions d'utilisation de GROUPI</h2>
+            <p>
+              GROUPI facilite la gestion des cours particuliers, des inscriptions, des présences et
+              du suivi comptable. Les informations saisies doivent être exactes et concerner votre
+              propre enfant.
+            </p>
+            <p>
+              L'utilisateur s'engage à utiliser la plateforme de manière loyale, à respecter la
+              confidentialité des données consultées et à signaler toute information incorrecte.
+            </p>
+            <p>
+              GROUPI peut suspendre ou refuser un compte en cas d'usage abusif ou d'informations
+              manifestement incorrectes.
+            </p>
+            <div className="terms-modal-actions">
+              <button type="button" className="ghost" onClick={() => setShowTerms(false)}>
+                Fermer
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAcceptTerms(true);
+                  setShowTerms(false);
+                }}
+              >
+                Accepter
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

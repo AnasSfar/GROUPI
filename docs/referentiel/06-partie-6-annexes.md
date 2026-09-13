@@ -1680,7 +1680,7 @@ RM-SES-021
 Les séances exceptionnelles sont gérées exactement comme les séances générées automatiquement.
 13
 RM-SES-022
-La génération de nouvelles séances est suspendue si aucun élève ne s’est inscrit au groupe.
+La génération de nouvelles séances reste autorisée même si aucun élève ne s’est inscrit au groupe (avertissement, ERR-SES-013).
 13
 RM-SES-023
 La génération de nouvelles séances est suspendue lorsque l’abonnement du Professeur est expiré ou suspendu.
@@ -1728,7 +1728,7 @@ RM-SES-037
 Les présences ne peuvent être saisies que pour une séance dont l’état est TERMINEE.
 13
 RM-SES-038
-Une séance ne peut être marquée comme TERMINEE que lorsque son heure de fin planifiée est atteinte ou dépassée.
+Une séance peut être marquée comme TERMINEE dès que la séance a commencé et que tous les élèves actifs ont reçu un statut de présence (validation de l'appel) — sans attendre que son heure de fin planifiée soit atteinte (Avenant 05), afin de permettre la facturation et l'encaissement d'un paiement pendant le cours.
 13
 RM-SES-039
 La suppression d’une séance future ne supprime jamais son historique d’audit.

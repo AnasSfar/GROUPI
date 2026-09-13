@@ -242,3 +242,43 @@ export function IconMessageCircle(props: SVGProps<SVGSVGElement>) {
     </Icon>
   );
 }
+
+export function IconCopy(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <rect x="9" y="9" width="13" height="13" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </Icon>
+  );
+}
+
+export function IconRefreshCw(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M3 12a9 9 0 0 1 15.3-6.4L21 8" />
+      <path d="M21 3v5h-5" />
+      <path d="M21 12a9 9 0 0 1-15.3 6.4L3 16" />
+      <path d="M8 21H3v-5" />
+    </Icon>
+  );
+}
+
+export function IconPower(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M12 2v8" />
+      <path d="M18.4 6.6a9 9 0 1 1-12.77 0" />
+    </Icon>
+  );
+}
+
+/** Logo WhatsApp (couleur de marque) — seule icône colorée hors palette sémantique de l'appli,
+ * réservée à ce cas précis (identifier le service externe), jamais réutilisée comme statut. */
+export function IconWhatsApp(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
+      <path d="M17.47 14.38c-.29-.15-1.7-.84-1.96-.93-.26-.1-.46-.15-.65.15-.2.29-.75.93-.92 1.12-.17.2-.34.22-.63.08-.29-.15-1.23-.45-2.34-1.44-.86-.77-1.45-1.72-1.62-2.01-.17-.29-.02-.45.13-.6.13-.13.29-.34.44-.51.15-.17.2-.29.29-.49.1-.2.05-.37-.02-.51-.08-.15-.65-1.56-.89-2.14-.23-.56-.47-.48-.65-.49h-.56c-.2 0-.51.07-.78.37s-1.03 1-1.03 2.45 1.06 2.85 1.2 3.05c.15.2 2.09 3.19 5.07 4.47.71.31 1.26.49 1.69.62.71.23 1.36.19 1.87.12.57-.09 1.7-.7 1.94-1.37.24-.68.24-1.26.17-1.38-.07-.12-.26-.2-.55-.34Z" />
+      <path d="M12.01 2C6.5 2 2 6.48 2 11.98c0 1.77.47 3.5 1.35 5.02L2 22l5.14-1.33a10 10 0 0 0 4.87 1.24h.01c5.51 0 10-4.48 10-9.98C22 6.48 17.52 2 12.01 2Zm0 18.2h-.01a8.2 8.2 0 0 1-4.19-1.15l-.3-.18-3.05.79.82-2.97-.2-.31a8.18 8.18 0 0 1-1.26-4.4c0-4.52 3.68-8.2 8.2-8.2 2.19 0 4.25.86 5.8 2.41a8.14 8.14 0 0 1 2.4 5.8c0 4.52-3.68 8.21-8.21 8.21Z" />
+    </svg>
+  );
+}

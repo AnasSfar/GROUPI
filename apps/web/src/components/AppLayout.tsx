@@ -61,6 +61,40 @@ export function AppLayout() {
   const [isDockMoreOpen, setIsDockMoreOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
   const dockMoreMenuRef = useRef<HTMLDivElement | null>(null);
+  const dockRef = useRef<HTMLElement | null>(null);
+
+  // Sur mobile, la barre d'adresse du navigateur apparaît/disparaît en redimensionnant la zone
+  // réellement visible ; un `position: fixed; bottom: …` reste calé sur l'ancien viewport tant
+  // qu'aucun scroll ne force le navigateur à recalculer, ce qui fait passer le dock hors écran.
+  // `visualViewport` donne la zone visible en temps réel : on l'utilise pour recaler le dock.
+  useEffect(() => {
+    const dock = dockRef.current;
+    const viewport = window.visualViewport;
+    if (!dock || !viewport) return;
+
+    function updateDockPosition() {
+      if (!dock) return;
+      if (window.innerWidth > 980) {
+        dock.style.top = '';
+        dock.style.bottom = '';
+        return;
+      }
+      const dockBottom = parseFloat(getComputedStyle(dock).getPropertyValue('--dock-bottom')) || 14;
+      const top = viewport!.offsetTop + viewport!.height - dock.offsetHeight - dockBottom;
+      dock.style.top = `${top}px`;
+      dock.style.bottom = 'auto';
+    }
+
+    updateDockPosition();
+    viewport.addEventListener('resize', updateDockPosition);
+    viewport.addEventListener('scroll', updateDockPosition);
+    window.addEventListener('resize', updateDockPosition);
+    return () => {
+      viewport.removeEventListener('resize', updateDockPosition);
+      viewport.removeEventListener('scroll', updateDockPosition);
+      window.removeEventListener('resize', updateDockPosition);
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -241,7 +275,7 @@ export function AppLayout() {
         Aller au contenu
       </a>
     <div className="app-shell">
-      <aside className="app-dock" aria-label="Navigation principale">
+      <aside className="app-dock" aria-label="Navigation principale" ref={dockRef}>
         <Link to="/dashboard" className="app-dock-brand">
           <img src="/favicon.png" alt="" className="app-dock-brand-icon" />
           <img src="/logo.png" alt="GROUPI" className="app-dock-brand-full" />

@@ -329,15 +329,13 @@ export class SessionsService {
       throw new BadRequestException('Groupe sans planning : génération impossible (ERR-SES-024)');
     }
 
-    // RM-SES-022/ERR-SES-013 : un groupe sans aucune inscription ACTIVE ne génère plus de séance
-    // (les séances déjà générées restent consultables) — écart de conformité corrigé, la génération
-    // est simplement sautée (pas d'erreur bloquante) plutôt que de créer des séances "orphelines".
+    // RM-SES-022/ERR-SES-013 : un groupe sans aucune inscription ACTIVE peut tout de même générer
+    // ses séances (création autorisée avec avertissement, ERR-SES-013) — seul un rappel est journalisé.
     const activeEnrollments = await this.prisma.enrollment.count({ where: { groupId, status: 'ACTIVE' } });
     if (activeEnrollments === 0) {
       this.logger.warn(
-        `Génération de séances suspendue pour le groupe ${groupId} : aucun élève inscrit (RM-SES-022).`,
+        `Génération de séances pour le groupe ${groupId} sans aucun élève inscrit (RM-SES-022/ERR-SES-013).`,
       );
-      return { count: 0, sessions: [], skippedReason: 'NO_ACTIVE_ENROLLMENT' as const };
     }
 
     // RM-SES-023/ERR-SES-011 : abonnement expiré/suspendu -> génération suspendue pour ce Professeur

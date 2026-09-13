@@ -5,6 +5,7 @@ import { useConfirm } from '../components/ConfirmDialog';
 import { ApiError } from '../api/client';
 import * as parentInvitationsApi from '../api/parentInvitationsApi';
 import type { ParentInvitation } from '../api/parentInvitationsApi';
+import { IconCopy, IconPower, IconRefreshCw, IconWhatsApp } from '../components/icons';
 
 const STATUS_LABELS: Record<ParentInvitation['status'], string> = {
   ACTIVE: 'Actif',
@@ -24,7 +25,7 @@ const STATUS_BADGE: Record<ParentInvitation['status'], string> = {
  * une action secondaire facultative (ouvre `wa.me` avec un message pré-rempli, aucun envoi automatique).
  */
 export function TeacherInvitationPage() {
-  const { getAccessToken } = useAuth();
+  const { getAccessToken, currentUser } = useAuth();
   const { showToast } = useToast();
   const confirm = useConfirm();
   const [invitation, setInvitation] = useState<ParentInvitation | null>(null);
@@ -66,7 +67,7 @@ export function TeacherInvitationPage() {
 
   function shareOnWhatsApp() {
     if (!invitation) return;
-    const teacherName = 'GROUPI';
+    const teacherName = currentUser ? `${currentUser.firstName} ${currentUser.lastName}` : 'Votre professeur';
     window.open(parentInvitationsApi.whatsAppShareUrl(invitation.url, teacherName), '_blank', 'noopener');
   }
 
@@ -138,21 +139,21 @@ export function TeacherInvitationPage() {
               {STATUS_LABELS[invitation.status]}
             </span>
           </h2>
-          <div className="field-row">
+          <div className="invite-link-box">
             <input type="text" readOnly value={invitation.url} onFocus={(e) => e.target.select()} />
           </div>
-          <div className="page-actions">
-            <button type="button" onClick={copyLink} disabled={busy}>
-              Copier le lien
+          <div className="page-actions invite-actions">
+            <button type="button" className="btn-primary" onClick={copyLink} disabled={busy}>
+              <IconCopy /> Copier le lien
             </button>
-            <button type="button" className="ghost" onClick={shareOnWhatsApp} disabled={busy}>
-              Partager sur WhatsApp
+            <button type="button" className="whatsapp-btn" onClick={shareOnWhatsApp} disabled={busy}>
+              <IconWhatsApp /> Partager sur WhatsApp
             </button>
             <button type="button" className="ghost" onClick={handleRotate} disabled={busy}>
-              Régénérer
+              <IconRefreshCw /> Régénérer
             </button>
             <button type="button" className="ghost" onClick={handleToggle} disabled={busy}>
-              {invitation.status === 'ACTIVE' ? 'Désactiver' : 'Réactiver'}
+              <IconPower /> {invitation.status === 'ACTIVE' ? 'Désactiver' : 'Réactiver'}
             </button>
           </div>
           {invitation.expiresAt && (

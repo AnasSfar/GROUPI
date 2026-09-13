@@ -20,12 +20,12 @@ const STATUS_BADGE: Record<ParentInvitation['status'], string> = {
 };
 
 /**
- * Ch. A (extension) : lien d'invitation ciblant directement CE groupe standard — pour un nouvel
- * élève en cours d'année. Contrairement au lien général (`TeacherInvitationPage`), l'enfant
- * rejoint directement ce groupe plutôt que la salle d'attente du niveau (si sa situation scolaire
- * correspond bien au niveau/année du groupe).
+ * Avenant 01, Ch. A.3.1 — popup « Inviter des parents » depuis les salles d'attente : un seul lien
+ * général, réutilisable pour toutes les familles. « Copier le lien » est le geste de référence ;
+ * « Partager sur WhatsApp » est une action secondaire facultative (ouvre `wa.me` avec un message
+ * pré-rempli, aucun envoi automatique).
  */
-export function GroupInvitationModal({ groupId, groupName, onClose }: { groupId: string; groupName: string; onClose: () => void }) {
+export function TeacherInvitationModal({ onClose }: { onClose: () => void }) {
   const { getAccessToken, currentUser } = useAuth();
   const { showToast } = useToast();
   const confirm = useConfirm();
@@ -40,13 +40,13 @@ export function GroupInvitationModal({ groupId, groupName, onClose }: { groupId:
     setLoading(true);
     setError(null);
     try {
-      setInvitation(await parentInvitationsApi.getForGroup(token, groupId));
+      setInvitation(await parentInvitationsApi.getMine(token));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Impossible de charger le lien d'invitation.");
+      setError(err instanceof ApiError ? err.message : "Impossible de charger votre lien d'invitation.");
     } finally {
       setLoading(false);
     }
-  }, [getAccessToken, groupId]);
+  }, [getAccessToken]);
 
   useEffect(() => {
     load();
@@ -79,7 +79,7 @@ export function GroupInvitationModal({ groupId, groupName, onClose }: { groupId:
     if (!token) return;
     setBusy(true);
     try {
-      setInvitation(await parentInvitationsApi.rotateForGroup(token, groupId));
+      setInvitation(await parentInvitationsApi.rotate(token));
       showToast('Lien régénéré.');
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : 'Impossible de régénérer le lien.', 'error');
@@ -95,8 +95,8 @@ export function GroupInvitationModal({ groupId, groupName, onClose }: { groupId:
     try {
       setInvitation(
         invitation.status === 'ACTIVE'
-          ? await parentInvitationsApi.disableForGroup(token, groupId)
-          : await parentInvitationsApi.enableForGroup(token, groupId),
+          ? await parentInvitationsApi.disable(token)
+          : await parentInvitationsApi.enable(token),
       );
       showToast(invitation.status === 'ACTIVE' ? 'Lien désactivé.' : 'Lien réactivé.');
     } catch (err) {
@@ -109,11 +109,10 @@ export function GroupInvitationModal({ groupId, groupName, onClose }: { groupId:
   return (
     <div className="terms-modal-backdrop" onClick={onClose}>
       <div className="terms-modal terms-modal-wide" onClick={(e) => e.stopPropagation()}>
-        <h2>Inviter un nouvel élève — {groupName}</h2>
+        <h2>Inviter des parents</h2>
         <p className="form-hint">
-          Ce lien amène directement au groupe « {groupName} » : la famille crée son compte, déclare
-          son enfant, et celui-ci est inscrit directement dans ce groupe (si son niveau correspond),
-          sans passer par la salle d'attente.
+          Partagez ce lien unique avec les familles : elles créent leur compte, déclarent leur enfant,
+          et celui-ci rejoint automatiquement la salle d'attente du niveau correspondant.
         </p>
 
         {loading && <p>Chargement...</p>}
@@ -146,6 +145,12 @@ export function GroupInvitationModal({ groupId, groupName, onClose }: { groupId:
                 <IconPower /> {invitation.status === 'ACTIVE' ? 'Désactiver' : 'Réactiver'}
               </button>
             </div>
+            {invitation.expiresAt && (
+              <p className="form-hint">
+                Valide jusqu'au {new Date(invitation.expiresAt).toLocaleDateString('fr-FR')} (fin de
+                l'année académique en cours).
+              </p>
+            )}
           </>
         )}
 

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/ConfirmDialog';
 import { EmptyState } from '../components/UiState';
 import { Select } from '../components/Select';
+import { TeacherInvitationModal } from '../components/TeacherInvitationModal';
 import { ApiError } from '../api/client';
 import * as levelPoolsApi from '../api/levelPoolsApi';
 import * as groupsApi from '../api/groupsApi';
@@ -22,8 +22,8 @@ export function TeacherLevelPoolsPage() {
   const { getAccessToken } = useAuth();
   const { showToast } = useToast();
   const confirm = useConfirm();
-  const navigate = useNavigate();
 
+  const [showInviteModal, setShowInviteModal] = useState(false);
   const [pools, setPools] = useState<LevelPool[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [membersByPool, setMembersByPool] = useState<Record<string, LevelPoolMember[]>>({});
@@ -155,11 +155,13 @@ export function TeacherLevelPoolsPage() {
           </p>
         </div>
         <div className="page-actions">
-          <button type="button" className="btn-primary" onClick={() => navigate('/teacher/invitation')}>
+          <button type="button" onClick={() => setShowInviteModal(true)}>
             Inviter des parents
           </button>
         </div>
       </div>
+
+      {showInviteModal && <TeacherInvitationModal onClose={() => setShowInviteModal(false)} />}
 
       {error && (
         <p className="form-error" role="alert">

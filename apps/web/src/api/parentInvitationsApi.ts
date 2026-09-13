@@ -98,6 +98,12 @@ export function preview(token: string): Promise<InvitationPreview> {
   return apiRequest<InvitationPreview>(`/public/invitations/${token}`);
 }
 
+/** Détection en direct pendant la saisie du téléphone (cas 1) — évite de laisser l'utilisateur
+ *  remplir tout le formulaire avant de découvrir au submit qu'un compte existe déjà. */
+export function checkPhoneExists(phone: string): Promise<{ exists: boolean }> {
+  return apiRequest<{ exists: boolean }>(`/public/invitations/phone-check?phone=${encodeURIComponent(phone)}`);
+}
+
 /** Optionnel : accessToken du Parent déjà connecté (cas 2) — omis pour un visiteur anonyme (cas 1). */
 export function accept(
   token: string,
@@ -113,6 +119,6 @@ export function accept(
 
 /** Ch. A.3.1 : message pré-rempli pour le partage manuel WhatsApp (`wa.me`), jamais automatique. */
 export function whatsAppShareUrl(url: string, teacherName: string): string {
-  const text = `${teacherName} vous invite à suivre la scolarité de votre enfant sur GROUPI : ${url}`;
+  const text = `Bonjour ! ${teacherName} vous invite à créer votre compte parent GROUPI pour suivre la scolarité de votre enfant. Cliquez sur ce lien pour commencer : ${url}`;
   return `https://wa.me/?text=${encodeURIComponent(text)}`;
 }

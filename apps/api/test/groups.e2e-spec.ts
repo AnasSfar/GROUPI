@@ -296,7 +296,6 @@ describe('Groups — schedule update (e2e)', () => {
   it('(b) updating schedules with a future PLANNED session and no keepFutureSessions -> 400 (ERR-GRP-016/017)', async () => {
     const group = await createGroup(`E2E-GRP-${runId} Refus Sans Choix`, [
       { dayOfWeek: scheduleDay1, startTime: '09:00', durationMinutes: 60 },
-      { dayOfWeek: scheduleDay2, startTime: '11:00', durationMinutes: 90 },
     ]);
     const sessions = await generateSessions(group.id);
     expect(sessions.length).toBeGreaterThan(0);
@@ -323,7 +322,6 @@ describe('Groups — schedule update (e2e)', () => {
   it('(c) keepFutureSessions: true -> 200 and the existing future session is preserved', async () => {
     const group = await createGroup(`E2E-GRP-${runId} Conserver Séances`, [
       { dayOfWeek: scheduleDay1, startTime: '09:00', durationMinutes: 60 },
-      { dayOfWeek: scheduleDay2, startTime: '11:00', durationMinutes: 90 },
     ]);
     const sessions = await generateSessions(group.id);
     expect(sessions.length).toBeGreaterThan(0);
@@ -358,7 +356,6 @@ describe('Groups — schedule update (e2e)', () => {
   it('(d) keepFutureSessions: false -> 200 and the stale future session is removed', async () => {
     const group = await createGroup(`E2E-GRP-${runId} Supprimer Séances`, [
       { dayOfWeek: scheduleDay1, startTime: '09:00', durationMinutes: 60 },
-      { dayOfWeek: scheduleDay2, startTime: '11:00', durationMinutes: 90 },
     ]);
     const sessions = await generateSessions(group.id);
     expect(sessions.length).toBeGreaterThan(0);

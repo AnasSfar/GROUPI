@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ParentInvitationsService } from './parent-invitations.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Public } from '../auth/decorators/public.decorator';
@@ -24,6 +24,13 @@ function requestMeta(req: any) {
 @UseGuards(JwtAuthGuard)
 export class PublicInvitationsController {
   constructor(private readonly service: ParentInvitationsService) {}
+
+  // Déclarée avant `:token` : sinon Nest matcherait "phone-check" comme valeur de `:token`.
+  @Get('phone-check')
+  @Public()
+  checkPhone(@Query('phone') phone: string) {
+    return this.service.checkPhoneExists(phone);
+  }
 
   @Get(':token')
   @Public()

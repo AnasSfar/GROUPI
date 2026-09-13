@@ -286,6 +286,18 @@ export class ParentInvitationsService {
   }
 
   /**
+   * A.3.2 (extension) : détection en direct d'un compte déjà existant pendant la saisie du
+   * téléphone, pour proposer la connexion au lieu de laisser la création échouer au submit
+   * (ERR-SEC-050 dans `accept()`). N'expose que le booléen — jamais l'identité du compte trouvé.
+   */
+  async checkPhoneExists(phone: string): Promise<{ exists: boolean }> {
+    const trimmed = phone?.trim();
+    if (!trimmed) return { exists: false };
+    const user = await this.prisma.user.findUnique({ where: { phone: trimmed } });
+    return { exists: !!user };
+  }
+
+  /**
    * A.3.2/RM-INV-008 : preview d'un lien pour un visiteur non authentifié — n'expose QUE le
    * nom/prénom du Professeur et l'année académique. ERR-INV-001/002/003/004.
    */
