@@ -12,7 +12,7 @@ import type {
   DashboardSessionSummary,
 } from '../api/dashboardApi';
 import { AlertList } from '../components/AlertList';
-import { EmptyState, LoadingState } from '../components/UiState';
+import { EmptyState } from '../components/UiState';
 import { StatGrid } from '../components/StatGrid';
 import { RevenueGauge } from '../components/RevenueGauge';
 import { RadialGauge, gaugeToneFromRate } from '../components/RadialGauge';
@@ -763,15 +763,21 @@ export function DashboardPage() {
         </p>
       )}
 
-      {loadingDashboard && <LoadingState label="Chargement du tableau de bord..." />}
+      {/* Le reste de la page (en-tête ci-dessus) reste affiché normalement pendant le chargement :
+          un simple bloc vide ici plutôt qu'un indicateur de chargement distinct, pour que le
+          contenu réel (calendrier, cartes...) apparaisse en fondu dans le même écran une fois prêt
+          au lieu de remplacer brutalement un tout autre écran de "Chargement...". */}
+      {loadingDashboard && <div className="dashboard-placeholder" aria-hidden="true" />}
 
-      {!loadingDashboard && isTeacher && teacherDashboard && (
-        <TeacherDashboardView data={teacherDashboard} onRefresh={loadDashboard} hiddenGroupIds={hiddenGroupIds} />
+      {!loadingDashboard && (isTeacher || isParent || isAdmin) && (teacherDashboard || parentDashboard || adminDashboard) && (
+        <div className="dashboard-fade-in">
+          {isTeacher && teacherDashboard && (
+            <TeacherDashboardView data={teacherDashboard} onRefresh={loadDashboard} hiddenGroupIds={hiddenGroupIds} />
+          )}
+          {isParent && parentDashboard && <ParentDashboardView data={parentDashboard} />}
+          {isAdmin && adminDashboard && <AdminDashboardView data={adminDashboard} />}
+        </div>
       )}
-      {!loadingDashboard && isParent && parentDashboard && (
-        <ParentDashboardView data={parentDashboard} />
-      )}
-      {!loadingDashboard && isAdmin && adminDashboard && <AdminDashboardView data={adminDashboard} />}
 
       {cards.length > 0 && (
         <section className="card-section">

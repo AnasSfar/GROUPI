@@ -15,14 +15,17 @@ import {
   storeTokens as writeTokens,
 } from '../api/client';
 import * as authApi from '../api/authApi';
+import * as pushApi from '../api/pushApi';
 import type { CurrentUser, RegisterPayload, RegisterResponse } from '../api/authApi';
 
 /**
- * SECURITY NOTE: tokens are kept in localStorage for simplicity, at this dev stage of the SPA.
- * This is vulnerable to XSS (any injected script can read localStorage and steal both tokens).
- * A production-hardened version would move the refresh token to an httpOnly + Secure cookie
- * issued by the backend — that requires backend changes and is out of scope here, since
- * apps/api's /auth/refresh currently expects the refresh token in the request body.
+ * SECURITY NOTE: on native (Android/iOS builds via Capacitor), tokens are stored via
+ * @capacitor/preferences (see api/client.ts) — outside the WebView's JS-accessible storage, so
+ * an XSS payload can no longer read them directly. On the plain web SPA, tokens still live in
+ * localStorage for simplicity and remain vulnerable to XSS. A fuller hardening would move the
+ * refresh token to an httpOnly + Secure cookie issued by the backend — that requires backend
+ * changes and is out of scope here, since apps/api's /auth/refresh currently expects the refresh
+ * token in the request body.
  */
 
 type SessionStatus = 'loading' | 'authenticated' | 'unauthenticated';
@@ -103,7 +106,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    const { refreshToken } = readTokens();
+    const { accessToken, refreshToken } = readTokens();
+    // Best-effort, avant de vider le token : sans ça on ne peut plus s'authentifier pour désenregistrer
+    // ce token push (voir PushNotificationSettings, qui l'enregistre sous cette même clé localStorage).
+    const lastPushToken = localStorage.getItem('groupi.pushToken');
+    if (accessToken && lastPushToken) {
+      try {
+        await pushApi.unregisterToken(accessToken, lastPushToken);
+        localStorage.removeItem('groupi.pushToken');
+      } catch {
+        /* ignore */
+      }
+    }
     clearTokens();
     setCurrentUser(null);
     setStatus('unauthenticated');

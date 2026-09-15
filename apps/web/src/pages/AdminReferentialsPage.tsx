@@ -164,9 +164,11 @@ export function AdminReferentialsPage() {
           <h1>Référentiels métier</h1>
           <p>Matières, niveaux scolaires et villes — données de référence communes à toute la plateforme (Ch.23).</p>
         </div>
-        <button type="button" onClick={handleExport}>
-          Exporter en CSV
-        </button>
+        <div className="page-actions">
+          <button type="button" onClick={handleExport}>
+            Exporter en CSV
+          </button>
+        </div>
       </div>
 
       {error && (

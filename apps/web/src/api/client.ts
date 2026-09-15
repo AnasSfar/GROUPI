@@ -1,3 +1,6 @@
+import { Capacitor } from '@capacitor/core';
+import { Preferences } from '@capacitor/preferences';
+
 /**
  * Low-level HTTP helper for the GROUPI API.
  *
@@ -16,7 +19,39 @@ export interface TokenPair {
   refreshToken: string;
 }
 
+/**
+ * On native (Android/iOS), tokens live in Capacitor's Preferences store instead of localStorage:
+ * that keeps them out of the WebView's JS-accessible storage, so an XSS payload injected into the
+ * page can no longer read them directly (Preferences is only reachable through the native bridge).
+ * On web, localStorage is kept as-is — no native bridge exists there. Preferences.get/set are async,
+ * but the rest of the app expects synchronous token reads (interceptors, route guards), so we mirror
+ * the native store into this in-memory cache, hydrated once via ensureTokenStorageReady() at boot.
+ */
+const isNative = Capacitor.isNativePlatform();
+const nativeCache: { accessToken: string | null; refreshToken: string | null } = {
+  accessToken: null,
+  refreshToken: null,
+};
+let hydration: Promise<void> | null = null;
+
+export function ensureTokenStorageReady(): Promise<void> {
+  if (!isNative) return Promise.resolve();
+  if (!hydration) {
+    hydration = Promise.all([
+      Preferences.get({ key: ACCESS_TOKEN_KEY }),
+      Preferences.get({ key: REFRESH_TOKEN_KEY }),
+    ]).then(([access, refresh]) => {
+      nativeCache.accessToken = access.value;
+      nativeCache.refreshToken = refresh.value;
+    });
+  }
+  return hydration;
+}
+
 export function getStoredTokens() {
+  if (isNative) {
+    return { accessToken: nativeCache.accessToken, refreshToken: nativeCache.refreshToken };
+  }
   return {
     accessToken: localStorage.getItem(ACCESS_TOKEN_KEY),
     refreshToken: localStorage.getItem(REFRESH_TOKEN_KEY),
@@ -25,11 +60,25 @@ export function getStoredTokens() {
 
 /** Refresh tokens rotate server-side on every /auth/refresh call — always persist the new pair. */
 export function storeTokens(tokens: TokenPair) {
+  if (isNative) {
+    nativeCache.accessToken = tokens.accessToken;
+    nativeCache.refreshToken = tokens.refreshToken;
+    void Preferences.set({ key: ACCESS_TOKEN_KEY, value: tokens.accessToken });
+    void Preferences.set({ key: REFRESH_TOKEN_KEY, value: tokens.refreshToken });
+    return;
+  }
   localStorage.setItem(ACCESS_TOKEN_KEY, tokens.accessToken);
   localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refreshToken);
 }
 
 export function clearStoredTokens() {
+  if (isNative) {
+    nativeCache.accessToken = null;
+    nativeCache.refreshToken = null;
+    void Preferences.remove({ key: ACCESS_TOKEN_KEY });
+    void Preferences.remove({ key: REFRESH_TOKEN_KEY });
+    return;
+  }
   localStorage.removeItem(ACCESS_TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
 }

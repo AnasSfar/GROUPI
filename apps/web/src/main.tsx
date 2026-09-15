@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/react'
 import './index.css'
 import App from './App.tsx'
 import { initTheme } from './utils/theme'
+import { ensureTokenStorageReady } from './api/client'
 
 // Applique le thème mémorisé (clair par défaut) sur <html> avant le premier rendu React.
 initTheme()
@@ -19,21 +20,25 @@ if (sentryDsn) {
   })
 }
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <Sentry.ErrorBoundary
-      fallback={
-        <div className="empty-state">
-          <div>
-            <p className="empty-state-title">Une erreur est survenue, veuillez recharger la page.</p>
+// Sur natif, hydrate le cache mémoire des tokens depuis Capacitor Preferences avant de monter
+// l'app — AuthProvider lit les tokens de façon synchrone dès son premier rendu.
+ensureTokenStorageReady().then(() => {
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <Sentry.ErrorBoundary
+        fallback={
+          <div className="empty-state">
+            <div>
+              <p className="empty-state-title">Une erreur est survenue, veuillez recharger la page.</p>
+            </div>
+            <div className="empty-state-action">
+              <button onClick={() => window.location.reload()}>Recharger</button>
+            </div>
           </div>
-          <div className="empty-state-action">
-            <button onClick={() => window.location.reload()}>Recharger</button>
-          </div>
-        </div>
-      }
-    >
-      <App />
-    </Sentry.ErrorBoundary>
-  </StrictMode>,
-)
+        }
+      >
+        <App />
+      </Sentry.ErrorBoundary>
+    </StrictMode>,
+  )
+})

@@ -7,6 +7,7 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { AppLayout } from './components/AppLayout';
 import { LoadingState } from './components/UiState';
 import { ThemeToggle } from './components/ThemeToggle';
+import { DeepLinkListener } from './components/DeepLinkListener';
 
 // Une seule page est chargée par navigation au lieu des 38 d'un coup dans le bundle initial
 // (voir Suspense ci-dessous pour le fallback pendant le chargement du chunk).
@@ -60,6 +61,7 @@ function App() {
       <ToastProvider>
         <ConfirmProvider>
         <AuthProvider>
+          <DeepLinkListener />
           <Suspense fallback={<LoadingState label="Chargement..." />}>
           {/* Bascule de thème flottante — visible sur les pages sans chrome propre (connexion,
               inscription, vérifications...) ; masquée en CSS là où <ThemeToggle> est déjà intégré

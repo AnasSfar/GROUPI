@@ -402,6 +402,9 @@ model User {
   dataPortabilityRequestsFulfilled DataPortabilityRequest[] @relation("DataPortabilityFulfilledBy")
   /// Avenant 01, Ch. B.5 : retraits de rattachement (groupe de niveau) décidés par ce compte.
   levelPoolMembershipsRemoved      LevelPoolMembership[]    @relation("LevelPoolMembershipRemovedBy")
+  /// Notifications push : appareils enregistrés et préférences par catégorie (voir modèles ci-dessous).
+  pushTokens                       PushToken[]
+  notificationPreferences          NotificationPreference[]
 
   @@map("user")
 }
@@ -1221,6 +1224,40 @@ model ScheduledNotificationMarker {
 
   @@index([type, createdAt])
   @@map("scheduled_notification_marker")
+}
+
+/// Notifications push (Capacitor + Firebase Cloud Messaging) : un token par appareil installé.
+/// `token` est unique globalement (pas par user) — un réinstall sur un device partagé doit
+/// réattribuer le token au nouvel utilisateur connecté plutôt que d'en garder une copie orpheline.
+model PushToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id])
+  token     String   @unique
+  platform  String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("push_token")
+}
+
+/// Préférence de notification push par catégorie utilisateur (distinct du catalogue `Activity.type`
+/// interne — une catégorie regroupe plusieurs types, voir push-categories.ts). Absence de ligne pour
+/// une catégorie donnée = valeurs par défaut (activée, `leadMinutes` par défaut du code) ; on ne
+/// matérialise que les écarts par rapport au défaut.
+model NotificationPreference {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  user        User     @relation(fields: [userId], references: [id])
+  category    String
+  enabled     Boolean  @default(true)
+  /// Seul utilisé par la catégorie SESSION_REMINDER — délai en minutes avant le début de la séance.
+  leadMinutes Int?     @map("lead_minutes")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, category])
+  @@map("notification_preference")
 }
 
 /// Ch.19.3 : fil de commentaires d'une inscription. Pas de table "conversation" séparée — le fil

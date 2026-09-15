@@ -10,6 +10,8 @@ import { ExportsService } from '../exports/exports.service';
 import { EnrollmentConversationsService } from '../enrollment-conversations/enrollment-conversations.service';
 import { GroupAnnouncementsService } from '../group-announcements/group-announcements.service';
 import { AuthService } from '../auth/auth.service';
+import { PushDeliveryService } from '../push/push-delivery.service';
+import { NotificationPreferencesService } from '../push/notification-preferences.service';
 
 function addHours(date: Date, hours: number): Date {
   return new Date(date.getTime() + hours * 60 * 60 * 1000);
@@ -55,6 +57,8 @@ export class TemporalJobsService {
     private readonly groupAnnouncements: GroupAnnouncementsService,
     private readonly exports: ExportsService,
     private readonly auth: AuthService,
+    private readonly pushDelivery: PushDeliveryService,
+    private readonly notificationPreferences: NotificationPreferencesService,
   ) {}
 
   @Cron('0 * * * *')
@@ -97,6 +101,7 @@ export class TemporalJobsService {
       this.processSubscriptionDeadlines(now),
       this.sendAutomaticPaymentReminders(now),
       this.sendAbsenceDeadlineReminders(now),
+      this.sendConfigurablePushReminders(now),
     ]);
     const sent = results.reduce((sum, r) => sum + r.sent, 0);
     this.logger.log(`Jobs temporels horaires ex\u00e9cut\u00e9s : ${sent} notification(s) envoy\u00e9e(s).`);
@@ -153,6 +158,58 @@ export class TemporalJobsService {
           body: `S\u00e9ance du groupe "${session.group.name}" pr\u00e9vue le ${session.date.toLocaleDateString('fr-FR')} \u00e0 ${session.startTime}.`,
           refType: 'Session',
           refId: session.id,
+        });
+        sent++;
+      }
+    }
+    return { sent, skipped };
+  }
+
+  /**
+   * Rappel de séance en push, au délai choisi individuellement par chaque destinataire (réglages de
+   * notifications, catégorie SESSION_REMINDER) — distinct du rappel in-app `sendSession24hReminders`
+   * ci-dessus, qui reste fixé à 24h pour tout le monde (RM-NOT-009, jamais modifié). Fenêtre de
+   * recherche : 48h (l'option de délai la plus longue proposée), filtrée ensuite par destinataire
+   * selon son propre délai. Note de fiabilité : ce job ne tourne réellement à l'heure qu'en dev — en
+   * prod le déclenchement Vercel Cron peut être bien plus rare (voir `temporal-jobs.controller.ts`),
+   * donc un délai précis à l'heure n'est garanti qu'une fois ce cron exécuté plus fréquemment.
+   */
+  async sendConfigurablePushReminders(now = new Date()): Promise<JobResult> {
+    const windowEnd = addHours(now, 1);
+    const searchEnd = addHours(now, 48);
+    const sessions = await this.prisma.session.findMany({
+      where: { status: 'PLANNED', date: { gte: dateOnly(now), lte: dateOnly(searchEnd) } },
+      include: { group: { include: { teacher: { select: { user: { select: { email: true } } } } } } },
+    });
+    let sent = 0;
+    let skipped = 0;
+    for (const session of sessions) {
+      const start = theoreticalStart(session);
+      if (start < now || start > searchEnd) continue;
+      const recipients = [
+        { userId: session.group.teacherId },
+        ...(await this.activeParentRecipients(session.groupId)).map((p) => ({ userId: p.parentId })),
+      ];
+      for (const r of recipients) {
+        const enabled = await this.notificationPreferences.isEnabled(r.userId, 'SESSION_REMINDER');
+        if (!enabled) {
+          skipped++;
+          continue;
+        }
+        const leadMinutes = await this.notificationPreferences.getLeadMinutes(r.userId);
+        const reminderAt = new Date(start.getTime() - leadMinutes * 60_000);
+        if (reminderAt < now || reminderAt >= windowEnd) {
+          skipped++;
+          continue;
+        }
+        const key = `PUSH-SES-REMINDER:${session.id}:${r.userId}:${leadMinutes}`;
+        if (!(await this.markOnce(key, 'PUSH_SES_REMINDER', 'Session', session.id))) {
+          skipped++;
+          continue;
+        }
+        await this.pushDelivery.sendToUser(r.userId, {
+          title: 'Rappel de séance',
+          body: `Séance du groupe "${session.group.name}" prévue le ${session.date.toLocaleDateString('fr-FR')} à ${session.startTime}.`,
         });
         sent++;
       }

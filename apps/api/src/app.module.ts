@@ -23,6 +23,7 @@ import { TemporalJobsModule } from './temporal-jobs/temporal-jobs.module';
 import { LevelPoolsModule } from './level-pools/level-pools.module';
 import { ParentInvitationsModule } from './parent-invitations/parent-invitations.module';
 import { GroupMembersModule } from './group-members/group-members.module';
+import { PushModule } from './push/push.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { GroupMembersModule } from './group-members/group-members.module';
     LevelPoolsModule,
     ParentInvitationsModule,
     GroupMembersModule,
+    PushModule,
   ],
 })
 export class AppModule {}

@@ -480,6 +480,46 @@ code {
 
 .app-shell {
   display: block;
+  /* Fondu d'entrée : sans ça, le tableau de bord (calendrier, cartes...) apparaît d'un coup, sec,
+     dès que <LogoTransition> se démonte après la connexion (voir LoginPage.tsx). L'animation ne
+     joue qu'au montage, pas à chaque re-render, donc n'affecte pas la navigation interne normale. */
+  animation: app-shell-in 0.5s ease both;
+}
+
+@keyframes app-shell-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell {
+    animation: none;
+  }
+}
+
+/* Pendant le chargement des données du tableau de bord, on garde le même écran (en-tête déjà
+   affiché) avec juste un grand bloc vide à la place du contenu, plutôt qu'un tout autre écran de
+   "Chargement..." — évite toute apparition/disparition brutale d'éléments. */
+.dashboard-placeholder {
+  min-height: 60vh;
+}
+
+/* Le contenu réel du tableau de bord (calendrier, cartes de groupes...) apparaît ensuite en fondu
+   à la place de ce bloc vide, plutôt que d'un coup sec. */
+.dashboard-fade-in {
+  animation: app-shell-in 0.5s ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-fade-in {
+    animation: none;
+  }
 }
 
 .app-sidebar {
@@ -649,8 +689,8 @@ code {
   }
 
   .app-dock-link {
-    height: 42px;
-    min-height: 42px;
+    height: 44px;
+    min-height: 44px;
     padding: 10px;
   }
 
@@ -919,8 +959,8 @@ code {
   }
 
   .app-dock-link {
-    height: 42px;
-    min-height: 42px;
+    height: 44px;
+    min-height: 44px;
     padding: 10px;
   }
 
@@ -1389,6 +1429,33 @@ body:has(.landing-page) .theme-toggle-floating {
   max-width: 720px;
 }
 
+.auth-page-wide {
+  padding: 32px 16px;
+}
+
+/* Neutralise le rendu natif du <fieldset> (bordure/padding UA, incohérents entre navigateurs
+   mobiles) pour rester dans le style "Atelier Clair" plutôt qu'un cadre par défaut du navigateur. */
+.auth-fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.auth-fieldset + .auth-fieldset {
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.auth-fieldset legend {
+  padding: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
 .auth-card h1 {
   font-size: 22px;
   margin: 0 0 4px;
@@ -1490,6 +1557,86 @@ body:has(.landing-page) .theme-toggle-floating {
 @media (prefers-reduced-motion: reduce) {
   .invite-welcome-logo,
   .invite-welcome-options {
+    transition: none;
+  }
+}
+
+/* Transition générique (composant <LogoTransition>) : logo qui monte doucement puis message en
+   dessous — utilisé après connexion et déconnexion (AppLayout, LoginPage). Rendu en overlay fixe
+   PAR-DESSUS l'écran encore monté dessous (voir commentaire dans LogoTransition.tsx) : c'est ce
+   qui permet un vrai fondu enchaîné plutôt qu'une coupure nette au moment du changement d'état. */
+.logo-transition-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  background:
+    radial-gradient(600px circle at 15% 10%, var(--brand-navy-soft), transparent 60%),
+    var(--bg-shell);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+.logo-transition-overlay.is-visible {
+  opacity: 1;
+}
+
+.logo-transition {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  text-align: center;
+}
+
+.logo-transition-logo {
+  transform: translateY(14px) scale(0.94);
+  opacity: 0.85;
+  transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.6s ease;
+}
+
+.logo-transition-logo img {
+  width: 56px;
+  height: 56px;
+  display: block;
+}
+
+.logo-transition-logo.is-settled {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+
+.logo-transition-text {
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.5s ease 0.15s, transform 0.5s ease 0.15s;
+}
+
+.logo-transition-text.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.logo-transition-text p {
+  margin: 0;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.logo-transition-text .logo-transition-sub {
+  margin-top: 4px;
+  font-weight: 400;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logo-transition-logo,
+  .logo-transition-text,
+  .logo-transition-overlay {
     transition: none;
   }
 }
@@ -1850,6 +1997,7 @@ body:has(.landing-page) .theme-toggle-floating {
 .terms-modal-actions {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 20px;
 }
@@ -3096,7 +3244,7 @@ a.dash-card:hover .dash-card-icon {
     overflow-wrap: anywhere;
   }
 
-  .admin-table td[data-label]::before {
+  .admin-table td[data-label]:not([data-label=''])::before {
     content: attr(data-label);
     display: block;
     margin-bottom: 2px;
@@ -3109,6 +3257,21 @@ a.dash-card:hover .dash-card-icon {
 
   .admin-table td.admin-actions {
     padding-top: 10px;
+  }
+
+  /* Piles d'actions denses (ex. Séances : Présences/Paiements/Reporter/Changer le mode/Annuler/
+     Supprimer) : une action par ligne pleine largeur plutôt que des puces qui s'enchaînent, pour
+     limiter les erreurs de tap au doigt entre deux boutons voisins. */
+  .admin-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .admin-actions a,
+  .admin-actions button {
+    width: 100%;
+    text-align: center;
   }
 
   .admin-table td[colspan] {
@@ -3198,6 +3361,17 @@ a.dash-card:hover .dash-card-icon {
     text-align: left;
   }
 
+  /* Cible tactile agrandie pour la saisie de présence au doigt en salle de classe. */
+  .attendance-tick {
+    width: 32px;
+    height: 32px;
+  }
+
+  .attendance-tick::after {
+    width: 14px;
+    height: 14px;
+  }
+
   .attendance-table tr {
     display: flex;
     flex-wrap: wrap;
@@ -3218,7 +3392,9 @@ a.dash-card:hover .dash-card-icon {
     letter-spacing: 0.02em;
   }
 
-  .attendance-table td:nth-child(7) {
+  /* Ciblé par data-label plutôt que nth-child : la colonne "Durée connexion" s'insère
+     conditionnellement pour les séances en ligne et décalerait sinon la position d'"État". */
+  .attendance-table td[data-label='État'] {
     display: none;
   }
 }
@@ -3644,6 +3820,7 @@ button.ghost:hover:not(:disabled) {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 6px 0;
   font-size: 13px;
   font-weight: 400;
   color: var(--text);
@@ -4723,6 +4900,14 @@ button.ghost:hover:not(:disabled) {
   pointer-events: none;
 }
 
+/* En dessous de 980px, le dock de navigation flotte en bas de l'écran (hauteur 58px, à 14px du
+   bord) : les toasts doivent apparaître au-dessus de lui, pas par-dessus (même z-index supérieur). */
+@media (max-width: 980px) {
+  .toast-container {
+    bottom: 84px;
+  }
+}
+
 .toast {
   display: flex;
   align-items: flex-start;
@@ -4792,7 +4977,7 @@ button.ghost:hover:not(:disabled) {
   .toast-container {
     left: 12px;
     right: 12px;
-    bottom: 12px;
+    bottom: 84px;
     max-width: none;
     width: auto;
   }
@@ -5787,6 +5972,7 @@ a.week-calendar-event:hover {
   display: flex;
   align-items: baseline;
   gap: 5px;
+  min-height: 0;
   padding: 2px 6px;
   border: none;
   border-left: 3px solid var(--link);
@@ -5849,6 +6035,7 @@ a.week-calendar-event:hover {
 }
 
 .month-calendar-day-more {
+  min-height: 0;
   padding: 1px 4px;
   border: none;
   background: none;
@@ -5867,7 +6054,7 @@ a.week-calendar-event:hover {
 
 @media (max-width: 720px) {
   .month-calendar-weekday {
-    font-size: 9.5px;
+    font-size: 11px;
   }
 
   .month-calendar-day {

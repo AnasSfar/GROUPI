@@ -2,6 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Activity, ActivityPriority } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationChannel } from './notification-channel';
+import { PushDeliveryService } from '../push/push-delivery.service';
+import { NotificationPreferencesService } from '../push/notification-preferences.service';
+import { categoryForActivityType } from '../push/push-categories';
 
 /** RM-NOT-013 : fenêtre de regroupement des notifications informatives. */
 const GROUPING_WINDOW_MS = 5 * 60_000;
@@ -39,7 +42,11 @@ export interface NotifyInput {
 export class MessagingService {
   private readonly logger = new Logger(MessagingService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly pushDelivery: PushDeliveryService,
+    private readonly preferences: NotificationPreferencesService,
+  ) {}
 
   /** Canaux effectivement routés en V1.1 — RM-NOT-050 : toujours au moins `IN_APP`, jamais désactivable. */
   private readonly activeChannels: readonly NotificationChannel[] = [NotificationChannel.IN_APP];
@@ -51,15 +58,15 @@ export class MessagingService {
       this.logger.warn(`Canal IN_APP inactif : notification "${input.type}" perdue pour ${input.recipientUserId}`);
     }
 
+    let activity: Activity | null = null;
     if (input.priority === 'INFORMATION') {
-      const grouped = await this.tryGroupInformationalActivity(input);
-      if (grouped) return grouped;
+      activity = await this.tryGroupInformationalActivity(input);
     }
 
     // WHATSAPP/SMS (Ch.I.6, options B/C) : router ici selon `input.priority` (IMPORTANT/CRITICAL)
     // une fois `WhatsAppService`/`SmsService` branchés — aucun appelant de `notify()` n'a à changer.
 
-    return this.prisma.activity.create({
+    activity ??= await this.prisma.activity.create({
       data: {
         userId: input.recipientUserId,
         type: input.type,
@@ -70,6 +77,31 @@ export class MessagingService {
         refId: input.refId,
       },
     });
+
+    // Notifications push : best-effort, ne doit jamais faire échouer notify() (RM-NOT-050 reste
+    // garanti par la création de l'Activity ci-dessus, indépendante de ce qui suit). SESSION_REMINDER
+    // est exclue ici — son push suit le délai choisi par l'utilisateur, géré par
+    // `TemporalJobsService.sendConfigurablePushReminders`, pas ce déclenchement immédiat.
+    const category = categoryForActivityType(input.type);
+    if (category && category !== 'SESSION_REMINDER') {
+      this.sendPushBestEffort(input.recipientUserId, category, input.title, input.body);
+    }
+
+    return activity;
+  }
+
+  private sendPushBestEffort(
+    userId: string,
+    category: Exclude<ReturnType<typeof categoryForActivityType>, null>,
+    title: string,
+    body?: string,
+  ): void {
+    this.preferences
+      .isEnabled(userId, category)
+      .then((enabled) => {
+        if (enabled) return this.pushDelivery.sendToUser(userId, { title, body });
+      })
+      .catch((err) => this.logger.error(`Push best-effort échoué pour ${userId} (${category})`, err as Error));
   }
 
   /**

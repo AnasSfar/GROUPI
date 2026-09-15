@@ -5,6 +5,7 @@ import { useConfirm } from '../components/ConfirmDialog';
 import { ApiError } from '../api/client';
 import * as parentInvitationsApi from '../api/parentInvitationsApi';
 import type { ParentInvitation } from '../api/parentInvitationsApi';
+import * as teacherProfileApi from '../api/teacherProfileApi';
 import { IconCopy, IconPower, IconRefreshCw, IconWhatsApp } from '../components/icons';
 
 const STATUS_LABELS: Record<ParentInvitation['status'], string> = {
@@ -25,10 +26,11 @@ const STATUS_BADGE: Record<ParentInvitation['status'], string> = {
  * une action secondaire facultative (ouvre `wa.me` avec un message pré-rempli, aucun envoi automatique).
  */
 export function TeacherInvitationPage() {
-  const { getAccessToken, currentUser } = useAuth();
+  const { getAccessToken } = useAuth();
   const { showToast } = useToast();
   const confirm = useConfirm();
   const [invitation, setInvitation] = useState<ParentInvitation | null>(null);
+  const [teacherName, setTeacherName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -55,6 +57,15 @@ export function TeacherInvitationPage() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    const token = getAccessToken();
+    if (!token) return;
+    teacherProfileApi
+      .getMyProfile(token)
+      .then((profile) => setTeacherName(`${profile.firstName} ${profile.lastName}`.trim()))
+      .catch(() => setTeacherName(null));
+  }, [getAccessToken]);
+
   async function copyLink() {
     if (!invitation) return;
     try {
@@ -67,8 +78,11 @@ export function TeacherInvitationPage() {
 
   function shareOnWhatsApp() {
     if (!invitation) return;
-    const teacherName = currentUser ? `${currentUser.firstName} ${currentUser.lastName}` : 'Votre professeur';
-    window.open(parentInvitationsApi.whatsAppShareUrl(invitation.url, teacherName), '_blank', 'noopener');
+    window.open(
+      parentInvitationsApi.whatsAppShareUrl(invitation.url, teacherName ?? 'Votre professeur'),
+      '_blank',
+      'noopener',
+    );
   }
 
   async function handleRotate() {

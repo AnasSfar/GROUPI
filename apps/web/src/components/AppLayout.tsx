@@ -5,6 +5,7 @@ import * as notificationsApi from '../api/notificationsApi';
 import * as teacherProfileApi from '../api/teacherProfileApi';
 import type { TeacherProfile } from '../api/teacherProfileApi';
 import { ThemeToggle } from './ThemeToggle';
+import { LogoTransition } from './LogoTransition';
 import {
   IconGauge,
   IconBell,
@@ -59,6 +60,7 @@ export function AppLayout() {
   const [teacherProfile, setTeacherProfile] = useState<TeacherProfile | null>(null);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isDockMoreOpen, setIsDockMoreOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
   const dockMoreMenuRef = useRef<HTMLDivElement | null>(null);
   const dockRef = useRef<HTMLElement | null>(null);
@@ -117,6 +119,14 @@ export function AppLayout() {
   }, [getAccessToken]);
 
   async function handleLogout() {
+    // On affiche la transition AVANT de vider la session : `logout()` fait passer `status` à
+    // 'unauthenticated', ce qui fait immédiatement démonter <AppLayout> via <ProtectedRoute> (donc
+    // cette transition avec) si on l'appelle trop tôt — d'où l'attente ici avant de le déclencher.
+    setLoggingOut(true);
+    // L'overlay reste plein-opaque jusqu'à la navigation elle-même (pas de fondu de sortie avant
+    // ce moment) : le faire disparaître en premier laissait réapparaître le tableau de bord dessous
+    // pendant ce court instant — exactement le "flash de l'autre page" à éviter.
+    await new Promise((resolve) => setTimeout(resolve, 1400));
     await logout();
     navigate('/', { replace: true });
   }
@@ -271,6 +281,7 @@ export function AppLayout() {
 
   return (
     <>
+      {loggingOut && <LogoTransition message="À bientôt !" subMessage="Déconnexion en cours..." />}
       <a className="skip-link" href="#main-content">
         Aller au contenu
       </a>

@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ApiError } from '../api/client';
+import { LogoTransition } from '../components/LogoTransition';
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -12,6 +13,7 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [justLoggedIn, setJustLoggedIn] = useState(false);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -19,18 +21,29 @@ export function LoginPage() {
     setSubmitting(true);
     try {
       await login(identifier, password);
-      navigate('/dashboard', { replace: true });
+      setJustLoggedIn(true);
+      // On profite de l'attente de la transition pour précharger le chunk du tableau de bord :
+      // il apparaît instantanément à la navigation au lieu d'afficher son propre "Chargement...".
+      import('./DashboardPage');
+      // L'overlay reste plein-opaque jusqu'à la navigation elle-même (pas de fondu de sortie
+      // avant) : le faire disparaître avant de naviguer laissait réapparaître le formulaire de
+      // connexion dessous pendant ce court instant — exactement le "flash de l'autre page" à
+      // éviter. Le remplacement overlay -> nouvelle page reste net, mais ne montre plus jamais
+      // un écran intermédiaire non désiré.
+      setTimeout(() => navigate('/dashboard', { replace: true }), 2500);
     } catch (err) {
       setError(
         err instanceof ApiError ? err.message : 'Impossible de se connecter. Veuillez réessayer.',
       );
-    } finally {
       setSubmitting(false);
     }
   }
 
   return (
     <div className="auth-page">
+      {justLoggedIn && (
+        <LogoTransition message="Connexion réussie" subMessage="Redirection vers votre espace..." />
+      )}
       <form className="auth-card" onSubmit={handleSubmit}>
         <img src="/favicon.png" alt="GROUPI" className="auth-logo" />
         <h1>Connexion</h1>

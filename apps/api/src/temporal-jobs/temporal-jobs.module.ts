@@ -7,6 +7,7 @@ import { EnrollmentConversationsModule } from '../enrollment-conversations/enrol
 import { GroupAnnouncementsModule } from '../group-announcements/group-announcements.module';
 import { ExportsModule } from '../exports/exports.module';
 import { AuthModule } from '../auth/auth.module';
+import { PushModule } from '../push/push.module';
 import { TemporalJobsService } from './temporal-jobs.service';
 import { TemporalJobsController } from './temporal-jobs.controller';
 
@@ -27,6 +28,8 @@ import { TemporalJobsController } from './temporal-jobs.controller';
     GroupAnnouncementsModule,
     ExportsModule,
     AuthModule,
+    // Push : PushDeliveryService/NotificationPreferencesService pour sendConfigurablePushReminders.
+    PushModule,
   ],
   controllers: [TemporalJobsController],
   providers: [TemporalJobsService],

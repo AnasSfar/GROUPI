@@ -9,6 +9,7 @@ import * as referentialsApi from '../api/referentialsApi';
 import type { SchoolLevel, Subject } from '../api/referentialsApi';
 import * as parentProfileApi from '../api/parentProfileApi';
 import { SchoolLevelSectionPicker } from '../components/SchoolLevelSectionPicker';
+import { PushNotificationSettings } from '../components/PushNotificationSettings';
 
 const ROLE_LABELS: Record<string, string> = {
   SUPER_ADMIN: 'Super Administrateur',
@@ -513,6 +514,8 @@ export function AccountSettingsPage() {
       {currentUser?.roles.includes('PARENT') && <ParentContactSection />}
 
       {addableRole && <AddRoleSection targetRole={addableRole} />}
+
+      <PushNotificationSettings />
 
       <ChangePasswordSection />
 
